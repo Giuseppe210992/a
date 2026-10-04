@@ -18,12 +18,31 @@ pub fn data_dir() -> PathBuf {
     dir
 }
 
-/// Default place for recorded laps: `Documents\RaceEngineer\laps`.
-pub fn default_lap_dir() -> PathBuf {
+/// The user's real Documents folder (follows OneDrive redirection on Windows).
+pub fn documents_dir() -> PathBuf {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::Com::CoTaskMemFree;
+        use windows_sys::Win32::UI::Shell::{FOLDERID_Documents, SHGetKnownFolderPath};
+        unsafe {
+            let mut p: *mut u16 = std::ptr::null_mut();
+            if SHGetKnownFolderPath(&FOLDERID_Documents, 0, std::ptr::null_mut(), &mut p) == 0 && !p.is_null() {
+                let len = (0..).take_while(|&i| *p.add(i) != 0).count();
+                let s = String::from_utf16_lossy(std::slice::from_raw_parts(p, len));
+                CoTaskMemFree(p as *const _);
+                return PathBuf::from(s);
+            }
+        }
+    }
     std::env::var_os("USERPROFILE")
         .or_else(|| std::env::var_os("HOME"))
-        .map(|h| PathBuf::from(h).join("Documents").join("RaceEngineer").join("laps"))
-        .unwrap_or_else(|| PathBuf::from("laps"))
+        .map(|h| PathBuf::from(h).join("Documents"))
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// Default place for recorded laps: `Documents\RaceEngineer\laps`.
+pub fn default_lap_dir() -> PathBuf {
+    documents_dir().join("RaceEngineer").join("laps")
 }
 
 /// Folder with the optional WAV clips: next to the executable.

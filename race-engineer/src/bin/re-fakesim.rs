@@ -1,6 +1,6 @@
 //! Fake simulators for exercising the real Windows code paths (named shared memory, UDP)
 //! without the games installed:
-//!   re-fakesim --sim iracing|acc|f1|forza [--seconds N] [--speedup X]
+//!   re-fakesim --sim iracing|acc|lmu|acevo|f1|forza|wrc [--seconds N] [--speedup X]
 //! iRacing/ACC publish the same shared-memory layouts the readers parse; f1/forza send UDP to
 //! 127.0.0.1 (port 20777 / 5300). Shared memory only exists on Windows (also under Wine).
 
@@ -117,6 +117,17 @@ mod fakes {
         match sim.as_str() {
             "f1" => drive(|f, n| send_f1(&udp, f, n)),
             "forza" => drive(|f, _| send_forza(&udp, f)),
+            "wrc" => {
+                use race_engineer::sources::wrc::{telemetry_dir, Layout};
+                let layout = Layout::load(&telemetry_dir()).unwrap_or_else(|e| {
+                    eprintln!("{e} (set RE_WRC_DIR / run re-cli --prepare-wrc first)");
+                    std::process::exit(2);
+                });
+                let port: u16 = arg("--port").and_then(|p| p.parse().ok()).unwrap_or(20778);
+                drive(|f, _| {
+                    let _ = udp.send_to(&layout.encode(f), ("127.0.0.1", port));
+                });
+            }
             _ => {
                 eprintln!("--sim f1|forza (iracing/acc need Windows)");
                 std::process::exit(2);
@@ -130,6 +141,8 @@ mod fakes {
         match sim.as_str() {
             "iracing" => win::iracing(),
             "acc" => win::acc(),
+            "lmu" => win::lmu(),
+            "acevo" => win::acevo(),
             _ => run_udp_or_exit(),
         }
     }
@@ -208,6 +221,26 @@ mod fakes {
                 fk.publish(buf, tick);
                 // only the touched buffer + header ticks need copying; copy all for simplicity
                 write(base, &fk.mem);
+            });
+        }
+
+        pub fn lmu() {
+            use race_engineer::sources::lmu::fake;
+            let base = create(race_engineer::sources::lmu_layout::LMU_DATA_NAME, fake::image_size());
+            let mut img = vec![];
+            drive(|f, n| {
+                fake::write(&mut img, f, n as f64 * 0.016);
+                write(base, &img);
+            });
+        }
+
+        pub fn acevo() {
+            use race_engineer::sources::acevo::{fake, GRAPHICS_MAP, PHYSICS_MAP, STATIC_MAP};
+            let (pp, gp, sp) = (create(PHYSICS_MAP, 800), create(GRAPHICS_MAP, 4900), create(STATIC_MAP, 208));
+            write(sp, &fake::statics());
+            drive(|f, n| {
+                write(gp, &fake::graphics(f, n as i32));
+                write(pp, &fake::physics(f, n as i32));
             });
         }
 

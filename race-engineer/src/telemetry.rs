@@ -13,6 +13,9 @@ pub enum SimId {
     Acc,
     F1_25,
     Forza,
+    Lmu,
+    AcEvo,
+    Wrc,
     Synthetic,
 }
 

@@ -49,6 +49,16 @@ impl Mapping {
         self.len == 0
     }
 
+    /// Copies `len` bytes at `offset` (None if out of range).
+    pub fn read_at(&self, offset: usize, len: usize) -> Option<Vec<u8>> {
+        if offset.checked_add(len)? > self.len {
+            return None;
+        }
+        let mut v = vec![0u8; len];
+        unsafe { ptr::copy_nonoverlapping(self.base.add(offset), v.as_mut_ptr(), len) };
+        Some(v)
+    }
+
     /// Copies the current contents. Tearing is possible by design of the simulators'
     /// protocols; callers validate with the sim's own counters (tick / packetId).
     pub fn to_vec(&self) -> Vec<u8> {
@@ -82,11 +92,20 @@ impl LazyMapping {
         Self { name, map: None, last_try: None }
     }
 
-    pub fn bytes(&mut self) -> Option<Vec<u8>> {
+    fn ensure(&mut self) {
         if self.map.is_none() && self.last_try.is_none_or(|t| t.elapsed() >= std::time::Duration::from_millis(500)) {
             self.last_try = Some(std::time::Instant::now());
             self.map = Mapping::open(self.name);
         }
+    }
+
+    pub fn bytes(&mut self) -> Option<Vec<u8>> {
+        self.ensure();
         self.map.as_ref().map(|m| m.to_vec())
+    }
+
+    pub fn read_at(&mut self, offset: usize, len: usize) -> Option<Vec<u8>> {
+        self.ensure();
+        self.map.as_ref().and_then(|m| m.read_at(offset, len))
     }
 }

@@ -38,6 +38,7 @@ struct SetupState {
     save_laps: bool,
     lap_dir: String,
     error: Option<String>,
+    wrc_msg: Option<Result<String, String>>,
 }
 
 impl Default for SetupState {
@@ -61,6 +62,7 @@ impl Default for SetupState {
             save_laps: true,
             lap_dir: crate::diag::default_lap_dir().display().to_string(),
             error: None,
+            wrc_msg: None,
         }
     }
 }
@@ -77,6 +79,9 @@ impl SetupState {
             SourceKind::Acc => "acc",
             SourceKind::F1 => "f1",
             SourceKind::Forza => "forza",
+            SourceKind::Lmu => "lmu",
+            SourceKind::AcEvo => "acevo",
+            SourceKind::Wrc => "wrc",
         }
     }
 
@@ -192,6 +197,9 @@ fn create_app(cc: &eframe::CreationContext<'_>) -> Result<Box<dyn eframe::App>, 
         app.setup.kind = match args.get(i + 1).map(String::as_str) {
             Some("f1") => SourceKind::F1,
             Some("forza") => SourceKind::Forza,
+            Some("lmu") => SourceKind::Lmu,
+            Some("acevo") => SourceKind::AcEvo,
+            Some("wrc") => SourceKind::Wrc,
             Some("iracing") => SourceKind::IRacing,
             Some("acc") => SourceKind::Acc,
             _ => SourceKind::Synthetic,
@@ -333,6 +341,9 @@ fn hint(kind: SourceKind) -> &'static str {
         SourceKind::Synthetic => "Genera una vettura e una pista simulate: serve a provare dashboard, voce e analisi senza simulatore.",
         SourceKind::IRacing => "Nessuna impostazione necessaria: avvia iRacing e vai in pista. (Opzionale: 360 Hz con irsdkEnableMem=1 e irsdkLog360Hz=1 in app.ini.)",
         SourceKind::Acc => "Nessuna impostazione necessaria: avvia ACC e vai in pista. Gli offset della memoria condivisa vanno validati (docs/VALIDATION.md).",
+        SourceKind::Lmu => "Nel gioco: Impostazioni > Gameplay > «Abilita plugin» = ON, poi riavvia Le Mans Ultimate (serve anche senza plugin). Poi avvia una sessione. Nessun altro file da installare.",
+        SourceKind::AcEvo => "Nessuna impostazione nel gioco: avvia AC EVO e vai in pista. Il gioco è in accesso anticipato: il formato può cambiare tra una build e l'altra (i valori fuori scala vengono scartati).",
+        SourceKind::Wrc => "Sperimentale. Avvia EA WRC almeno una volta, poi premi «Prepara EA WRC» qui sotto (scrive la struttura di telemetria e una voce in config.json, con backup) e riavvia il gioco. Non c'è posizione 3D: mappa dal vivo non disponibile.",
         SourceKind::Forza => "In gioco: Impostazioni > Gameplay e HUD > Data Out (telemetria UDP) attivo, IP 127.0.0.1, la porta qui sotto, formato \"Dash\". Formato non verificato su un PC reale: niente curve/delta (il gioco non invia la posizione sul giro), ma dashboard, pedali, giri e mappa dal vivo.",
         SourceKind::F1 => "In gioco: Impostazioni > Telemetria > UDP attivo, IP 127.0.0.1, porta 20777, formato 2025, frequenza 60 Hz. Curve, delta e chiamate di frenata funzionano grazie ai pacchetti Lap Data e Sessione.",
     }
@@ -376,6 +387,23 @@ impl ReApp {
                     ui.label(format!("{def})"));
                     ui.add(egui::DragValue::new(&mut s.udp_port).range(0..=65535));
                 });
+            }
+            if s.kind == SourceKind::Wrc {
+                ui.horizontal(|ui| {
+                    if ui.button("Prepara EA WRC").clicked() {
+                        let port = if s.udp_port == 0 { crate::sources::wrc::DEFAULT_PORT } else { s.udp_port };
+                        s.wrc_msg = Some(match crate::sources::wrc::prepare(&crate::sources::wrc::telemetry_dir(), port) {
+                            Ok(r) => Ok(format!("Fatto: {} canali (non trovati: {}). Riavvia EA WRC, poi premi Avvia.", r.channels.len(), if r.missing.is_empty() { "nessuno".to_string() } else { r.missing.join(", ") })),
+                            Err(e) => Err(e),
+                        });
+                    }
+                    ui.label(RichText::new(crate::sources::wrc::telemetry_dir().display().to_string()).size(11.0).color(color::TEXT_DIM));
+                });
+                match &s.wrc_msg {
+                    Some(Ok(m)) => ui.label(RichText::new(m).color(color::GREEN).size(12.0)),
+                    Some(Err(e)) => ui.label(RichText::new(e).color(color::RED).size(12.0)),
+                    None => ui.label(""),
+                };
             }
             if s.kind == SourceKind::Synthetic {
                 ui.checkbox(&mut s.hr_demo, "Battito simulato (per provare il pannello del pilota)");

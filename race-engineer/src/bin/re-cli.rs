@@ -1,5 +1,6 @@
 //! Headless runner.
-//!   re-cli --source synthetic|f1|acc|iracing [--seconds N] [--lap-dir DIR]
+//!   re-cli --prepare-wrc [--port N]     (EA WRC: writes the telemetry structure + config entry)
+//!   re-cli --source synthetic|f1|forza|wrc|lmu|acevo|acc|iracing [--seconds N] [--lap-dir DIR]
 //!          [--hr-ble [NAME]]   (feature `ble`: direct BLE heart-rate sensor/watch)
 //!          [--voice]           (features `tts`/`audio`: speak through Windows instead of printing)
 use race_engineer::runtime::{Runtime, RuntimeConfig};
@@ -16,15 +17,29 @@ fn flag(name: &str) -> bool {
 }
 
 fn main() {
+    if flag("--prepare-wrc") {
+        let port = arg("--port").and_then(|p| p.parse().ok()).unwrap_or(race_engineer::sources::wrc::DEFAULT_PORT);
+        match race_engineer::sources::wrc::prepare(&race_engineer::sources::wrc::telemetry_dir(), port) {
+            Ok(r) => println!("EA WRC pronto: {} canali (mancanti: {:?}), porta {}. Riavvia il gioco.", r.channels.len(), r.missing, r.port),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(2);
+            }
+        }
+        return;
+    }
     let which = arg("--source").unwrap_or_else(|| "synthetic".into());
     let kind = match which.as_str() {
         "synthetic" => SourceKind::Synthetic,
         "f1" => SourceKind::F1,
         "forza" => SourceKind::Forza,
+        "lmu" => SourceKind::Lmu,
+        "acevo" => SourceKind::AcEvo,
+        "wrc" => SourceKind::Wrc,
         "acc" => SourceKind::Acc,
         "iracing" => SourceKind::IRacing,
         other => {
-            eprintln!("unknown source '{other}' (synthetic|f1|forza|acc|iracing)");
+            eprintln!("unknown source '{other}' (synthetic|f1|forza|wrc|lmu|acevo|acc|iracing)");
             std::process::exit(2);
         }
     };
