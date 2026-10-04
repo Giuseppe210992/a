@@ -174,35 +174,43 @@ impl Default for ReApp {
     }
 }
 
+fn native_options(renderer: eframe::Renderer) -> eframe::NativeOptions {
+    eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default().with_inner_size([1360.0, 820.0]).with_min_inner_size([1000.0, 640.0]).with_title("Race Engineer"),
+        renderer,
+        ..Default::default()
+    }
+}
+
+fn create_app(cc: &eframe::CreationContext<'_>) -> Result<Box<dyn eframe::App>, Box<dyn std::error::Error + Send + Sync>> {
+    // Always dark: the cards use fixed dark colours, so following a light Windows theme would clash.
+    cc.egui_ctx.set_theme(egui::ThemePreference::Dark);
+    let mut app = ReApp::default();
+    // `--autostart synthetic|f1|forza|iracing|acc` skips the setup screen (kiosk / testing).
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(i) = args.iter().position(|a| a == "--autostart") {
+        app.setup.kind = match args.get(i + 1).map(String::as_str) {
+            Some("f1") => SourceKind::F1,
+            Some("forza") => SourceKind::Forza,
+            Some("iracing") => SourceKind::IRacing,
+            Some("acc") => SourceKind::Acc,
+            _ => SourceKind::Synthetic,
+        };
+        app.start();
+    }
+    Ok(Box::new(app))
+}
+
 pub fn run() -> eframe::Result {
     crate::diag::init("re-gui.log");
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([1360.0, 820.0]).with_min_inner_size([1000.0, 640.0]).with_title("Race Engineer"),
-        renderer: eframe::Renderer::Glow,
-        ..Default::default()
-    };
-    eframe::run_native(
-        "Race Engineer",
-        options,
-        Box::new(|cc| {
-            // Always dark: the cards use fixed dark colours, so following a light Windows theme would clash.
-            cc.egui_ctx.set_theme(egui::ThemePreference::Dark);
-            let mut app = ReApp::default();
-            // `--autostart synthetic|f1|iracing|acc` skips the setup screen (kiosk / testing).
-            let args: Vec<String> = std::env::args().collect();
-            if let Some(i) = args.iter().position(|a| a == "--autostart") {
-                app.setup.kind = match args.get(i + 1).map(String::as_str) {
-                    Some("f1") => SourceKind::F1,
-                    Some("forza") => SourceKind::Forza,
-                    Some("iracing") => SourceKind::IRacing,
-                    Some("acc") => SourceKind::Acc,
-                    _ => SourceKind::Synthetic,
-                };
-                app.start();
-            }
-            Ok(Box::new(app))
-        }),
-    )
+    let r = eframe::run_native("Race Engineer", native_options(eframe::Renderer::Glow), Box::new(create_app));
+    if let Err(e) = &r {
+        let msg = format!("Impossibile aprire la finestra grafica (serve OpenGL 2.0 o superiore; aggiorna i driver video): {e}");
+        crate::diag::error(&msg);
+        #[cfg(windows)]
+        crate::diag::message_box("Race Engineer", &msg);
+    }
+    r
 }
 
 impl ReApp {
@@ -458,6 +466,12 @@ impl ReApp {
                 let (txt, c) = if live { ("telemetria attiva", color::GREEN) } else { ("in attesa del simulatore", color::AMBER) };
                 widgets::status(ui, c, txt);
                 ui.label(RichText::new(&self.view.source).color(color::TEXT_DIM));
+                if let Some(si) = self.view.frame.as_ref().and_then(|f| f.session.as_deref()) {
+                    let label = [si.car.as_deref(), si.track.as_deref()].into_iter().flatten().collect::<Vec<_>>().join(" · ");
+                    if !label.is_empty() {
+                        ui.label(RichText::new(label).strong());
+                    }
+                }
                 ui.separator();
                 ui.label(format!("latenza interna {:.2} ms", self.view.pipeline_latency_ms));
                 ui.label(RichText::new(format!("frame persi {}", self.view.frames_dropped)).color(if self.view.frames_dropped > 0 { color::AMBER } else { color::TEXT_DIM }));
@@ -657,12 +671,6 @@ impl ReApp {
                 stat(ui, "Delta", &dt, dc);
                 let corner = v.analysis.corner.map_or("—".to_string(), |c| format!("Curva {c}"));
                 stat(ui, "Posizione", &corner, color::AMBER);
-                if let Some(s) = session {
-                    let label = [s.car.as_deref(), s.track.as_deref()].into_iter().flatten().collect::<Vec<_>>().join(" · ");
-                    if !label.is_empty() {
-                        ui.label(RichText::new(label).color(color::TEXT_DIM));
-                    }
-                }
             });
             ui.add_space(6.0);
             widgets::track_map(ui, v.analysis.track.as_deref(), &self.trail, f, v.analysis.corner);

@@ -423,14 +423,8 @@ fn decode_text_of(mem: &[u8], layout: &IrsdkLayout) -> String {
 pub fn open_windows() -> IrsdkSource<impl FnMut() -> Option<Vec<u8>> + Send> {
     // NOTE: copies the whole mapping (~1 MB) per poll; fine at 60 Hz, to be
     // optimised with an in-place view if 360 Hz sampling is used.
-    use super::winshm::Mapping;
-    let mut map: Option<Mapping> = None;
-    IrsdkSource::new(move || {
-        if map.is_none() {
-            map = Mapping::open(MAP_NAME);
-        }
-        map.as_ref().map(|m| m.to_vec())
-    })
+    let mut map = super::winshm::LazyMapping::new(MAP_NAME);
+    IrsdkSource::new(move || map.bytes())
 }
 
 /// Builds a structurally faithful iRacing mapping. Used by unit tests and by the

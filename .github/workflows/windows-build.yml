@@ -17,10 +17,11 @@ jobs:
       - name: Test
         run: cargo test
       - name: Build (GUI + BLE + speech + clips)
-        run: cargo build --release --features gui,ble,tts,audio
+        run: cargo build --release --features gui,ble,tts,audio,stt
       - uses: actions/upload-artifact@v4
         with:
           name: race-engineer-windows
           path: |
             race-engineer/target/release/re-gui.exe
             race-engineer/target/release/re-cli.exe
+            race-engineer/target/release/re-fakesim.exe

@@ -68,3 +68,25 @@ impl Drop for Mapping {
         }
     }
 }
+
+/// A mapping that is opened on demand and retried at most twice a second while the simulator
+/// is not running (OpenFileMapping on every 4 ms poll would be wasteful).
+pub struct LazyMapping {
+    name: &'static str,
+    map: Option<Mapping>,
+    last_try: Option<std::time::Instant>,
+}
+
+impl LazyMapping {
+    pub fn new(name: &'static str) -> Self {
+        Self { name, map: None, last_try: None }
+    }
+
+    pub fn bytes(&mut self) -> Option<Vec<u8>> {
+        if self.map.is_none() && self.last_try.is_none_or(|t| t.elapsed() >= std::time::Duration::from_millis(500)) {
+            self.last_try = Some(std::time::Instant::now());
+            self.map = Mapping::open(self.name);
+        }
+        self.map.as_ref().map(|m| m.to_vec())
+    }
+}

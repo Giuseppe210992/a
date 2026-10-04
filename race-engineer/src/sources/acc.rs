@@ -215,17 +215,9 @@ where
 
 #[cfg(windows)]
 pub fn open_windows() -> AccSource<impl FnMut() -> Option<Vec<u8>> + Send, impl FnMut() -> Option<Vec<u8>> + Send, impl FnMut() -> Option<Vec<u8>> + Send> {
-    use super::winshm::Mapping;
-    fn lazy(name: &'static str) -> impl FnMut() -> Option<Vec<u8>> + Send {
-        let mut m: Option<Mapping> = None;
-        move || {
-            if m.is_none() {
-                m = Mapping::open(name);
-            }
-            m.as_ref().map(|m| m.to_vec())
-        }
-    }
-    AccSource::new(lazy(PHYSICS_MAP), lazy(GRAPHICS_MAP), lazy(STATIC_MAP))
+    use super::winshm::LazyMapping;
+    let (mut p, mut g, mut st) = (LazyMapping::new(PHYSICS_MAP), LazyMapping::new(GRAPHICS_MAP), LazyMapping::new(STATIC_MAP));
+    AccSource::new(move || p.bytes(), move || g.bytes(), move || st.bytes())
 }
 
 #[cfg(test)]

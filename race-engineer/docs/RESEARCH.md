@@ -6,15 +6,18 @@ anything not marked "verified" must be confirmed against the primary spec on a W
 
 ## Simulators
 
+Sources actually read in this session: F1 25 UDP specification (packet structs and sizes), a public C# mapping of the
+ACC/AC shared-memory structs (Physics, Graphics, StaticInfo, `Pack = 4`), the pyirsdk reader (iRacing header, var
+buffers incl. `tickCountBegin`, YAML session info sections), the community FM7 "dash" parser and the rF2 plugin header.
+
 | Sim | Mechanism | Rate | Verified | Open points |
 |---|---|---|---|---|
-| iRacing | Memory-mapped file `Local\IRSDKMemMapFileName`; header with `tickRate`, rotating buffers with `tickCount`; variable table (name/type/offset/unit) | 60 Hz; 360 Hz with `irsdkEnableMem=1`, `irsdkLog360Hz=1` in `app.ini` | Mechanism and header fields (public SDK clone) | Real variable availability per car (tyre temps may be absent); behaviour across sessions |
-| ACC / AC | Shared memory `acpmf_physics`, `acpmf_graphics`, `acpmf_static` | physics per sim step, graphics per frame | Page names and roles | Exact field offsets (kept in one table in `sources/acc.rs`), sign convention of `steerAngle` |
-| F1 25 | UDP, default port 20777, in-game format 2025, 10–60 Hz | configurable | Port, format setting, Car Telemetry size 1352 B (matches our computed layout) | Lap Data / Session / Car Status layouts (needed for track position) |
-| Forza Motorsport | "Data Out" UDP, Sled/Dash formats, ~60 pkt/s, IP/port configurable | 60 Hz | Existence and rate | Byte layout |
-| Le Mans Ultimate / rF2 | `rF2SharedMemoryMapPlugin64.dll` buffers `$rFactor2SMMP_Telemetry$`, `_Scoring$`, `_Extended$`; 4-byte packing; version counters | ~50 Hz reported | Mechanism | Struct layouts; plugin must be installed |
-| AC Evo | Shared-memory libraries exist | ? | — | Everything |
-| EA WRC | Only old forum threads found about future UDP telemetry | ? | — | Whether and how it is available now |
+| iRacing | `Local\IRSDKMemMapFileName`; header (tickRate@8, sessionInfo update/len/offset@12/16/20, numVars@24, varHeaderOffset@28, numBuf@32, bufLen@36, 4 x {tickCount, bufOffset, tickCountBegin}@48); var headers {type, offset, count, name@16, desc@48, unit@112}; YAML sections WeekendInfo / DriverInfo / CarSetup | 60 Hz; 360 Hz with `irsdkEnableMem=1`, `irsdkLog360Hz=1` | header and buffer layout (pyirsdk) | variable availability per car (tyre temps, Lat/Lon names assumed from the public variable list), CarSetup content per car |
+| ACC / AC | `acpmf_physics`, `acpmf_graphics`, `acpmf_static` | physics per sim step, graphics per frame | all offsets used (physics 0..167, graphics up to carCoordinates@252, static car@68 track@134 maxRpm@412) | real-game check; steerAngle sign/scale; ACC has no setup in shared memory |
+| F1 25 | UDP 20777, format 2025, 10–60 Hz | configurable | Motion 1349, Session 753, Lap Data 1285, Car Setups 1133, Car Telemetry 1352, Car Status 1239 bytes and every field offset used | real-game check; other packets unused |
+| Forza Motorsport | Data Out UDP "Dash" 311 B (FM7) / 331 B (2023) | ~60 Hz | layout of the first 311 bytes from a community parser | gear mapping, tyre temperature units, FM2023 extra fields; no track position |
+| Le Mans Ultimate / rF2 | rF2 Shared Memory Map plugin (`$rFactor2SMMP_*$`) | ~50 Hz | struct field layouts of the telemetry vehicle readable | the fetched header does not show whether each buffer starts with the begin/end version block; needs the game to settle → not implemented |
+| AC Evo, EA WRC | — | — | nothing verifiable | not implemented |
 
 ## Heart rate / smartwatch
 

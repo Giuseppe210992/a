@@ -315,7 +315,11 @@ impl Runtime {
         {
             let controls = controls.clone();
             handles.push(thread::Builder::new().name("re-voice".into()).spawn(move || {
-                run_voice_loop(voice_rx, sink_factory(), &controls.voice_status)
+                let sink = std::panic::catch_unwind(std::panic::AssertUnwindSafe(sink_factory)).unwrap_or_else(|_| {
+                    diag::error("audio di Windows non inizializzabile: la voce resta in modalità testo");
+                    Box::new(crate::voice::ConsoleSink)
+                });
+                run_voice_loop(voice_rx, Box::new(crate::voice::SafeSink::new(sink)), &controls.voice_status)
             }).expect("spawn voice thread"));
         }
 
@@ -374,6 +378,27 @@ mod tests {
         assert!(snap.messages.iter().any(|m| m.text.starts_with("Giro")));
         let spoken = spoken.lock().unwrap();
         assert!(spoken.iter().any(|s| s.starts_with("Giro")), "{spoken:?}");
+    }
+
+    #[test]
+    fn voice_commands_change_mode_mute_and_answer_status() {
+        use crate::commands::VoiceCommand;
+        let spoken = Arc::new(Mutex::new(vec![]));
+        let rt = spawn_with(&spoken, EngineerMode::Full);
+        thread::sleep(Duration::from_millis(2500)); // let a lap or two be learned
+        rt.command_tx.send(VoiceCommand::Status).unwrap();
+        thread::sleep(Duration::from_millis(300));
+        assert!(spoken.lock().unwrap().iter().any(|s| s.starts_with("miglior giro")), "{:?}", spoken.lock().unwrap());
+        rt.command_tx.send(VoiceCommand::SetMode(EngineerMode::Silent)).unwrap();
+        thread::sleep(Duration::from_millis(200));
+        assert_eq!(rt.controls.mode(), EngineerMode::Silent);
+        rt.command_tx.send(VoiceCommand::Mute(true)).unwrap();
+        thread::sleep(Duration::from_millis(200));
+        assert!(rt.controls.muted());
+        rt.command_tx.send(VoiceCommand::SetMode(EngineerMode::Full)).unwrap();
+        thread::sleep(Duration::from_millis(200));
+        assert!(!rt.controls.muted(), "'completo' also un-mutes");
+        rt.shutdown();
     }
 
     #[test]

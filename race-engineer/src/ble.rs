@@ -91,9 +91,16 @@ pub fn spawn_hr_listener(cfg: BleConfig, tx: Sender<(f64, HrMeasurement)>, stop:
         .name("re-ble".into())
         .spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("tokio runtime");
+            let mut reported = false;
             while !stop.load(Ordering::Relaxed) {
                 if let Err(e) = rt.block_on(session(&cfg, &tx, &stop)) {
-                    eprintln!("[ble] {e}; retrying in 3 s");
+                    let msg = format!("Bluetooth battito: {e} (adattatore Bluetooth acceso? orologio in modalità trasmissione battito? provo di nuovo ogni pochi secondi)");
+                    if reported {
+                        crate::diag::log(&msg);
+                    } else {
+                        crate::diag::error(msg);
+                        reported = true;
+                    }
                 }
                 for _ in 0..30 {
                     if stop.load(Ordering::Relaxed) {

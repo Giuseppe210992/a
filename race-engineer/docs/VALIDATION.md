@@ -1,6 +1,8 @@
 # Validation checklist (needs a Windows PC with the simulator)
 
-Nothing below has been run on Windows hardware yet.
+Done so far: the Windows executables were run under Wine against `re-fakesim` (shared memory and UDP formats,
+GUI, settings, log). NOT done: anything involving the real games, real Bluetooth, real speech/audio hardware, a real
+Windows desktop (DPI, GPU drivers). Everything below is for a real Windows PC.
 
 1. **Build**: `cargo build --release --features ble,tts,audio`.
 2. **iRacing**: run `re-cli --source iracing` on track; check speed/RPM/gear/pedals vs the in-game
@@ -25,3 +27,7 @@ Nothing below has been run on Windows hardware yet.
    `glow`, repaint capped); if the sim is affected, use 15 fps or minimise the window.
 10. **Map**: iRacing builds the map from Lat/Lon (names assumed from the public SDK variable list;
     if absent the UI falls back to a schematic ring). ACC and F1 currently give no coordinates → ring.
+11. **Voice commands** (`stt` feature, experimental): enable in the setup screen, say "stato" / "silenzio" / "completo";
+    check the banner for errors (microphone access for desktop apps, speech language pack).
+12. **Forza**: confirm gear display, that tyres stay empty and that the live map follows the car.
+13. **Logs**: `%LOCALAPPDATA%\RaceEngineer\re-gui.log` — attach it when something misbehaves.

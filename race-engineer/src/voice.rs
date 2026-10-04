@@ -121,6 +121,46 @@ pub trait AudioSink {
     fn is_busy(&mut self) -> bool;
 }
 
+/// Wraps any sink so a panic inside OS audio/speech code degrades to console output instead of
+/// killing the voice thread (and with it every later call).
+pub struct SafeSink {
+    inner: Box<dyn AudioSink>,
+    failed: bool,
+}
+
+impl SafeSink {
+    pub fn new(inner: Box<dyn AudioSink>) -> Self {
+        Self { inner, failed: false }
+    }
+
+    fn guard<R>(&mut self, default: R, f: impl FnOnce(&mut dyn AudioSink) -> R) -> R {
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(self.inner.as_mut())));
+        match r {
+            Ok(v) => v,
+            Err(_) => {
+                if !self.failed {
+                    crate::diag::error("errore nell'audio di Windows: la voce passa alla modalità testo");
+                }
+                self.failed = true;
+                self.inner = Box::new(ConsoleSink);
+                default
+            }
+        }
+    }
+}
+
+impl AudioSink for SafeSink {
+    fn play(&mut self, u: &Utterance) {
+        self.guard((), |s| s.play(u))
+    }
+    fn stop(&mut self) {
+        self.guard((), |s| s.stop())
+    }
+    fn is_busy(&mut self) -> bool {
+        self.guard(false, |s| s.is_busy())
+    }
+}
+
 /// Prints instead of speaking: used for headless runs and tests.
 #[derive(Default)]
 pub struct ConsoleSink;
@@ -175,6 +215,25 @@ pub fn run_voice_loop(rx: Receiver<Utterance>, mut sink: Box<dyn AudioSink>, sta
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct Exploding;
+    impl AudioSink for Exploding {
+        fn play(&mut self, _: &Utterance) {
+            panic!("driver crashed");
+        }
+        fn stop(&mut self) {}
+        fn is_busy(&mut self) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn safe_sink_survives_a_panicking_backend() {
+        let mut s = SafeSink::new(Box::new(Exploding));
+        s.play(&Utterance::new(Priority::Normal, "a", 0.0)); // panics inside, is contained
+        s.play(&Utterance::new(Priority::Normal, "b", 0.0)); // now goes to the console sink
+        assert!(!s.is_busy());
+    }
 
     #[test]
     fn orders_by_priority_then_age() {
