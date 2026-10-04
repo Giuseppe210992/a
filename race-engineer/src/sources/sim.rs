@@ -2,6 +2,7 @@
 //! be exercised and tested without any simulator running.
 
 use super::TelemetrySource;
+use crate::biometrics::{Contact, HrMeasurement};
 use crate::clock::monotonic_s;
 use crate::telemetry::{SimId, TelemetryFrame};
 
@@ -94,7 +95,14 @@ impl SyntheticCar {
             last_lap_s: self.last_lap,
             best_lap_s: self.best_lap,
             in_pit: false,
+            pos_m: Some(Self::position(self.s / TRACK_LEN_M)),
         }
+    }
+
+    /// Closed demo layout, in metres.
+    pub fn position(pct: f64) -> [f32; 2] {
+        let th = pct * std::f64::consts::TAU;
+        [(700.0 * th.cos() + 150.0 * (3.0 * th).cos()) as f32, (450.0 * th.sin() + 110.0 * (2.0 * th).sin()) as f32]
     }
 }
 
@@ -129,6 +137,31 @@ impl TelemetrySource for SyntheticSource {
         }
         f
     }
+}
+
+/// Demo heart-rate feed (1 Hz, with an RR interval per beat) for trying the biometric
+/// path without a sensor. Slowly swings between a calm and a high-arousal range.
+pub fn spawn_hr_demo(
+    tx: std::sync::mpsc::Sender<(f64, HrMeasurement)>,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> std::thread::JoinHandle<()> {
+    std::thread::Builder::new()
+        .name("re-hr-demo".into())
+        .spawn(move || {
+            let mut seed = 12345u32;
+            while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                let t = monotonic_s();
+                let bpm = 105.0 + 60.0 * (t / 40.0).sin();
+                seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let jitter = ((seed >> 16) as f64 / 65_535.0 - 0.5) * 60.0; // ±30 ms
+                let m = HrMeasurement { bpm: bpm.round() as u16, contact: Contact::Detected, rr_ms: vec![(60_000.0 / bpm + jitter) as f32] };
+                if tx.send((t, m)).is_err() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(1000));
+            }
+        })
+        .expect("spawn hr demo thread")
 }
 
 #[cfg(test)]

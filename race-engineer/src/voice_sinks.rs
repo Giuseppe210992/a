@@ -97,3 +97,39 @@ mod clip_impl {
 }
 #[cfg(feature = "audio")]
 pub use clip_impl::ClipSink;
+
+use crate::runtime::SinkFactory;
+use crate::voice::ConsoleSink;
+
+/// Speech to the Windows audio device when built with `tts` (and `audio` for WAV clips of the
+/// critical calls from `./clips`), otherwise printing to the console.
+pub fn default_factory(voice: bool) -> SinkFactory {
+    #[cfg(feature = "tts")]
+    if voice {
+        return Box::new(|| {
+            use crate::voice::AudioSink;
+            let tts = match TtsSink::new() {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("[voice] Windows speech synthesis unavailable: {e}");
+                    return Box::new(ConsoleSink) as Box<dyn AudioSink>;
+                }
+            };
+            #[cfg(feature = "audio")]
+            return match ClipSink::new(std::path::Path::new("clips"), tts) {
+                Ok(c) => Box::new(c) as Box<dyn AudioSink>,
+                Err(e) => {
+                    eprintln!("[voice] no audio output for clips: {e}");
+                    Box::new(ConsoleSink) as Box<dyn AudioSink>
+                }
+            };
+            #[cfg(not(feature = "audio"))]
+            return Box::new(tts) as Box<dyn AudioSink>;
+        });
+    }
+    let _ = voice;
+    Box::new(|| Box::new(ConsoleSink))
+}
+
+/// True when this build can actually speak (not just print).
+pub const CAN_SPEAK: bool = cfg!(feature = "tts");

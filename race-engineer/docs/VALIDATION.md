@@ -19,3 +19,9 @@ Nothing below has been run on Windows hardware yet.
    The engineer must not change frame pacing. If it does, lower thread priorities / poll rate.
 8. **Thresholds**: tyre temperature limits, HR zones (resting/max HR) and the brake-call lead time
    (`EngineerConfig`) are generic defaults, to be calibrated per car and driver.
+9. **GUI**: start `re-gui`, pick the simulator, drive two valid laps; confirm corner numbers on the map,
+   delta sign (positive = slower than the best lap), tyre cards, HR card and the "voce" state.
+   Check GPU/frame-time impact of the dashboard itself with the "UI 15/30/60 fps" selector (OpenGL via
+   `glow`, repaint capped); if the sim is affected, use 15 fps or minimise the window.
+10. **Map**: iRacing builds the map from Lat/Lon (names assumed from the public SDK variable list;
+    if absent the UI falls back to a schematic ring). ACC and F1 currently give no coordinates → ring.

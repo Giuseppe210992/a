@@ -38,6 +38,8 @@ pub struct TelemetryFrame {
     pub last_lap_s: Option<f32>,
     pub best_lap_s: Option<f32>,
     pub in_pit: bool,
+    /// Position in metres in a local frame (east, north), when the sim exposes one.
+    pub pos_m: Option<[f32; 2]>,
 }
 
 pub const PSI_TO_KPA: f32 = 6.894_757;

@@ -2,9 +2,8 @@
 //!   re-cli --source synthetic|f1|acc|iracing [--seconds N] [--lap-dir DIR]
 //!          [--hr-ble [NAME]]   (feature `ble`: direct BLE heart-rate sensor/watch)
 //!          [--voice]           (features `tts`/`audio`: speak through Windows instead of printing)
-use race_engineer::runtime::{Runtime, RuntimeConfig, SinkFactory};
-use race_engineer::sources::{self, TelemetrySource};
-use race_engineer::voice::ConsoleSink;
+use race_engineer::runtime::{Runtime, RuntimeConfig};
+use race_engineer::sources::{self, SourceKind};
 use std::time::Duration;
 
 fn arg(name: &str) -> Option<String> {
@@ -16,42 +15,23 @@ fn flag(name: &str) -> bool {
     std::env::args().any(|x| x == name)
 }
 
-fn sink_factory() -> SinkFactory {
-    #[cfg(feature = "tts")]
-    if flag("--voice") {
-        return Box::new(|| {
-            use race_engineer::voice::AudioSink;
-            let tts = race_engineer::voice_sinks::TtsSink::new().expect("Windows speech synthesis unavailable");
-            #[cfg(feature = "audio")]
-            if let Ok(c) = race_engineer::voice_sinks::ClipSink::new(std::path::Path::new("clips"), tts) {
-                return Box::new(c) as Box<dyn AudioSink>;
-            } else {
-                eprintln!("[voice] no audio device/clips: critical calls fall back to the console");
-                return Box::new(ConsoleSink) as Box<dyn AudioSink>;
-            }
-            #[cfg(not(feature = "audio"))]
-            return Box::new(tts) as Box<dyn AudioSink>;
-        });
-    }
-    #[cfg(not(feature = "tts"))]
-    let _ = flag("--voice");
-    Box::new(|| Box::new(ConsoleSink))
-}
-
 fn main() {
     let which = arg("--source").unwrap_or_else(|| "synthetic".into());
-    let source: Box<dyn TelemetrySource> = match which.as_str() {
-        "synthetic" => Box::new(sources::sim::SyntheticSource::new(arg("--speedup").and_then(|s| s.parse().ok()).unwrap_or(10.0))),
-        "f1" => Box::new(sources::f1::F1UdpSource::bind(sources::f1::DEFAULT_PORT).expect("bind UDP 20777")),
-        #[cfg(windows)]
-        "acc" => Box::new(sources::acc::open_windows()),
-        #[cfg(windows)]
-        "iracing" => Box::new(sources::irsdk::open_windows()),
+    let kind = match which.as_str() {
+        "synthetic" => SourceKind::Synthetic,
+        "f1" => SourceKind::F1,
+        "acc" => SourceKind::Acc,
+        "iracing" => SourceKind::IRacing,
         other => {
-            eprintln!("unsupported source '{other}' on this platform (acc/iracing need Windows)");
+            eprintln!("unknown source '{other}' (synthetic|f1|acc|iracing)");
             std::process::exit(2);
         }
     };
+    let speedup = arg("--speedup").and_then(|s| s.parse().ok()).unwrap_or(10.0);
+    let source = sources::open(kind, speedup).unwrap_or_else(|e| {
+        eprintln!("{e}");
+        std::process::exit(2);
+    });
 
     let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     #[allow(unused_mut)]
@@ -75,7 +55,7 @@ fn main() {
     }
 
     let lap_dir = arg("--lap-dir").map(std::path::PathBuf::from);
-    let rt = Runtime::spawn(source, hr_rx, sink_factory(), RuntimeConfig { lap_dir, ..Default::default() });
+    let rt = Runtime::spawn(source, hr_rx, race_engineer::voice_sinks::default_factory(flag("--voice")), RuntimeConfig { lap_dir, ..Default::default() });
     let secs: u64 = arg("--seconds").and_then(|s| s.parse().ok()).unwrap_or(30);
     for _ in 0..secs {
         std::thread::sleep(Duration::from_secs(1));

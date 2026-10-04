@@ -1,0 +1,26 @@
+name: windows-build
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "race-engineer/**"
+      - ".github/workflows/windows-build.yml"
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: race-engineer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test
+        run: cargo test
+      - name: Build (GUI + BLE + speech + clips)
+        run: cargo build --release --features gui,ble,tts,audio
+      - uses: actions/upload-artifact@v4
+        with:
+          name: race-engineer-windows
+          path: |
+            race-engineer/target/release/re-gui.exe
+            race-engineer/target/release/re-cli.exe

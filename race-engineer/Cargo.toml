@@ -13,6 +13,11 @@ path = "src/lib.rs"
 name = "re-cli"
 path = "src/bin/re-cli.rs"
 
+[[bin]]
+name = "re-gui"
+path = "src/bin/re-gui.rs"
+required-features = ["gui"]
+
 [features]
 default = []
 # Bluetooth LE heart-rate sensor/watch directly from the PC (btleplug -> WinRT on Windows)
@@ -21,6 +26,8 @@ ble = ["dep:btleplug", "dep:tokio", "dep:futures-util", "dep:uuid"]
 tts = ["dep:tts"]
 # Pre-decoded WAV clips for critical calls, played through the default Windows audio device
 audio = ["dep:rodio"]
+# Native Windows dashboard (egui). Light on purpose: capped repaint rate, no per-frame work in the sim path.
+gui = ["dep:eframe"]
 
 [dependencies]
 btleplug = { version = "0.11", optional = true }
@@ -28,6 +35,8 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"], optio
 futures-util = { version = "0.3", optional = true }
 uuid = { version = "1", optional = true }
 tts = { version = "0.26", optional = true }
+# glow (OpenGL) rather than wgpu: smaller GPU/VRAM footprint next to a running simulator
+eframe = { version = "0.36", default-features = false, features = ["default_fonts", "glow", "x11"], optional = true }
 rodio = { version = "0.20", default-features = false, features = ["wav"], optional = true }
 
 [target.'cfg(windows)'.dependencies]

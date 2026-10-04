@@ -5,10 +5,12 @@
 //! Thresholds are generic defaults, to be tuned per car/compound/driver.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::biometrics::{ArousalLevel, BiometricState};
 use crate::recorder::{Lap, LapRecorder};
 use crate::telemetry::TelemetryFrame;
+use crate::track::{self, TrackModel};
 use crate::voice::{Clip, Priority, Utterance};
 
 #[derive(Debug, Clone)]
@@ -56,9 +58,23 @@ pub fn brake_zones(lap: &Lap) -> Vec<BrakeZone> {
     zones
 }
 
+/// Per-frame analysis results for the UI (cheap to clone).
+#[derive(Debug, Clone, Default)]
+pub struct Analysis {
+    pub track: Option<Arc<TrackModel>>,
+    /// Seconds vs the reference (best valid) lap; positive = slower.
+    pub delta_s: Option<f32>,
+    /// 1-based number of the corner the car is in, if any.
+    pub corner: Option<u32>,
+    /// Last completed lap vs the reference lap, per corner (positive = time lost).
+    pub corner_deltas: Vec<Option<f32>>,
+}
+
 pub struct Engineer {
     cfg: EngineerConfig,
     pub recorder: LapRecorder,
+    reference: Option<Lap>,
+    track: Option<Arc<TrackModel>>,
     zones: Vec<BrakeZone>,
     zone_length_m: f32,
     zone_fired: Vec<bool>,
@@ -66,6 +82,7 @@ pub struct Engineer {
     best_seen_s: Option<f32>,
     cooldown: HashMap<&'static str, f64>,
     hr_high_since: Option<f64>,
+    analysis: Analysis,
     pub completed_laps: Vec<Lap>,
 }
 
@@ -74,6 +91,8 @@ impl Engineer {
         Self {
             cfg,
             recorder: LapRecorder::new(),
+            reference: None,
+            track: None,
             zones: vec![],
             zone_length_m: 0.0,
             zone_fired: vec![],
@@ -81,12 +100,48 @@ impl Engineer {
             best_seen_s: None,
             cooldown: HashMap::new(),
             hr_high_since: None,
+            analysis: Analysis::default(),
             completed_laps: vec![],
         }
     }
 
     pub fn brake_zones(&self) -> &[BrakeZone] {
         &self.zones
+    }
+
+    pub fn analysis(&self) -> &Analysis {
+        &self.analysis
+    }
+
+    /// Where the last lap lost the most time against the reference lap.
+    pub fn suggestions(&self) -> Vec<String> {
+        let mut losses: Vec<(usize, f32)> = self
+            .analysis
+            .corner_deltas
+            .iter()
+            .enumerate()
+            .filter_map(|(i, d)| d.filter(|&d| d > 0.05).map(|d| (i, d)))
+            .collect();
+        losses.sort_by(|a, b| b.1.total_cmp(&a.1));
+        losses
+            .into_iter()
+            .take(3)
+            .map(|(i, d)| format!("Curva {}: {:+.2} s rispetto al miglior giro", i + 1, d))
+            .collect()
+    }
+
+    fn adopt_reference(&mut self, lap: &Lap) {
+        let corners = track::detect_corners(lap);
+        self.zones = brake_zones(lap);
+        self.zone_length_m = lap.length_m;
+        self.track = Some(Arc::new(TrackModel {
+            length_m: lap.length_m,
+            path: track::path_of(lap),
+            corners,
+            brake_zones: self.zones.clone(),
+        }));
+        self.analysis.track = self.track.clone();
+        self.reference = Some(lap.clone());
     }
 
     fn ready(&mut self, key: &'static str, now: f64, every_s: f64) -> bool {
@@ -110,14 +165,25 @@ impl Engineer {
 
         if let Some(lap) = self.recorder.push(f) {
             if lap.valid {
-                if self.recorder.best().is_some_and(|b| b.number == lap.number) {
-                    self.zones = brake_zones(&lap);
-                    self.zone_length_m = lap.length_m;
+                if let (Some(r), Some(t)) = (&self.reference, &self.track) {
+                    self.analysis.corner_deltas = track::corner_deltas(r, &lap, &t.corners);
                 }
                 out.push(Utterance::new(Priority::Normal, self.lap_message(&lap), now));
+                if self.reference.as_ref().is_none_or(|r| lap.time_s < r.time_s) {
+                    self.adopt_reference(&lap);
+                }
             }
             self.completed_laps.push(lap);
         }
+
+        self.analysis.delta_s = match (&self.reference, f.lap_dist_pct, f.lap_time_s) {
+            (Some(r), Some(p), Some(t)) => track::live_delta(r, p, t),
+            _ => None,
+        };
+        self.analysis.corner = match (&self.track, f.lap_dist_pct) {
+            (Some(t), Some(p)) => track::corner_at(&t.corners, p).map(|c| c.number),
+            _ => None,
+        };
 
         if f.lap != self.last_lap {
             self.last_lap = f.lap;

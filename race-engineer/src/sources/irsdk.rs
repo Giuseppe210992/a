@@ -68,6 +68,8 @@ pub struct IrsdkLayout {
     num_buf: usize,
     buf_len: usize,
     vars: HashMap<String, VarHeader>,
+    /// First valid (lat, lon) seen: origin of the local metric frame used for the map.
+    origin: std::cell::Cell<Option<(f64, f64)>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -115,7 +117,7 @@ impl IrsdkLayout {
             let unit = cstr(&mem[o + 112..o + 144]);
             vars.insert(name, VarHeader { ty, offset: offset as usize, unit });
         }
-        Ok(Self { tick_rate, num_buf: num_buf as usize, buf_len: buf_len as usize, vars })
+        Ok(Self { tick_rate, num_buf: num_buf as usize, buf_len: buf_len as usize, vars, origin: Default::default() })
     }
 
     /// (tickCount, bufOffset) of the most recently written buffer.
@@ -159,6 +161,31 @@ impl IrsdkLayout {
             VarType::Bool => Some(*buf.get(v.offset)? as f32),
             VarType::Char => None,
         }
+    }
+
+    /// Native f64 read (latitude/longitude need more than f32 precision).
+    fn d(&self, buf: &[u8], name: &str) -> Option<f64> {
+        let v = self.vars.get(name)?;
+        match v.ty {
+            VarType::Double => Some(f64::from_le_bytes(buf.get(v.offset..v.offset + 8)?.try_into().ok()?)),
+            _ => self.f(buf, name).map(f64::from),
+        }
+    }
+
+    fn position_m(&self, buf: &[u8]) -> Option<[f32; 2]> {
+        let (lat, lon) = (self.d(buf, "Lat")?, self.d(buf, "Lon")?);
+        if !(lat.abs() <= 90.0 && lon.abs() <= 180.0) || (lat == 0.0 && lon == 0.0) {
+            return None;
+        }
+        let (lat0, lon0) = match self.origin.get() {
+            Some(o) => o,
+            None => {
+                self.origin.set(Some((lat, lon)));
+                (lat, lon)
+            }
+        };
+        const M_PER_DEG: f64 = 111_320.0;
+        Some([((lon - lon0) * M_PER_DEG * lat0.to_radians().cos()) as f32, ((lat - lat0) * M_PER_DEG) as f32])
     }
 
     fn i(&self, buf: &[u8], name: &str) -> Option<i32> {
@@ -207,6 +234,7 @@ impl IrsdkLayout {
             last_lap_s: lap_time("LapLastLapTime"),
             best_lap_s: lap_time("LapBestLapTime"),
             in_pit: self.i(buf, "OnPitRoad").unwrap_or(0) != 0,
+            pos_m: self.position_m(buf),
         }
     }
 }

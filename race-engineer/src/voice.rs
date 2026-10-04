@@ -6,6 +6,7 @@
 //! less urgent that is currently being spoken and expire quickly: a "Frena!" that would
 //! play after the braking point is worse than silence, so it is dropped.
 
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::Duration;
 
@@ -135,7 +136,11 @@ impl AudioSink for ConsoleSink {
 }
 
 /// Runs until the sender side of `rx` is dropped.
-pub fn run_voice_loop(rx: Receiver<Utterance>, mut sink: Box<dyn AudioSink>) {
+/// Published by the voice thread for the UI.
+pub const VOICE_IDLE: u8 = 0;
+pub const VOICE_SPEAKING: u8 = 1;
+
+pub fn run_voice_loop(rx: Receiver<Utterance>, mut sink: Box<dyn AudioSink>, status: &AtomicU8) {
     let mut queue = VoiceQueue::default();
     let mut playing: Option<Priority> = None;
     loop {
@@ -163,6 +168,7 @@ pub fn run_voice_loop(rx: Receiver<Utterance>, mut sink: Box<dyn AudioSink>) {
                 playing = Some(u.priority);
             }
         }
+        status.store(if playing.is_some() { VOICE_SPEAKING } else { VOICE_IDLE }, Ordering::Relaxed);
     }
 }
 

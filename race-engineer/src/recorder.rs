@@ -12,6 +12,7 @@ pub struct Sample {
     pub speed_ms: f32,
     pub throttle: f32,
     pub brake: f32,
+    pub pos: Option<[f32; 2]>,
 }
 
 #[derive(Debug, Clone)]
@@ -81,6 +82,7 @@ impl LapRecorder {
                 speed_ms: f.speed_kmh / 3.6,
                 throttle: f.throttle,
                 brake: f.brake,
+                pos: f.pos_m,
             });
         }
         finished
@@ -147,7 +149,7 @@ mod tests {
             time_s: 91.5,
             length_m: 4000.0,
             valid: true,
-            samples: vec![Sample { pct: 0.1, lap_t: 9.0, speed_ms: 50.0, throttle: 1.0, brake: 0.0 }],
+            samples: vec![Sample { pct: 0.1, lap_t: 9.0, speed_ms: 50.0, throttle: 1.0, brake: 0.0, pos: None }],
         };
         let dir = std::env::temp_dir().join("re_csv_test");
         let p = write_csv(&lap, &dir).unwrap();
