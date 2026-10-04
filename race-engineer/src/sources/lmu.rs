@@ -33,11 +33,15 @@ fn read_struct<T: Copy>(b: &[u8]) -> Option<T> {
 #[derive(Default, Clone)]
 struct Scoring {
     lap_dist_m: Option<f64>,
+    /// Laps completed, from the SAME scoring record as `lap_dist_m`: the pair flips together.
+    laps: Option<u32>,
     track_len_m: Option<f64>,
     last_lap_s: Option<f32>,
     best_lap_s: Option<f32>,
     in_pits: bool,
     track: Option<String>,
+    /// When `lap_dist_m` was read: scoring updates only 5 times a second.
+    at_s: f64,
 }
 
 pub struct LmuSource<R: FnMut(usize, usize) -> Option<Vec<u8>> + Send> {
@@ -70,11 +74,13 @@ impl<R: FnMut(usize, usize) -> Option<Vec<u8>> + Send> LmuSource<R> {
         let lap_len = info.mLapDist;
         let track = cstr(&info.mTrackName);
         self.scoring = Scoring {
+            at_s: monotonic_s(),
             track_len_m: (lap_len.is_finite() && lap_len > 100.0).then_some(lap_len),
             track: Some(track).filter(|t| !t.is_empty()),
             ..player
                 .map(|v| Scoring {
                     lap_dist_m: Some(v.mLapDist).filter(|d| d.is_finite() && *d >= 0.0),
+                    laps: Some(v.mTotalLaps).filter(|&l| l >= 0).map(|l| l as u32),
                     last_lap_s: Some(v.mLastLapTime as f32).filter(|t| *t > 0.0),
                     best_lap_s: Some(v.mBestLapTime as f32).filter(|t| *t > 0.0),
                     in_pits: v.mInPits != 0,
@@ -200,8 +206,14 @@ impl<R: FnMut(usize, usize) -> Option<Vec<u8>> + Send> TelemetrySource for LmuSo
         }
 
         let lap_len = self.scoring.track_len_m;
+        // Scoring is 5 Hz (about 16 m steps at 300 km/h): advance the last lap distance with the
+        // 100 Hz speed between updates, so brake-point calls are not quantised.
         let pct = match (self.scoring.lap_dist_m, lap_len) {
-            (Some(d), Some(l)) => Some((d / l).clamp(0.0, 1.0) as f32),
+            (Some(d), Some(l)) => {
+                let ahead = speed_ms * (now - self.scoring.at_s).clamp(0.0, 0.5);
+                // never run past the line before scoring itself says the lap changed
+                Some(((d + ahead).min(l - 0.01) / l).clamp(0.0, 1.0) as f32)
+            }
             _ => None,
         };
         let lap_t = v.mElapsedTime - v.mLapStartET;
@@ -220,7 +232,8 @@ impl<R: FnMut(usize, usize) -> Option<Vec<u8>> + Send> TelemetrySource for LmuSo
             tyre_pressure_kpa: tyres_ok.then_some(press),
             fuel_l: Some(v.mFuel as f32).filter(|f| f.is_finite() && (0.0..=500.0).contains(f)),
             lap_dist_pct: pct,
-            lap: Some(v.mLapNumber).filter(|&l| l >= 0).map(|l| l as u32),
+            // lap number and lap distance come from the same 5 Hz scoring record so they change together
+            lap: self.scoring.laps.or_else(|| Some(v.mLapNumber).filter(|&l| l >= 0).map(|l| l as u32)),
             lap_time_s: Some(lap_t as f32).filter(|t| t.is_finite() && (0.0..3600.0).contains(t)),
             last_lap_s: self.scoring.last_lap_s,
             best_lap_s: self.scoring.best_lap_s,
@@ -308,6 +321,7 @@ pub mod fake {
         put(img, OFF_SCORING_INFO, info);
         let mut sv: rF2VehicleScoring = unsafe { std::mem::zeroed() };
         sv.mIsPlayer = 1;
+        sv.mTotalLaps = f.lap.unwrap_or(0) as i16;
         sv.mLapDist = f.lap_dist_pct.unwrap_or(0.0) as f64 * 4000.0;
         sv.mLastLapTime = f.last_lap_s.map_or(-1.0, |t| t as f64);
         sv.mBestLapTime = f.best_lap_s.map_or(-1.0, |t| t as f64);
@@ -356,6 +370,54 @@ mod tests {
         // new clock tick: new frame
         fake::write(&mut img.lock().unwrap(), &f, 100.01);
         assert!(src.poll().is_some());
+    }
+
+    #[test]
+    fn lap_position_advances_smoothly_between_5hz_scoring_updates() {
+        let mut car = SyntheticCar::default();
+        let mut f = car.step(0.01);
+        for _ in 0..800 {
+            f = car.step(0.01);
+        }
+        let img = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+        fake::write(&mut img.lock().unwrap(), &f, 50.0);
+        let mut src = source_over(img.clone());
+        let p0 = src.poll().unwrap().lap_dist_pct.unwrap();
+        // only the physics clock moves (scoring distance stays as written)
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        fake::write(&mut img.lock().unwrap(), &f, 50.12);
+        {
+            // keep the scoring distance frozen at its old value, like a 5 Hz update not yet arrived
+            let mut g = img.lock().unwrap();
+            let o = OFF_VEH_SCORING + std::mem::offset_of!(rF2VehicleScoring, mLapDist);
+            g[o..o + 8].copy_from_slice(&(p0 as f64 * 4000.0).to_le_bytes());
+        }
+        let p1 = src.poll().unwrap().lap_dist_pct.unwrap();
+        let expected = f.speed_kmh / 3.6 * 0.12 / 4000.0;
+        assert!(p1 > p0 && (p1 - p0 - expected).abs() < expected * 0.5 + 1e-5, "p0 {p0} p1 {p1} expected +{expected}");
+    }
+
+    #[test]
+    fn lap_number_and_distance_flip_together_at_the_line() {
+        // telemetry already says "lap 5" but the 5 Hz scoring record still describes the end of lap 4
+        let mut car = SyntheticCar::default();
+        let mut f = car.step(0.01);
+        for _ in 0..100 {
+            f = car.step(0.01);
+        }
+        f.lap = Some(4);
+        f.lap_dist_pct = Some(0.998);
+        let img = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+        fake::write(&mut img.lock().unwrap(), &f, 60.0);
+        {
+            let mut g = img.lock().unwrap();
+            let o = OFF_TELEM_INFO + offset_of!(rF2VehicleTelemetry, mLapNumber);
+            g[o..o + 4].copy_from_slice(&5i32.to_le_bytes());
+        }
+        let out = source_over(img).poll().unwrap();
+        assert_eq!(out.lap, Some(4), "lap comes from scoring, together with the distance");
+        assert!(out.lap_dist_pct.unwrap() >= 0.99, "{:?}", out.lap_dist_pct);
+        assert!(out.lap_dist_pct.unwrap() < 1.0, "extrapolation must not cross the line by itself");
     }
 
     #[test]
