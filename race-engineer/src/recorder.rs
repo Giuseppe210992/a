@@ -31,6 +31,7 @@ pub struct LapRecorder {
     dist_m: f64,
     last_t: Option<f64>,
     last_kept_t: f64,
+    last_pct: f32,
     saw_pit: bool,
     best: Option<Lap>,
 }
@@ -45,7 +46,7 @@ impl Default for LapRecorder {
 
 impl LapRecorder {
     pub fn new() -> Self {
-        Self { cur_lap: None, samples: vec![], dist_m: 0.0, last_t: None, last_kept_t: f64::MIN, saw_pit: false, best: None }
+        Self { cur_lap: None, samples: vec![], dist_m: 0.0, last_t: None, last_kept_t: f64::MIN, last_pct: -1.0, saw_pit: false, best: None }
     }
 
     pub fn best(&self) -> Option<&Lap> {
@@ -67,6 +68,7 @@ impl LapRecorder {
             self.dist_m = 0.0;
             self.last_t = None;
             self.last_kept_t = f64::MIN;
+            self.last_pct = -1.0;
             self.saw_pit = false;
         }
         if let Some(lt) = self.last_t {
@@ -74,8 +76,11 @@ impl LapRecorder {
         }
         self.last_t = Some(f.t_s);
         self.saw_pit |= f.in_pit;
-        if f.t_s - self.last_kept_t >= SAMPLE_PERIOD_S {
+        // Keep track position strictly increasing: simulators that publish lap distance at a lower rate
+        // than telemetry (or after a flashback) would otherwise add repeated/backwards positions.
+        if f.t_s - self.last_kept_t >= SAMPLE_PERIOD_S && pct > self.last_pct {
             self.last_kept_t = f.t_s;
+            self.last_pct = pct;
             self.samples.push(Sample {
                 pct,
                 lap_t: f.lap_time_s.unwrap_or(0.0),
@@ -140,6 +145,27 @@ mod tests {
         assert!((l.length_m - 4000.0).abs() < 60.0, "{}", l.length_m);
         assert!(rec.best().is_some());
         assert!(l.samples.len() > 100 && l.samples.len() < 3000, "decimated: {}", l.samples.len());
+    }
+
+    #[test]
+    fn positions_stay_strictly_increasing_even_if_distance_updates_slowly() {
+        let mut car = SyntheticCar::default();
+        let mut rec = LapRecorder::new();
+        let mut done = vec![];
+        let mut held_pct = 0.0f32;
+        for i in 0..30_000 {
+            let mut f = car.step(0.01);
+            // distance published only every 4th frame (like a 15 Hz packet next to 60 Hz telemetry)
+            if i % 4 == 0 {
+                held_pct = f.lap_dist_pct.unwrap();
+            }
+            f.lap_dist_pct = Some(held_pct);
+            if let Some(l) = rec.push(&f) {
+                done.push(l);
+            }
+        }
+        let l = done.last().unwrap();
+        assert!(l.samples.windows(2).all(|w| w[1].pct > w[0].pct), "pct must increase");
     }
 
     #[test]

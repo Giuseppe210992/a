@@ -433,7 +433,7 @@ impl ReApp {
             });
             ui.horizontal(|ui| {
                 ui.checkbox(&mut s.save_laps, "Salva i giri (CSV) in");
-                ui.add_enabled(s.save_laps, egui::TextEdit::singleline(&mut s.lap_dir).desired_width(200.0));
+                ui.add_enabled(s.save_laps, egui::TextEdit::singleline(&mut s.lap_dir).desired_width(380.0));
             });
         });
         if let Some(e) = &s.error {
