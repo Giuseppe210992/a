@@ -92,13 +92,17 @@ pub fn spawn_hr_listener(cfg: BleConfig, tx: Sender<(f64, HrMeasurement)>, stop:
         .spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("tokio runtime");
             let mut reported = false;
+            let mut attempts = 0u32;
             while !stop.load(Ordering::Relaxed) {
                 let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| rt.block_on(session(&cfg, &tx, &stop))));
                 let res = res.unwrap_or_else(|_| Err(btleplug::Error::Other("errore interno nel Bluetooth".to_string().into())));
                 if let Err(e) = res {
                     let msg = format!("Smartwatch/fascia non collegato ({e}): il resto funziona normalmente, riprovo ogni pochi secondi. Serve Bluetooth LE acceso e la trasmissione del battito attiva sull'orologio.");
+                    attempts += 1;
                     if reported {
-                        crate::diag::log(&msg);
+                        if attempts % 20 == 0 {
+                            crate::diag::log(&msg); // about once a minute, not every retry
+                        }
                     } else {
                         crate::diag::warn("RE-BLE-01", msg);
                         reported = true;

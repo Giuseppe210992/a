@@ -247,9 +247,6 @@ fn native_options(renderer: eframe::Renderer) -> eframe::NativeOptions {
 fn create_app(cc: &eframe::CreationContext<'_>) -> Result<Box<dyn eframe::App>, Box<dyn std::error::Error + Send + Sync>> {
     // Always dark: the cards use fixed dark colours, so following a light Windows theme would clash.
     cc.egui_ctx.set_theme(egui::ThemePreference::Dark);
-    if std::env::var_os("RE_DEBUG_RAISE").is_some() {
-        crate::diag::error("RE-TEST-01", "errore di prova (RE_DEBUG_RAISE)");
-    }
     let mut app = ReApp::default();
     // `--autostart synthetic|f1|forza|iracing|acc` skips the setup screen (kiosk / testing).
     let args: Vec<String> = std::env::args().collect();
@@ -265,6 +262,9 @@ fn create_app(cc: &eframe::CreationContext<'_>) -> Result<Box<dyn eframe::App>, 
             _ => SourceKind::Synthetic,
         };
         app.start();
+    }
+    if std::env::var_os("RE_DEBUG_RAISE").is_some() {
+        crate::diag::error("RE-TEST-01", "errore di prova (RE_DEBUG_RAISE)");
     }
     Ok(Box::new(app))
 }
@@ -319,7 +319,8 @@ impl ReApp {
             lap_dir: s.save_laps.then(|| s.lap_dir.clone().into()),
             ..Default::default()
         };
-        crate::diag::clear_notice();
+        // an old amber warning is stale once a new session starts; a red error stays until the user closes it
+        crate::diag::clear_severity(crate::diag::Severity::Warning);
         crate::report::set_context(s.kind.label(), &self.access.licence.as_ref().map(|l| l.id.clone()).unwrap_or_default());
         s.save(self.fps);
         let runtime = Runtime::spawn(source, hr_rx, crate::voice_sinks::default_factory(s.voice), cfg);
