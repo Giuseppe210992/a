@@ -31,3 +31,11 @@ Windows desktop (DPI, GPU drivers). Everything below is for a real Windows PC.
     check the banner for errors (microphone access for desktop apps, speech language pack).
 12. **Forza**: confirm gear display, that tyres stay empty and that the live map follows the car.
 13. **Logs**: `%LOCALAPPDATA%\RaceEngineer\re-gui.log` — attach it when something misbehaves.
+14. **LMU**: in LMU turn *Settings > Gameplay > Enable Plugins* ON and restart; check speed/rpm/gear/pedals, tyre
+    temperatures (shown only once the wheel block is populated), lap distance (corners/delta after two laps),
+    and the "setup" card (electronics only). If `re-gui.log` reports implausible data after a game update, the
+    layout changed.
+15. **AC EVO**: same checks as ACC; verify the map follows the car (player picked from the car table).
+16. **EA WRC**: start the game once, press «Prepara EA WRC» (or `re-cli --prepare-wrc`), restart the game, start
+    a stage, then «Avvia». If nothing arrives: open `Documents\My Games\WRC\telemetry\config.json` and
+    check our `race_engineer` entry; `config.json.re-backup` restores the original. Verify speed units.
