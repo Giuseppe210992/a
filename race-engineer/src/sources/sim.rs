@@ -3,6 +3,8 @@
 
 use super::TelemetrySource;
 use crate::biometrics::{Contact, HrMeasurement};
+use crate::telemetry::SessionInfo;
+use std::sync::Arc;
 use crate::clock::monotonic_s;
 use crate::telemetry::{SimId, TelemetryFrame};
 
@@ -11,6 +13,17 @@ const CORNERS: [(f64, f64); 4] = [(0.15, 25.0), (0.35, 33.0), (0.55, 19.0), (0.8
 const TRACK_LEN_M: f64 = 4000.0;
 const V_MAX: f64 = 83.0; // ~300 km/h
 const BRAKE_DECEL: f64 = 25.0;
+
+fn demo_session() -> SessionInfo {
+    let row = |k: &str, v: &str| (k.to_string(), v.to_string());
+    SessionInfo {
+        car: Some("Vettura demo".into()),
+        track: Some("Circuito demo".into()),
+        track_length_m: Some(TRACK_LEN_M as f32),
+        setup_note: Some("Valori di esempio della demo.".into()),
+        setup: vec![row("Ala anteriore", "6"), row("Ala posteriore", "8"), row("Bilanciamento freni (%)", "57"), row("Pressione gomme (psi)", "23.5")],
+    }
+}
 
 pub struct SyntheticCar {
     s: f64,
@@ -21,11 +34,15 @@ pub struct SyntheticCar {
     last_lap: Option<f32>,
     best_lap: Option<f32>,
     tyre_temp: f32,
+    /// Pedal positions (slew-limited like a real foot, so inputs are smooth).
+    throttle_pos: f64,
+    brake_pos: f64,
+    session: Arc<SessionInfo>,
 }
 
 impl Default for SyntheticCar {
     fn default() -> Self {
-        Self { s: 0.0, v: 30.0, t: 0.0, lap: 0, lap_t: 0.0, last_lap: None, best_lap: None, tyre_temp: 80.0 }
+        Self { s: 0.0, v: 30.0, t: 0.0, lap: 0, lap_t: 0.0, last_lap: None, best_lap: None, tyre_temp: 80.0, throttle_pos: 0.0, brake_pos: 0.0, session: Arc::new(demo_session()) }
     }
 }
 
@@ -62,7 +79,13 @@ impl SyntheticCar {
         } else {
             (0.4, 0.0)
         };
-        let accel = if brake > 0.0 { -BRAKE_DECEL } else { throttle * (9.0 * (1.0 - self.v / (V_MAX + 10.0))) };
+        let slew = |cur: f64, target: f64, up: f64, down: f64| {
+            if target > cur { (cur + up * dt).min(target) } else { (cur - down * dt).max(target) }
+        };
+        self.brake_pos = slew(self.brake_pos, brake, 8.0, 12.0);
+        self.throttle_pos = slew(self.throttle_pos, throttle, 5.0, 12.0);
+        let (throttle, brake) = (self.throttle_pos, self.brake_pos);
+        let accel = -BRAKE_DECEL * brake + throttle * (9.0 * (1.0 - self.v / (V_MAX + 10.0)));
         self.v = (self.v + accel * dt).max(5.0);
         self.s += self.v * dt;
         self.t += dt;
@@ -96,6 +119,8 @@ impl SyntheticCar {
             best_lap_s: self.best_lap,
             in_pit: false,
             pos_m: Some(Self::position(self.s / TRACK_LEN_M)),
+            max_rpm: Some(10_300.0),
+            session: Some(self.session.clone()),
         }
     }
 

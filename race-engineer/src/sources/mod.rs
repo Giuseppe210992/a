@@ -1,5 +1,6 @@
 pub mod acc;
 pub mod f1;
+pub mod forza;
 pub mod irsdk;
 pub mod sim;
 #[cfg(windows)]
@@ -21,35 +22,53 @@ pub enum SourceKind {
     IRacing,
     Acc,
     F1,
+    Forza,
 }
 
 impl SourceKind {
-    pub const ALL: [SourceKind; 4] = [Self::Synthetic, Self::IRacing, Self::Acc, Self::F1];
+    pub const ALL: [SourceKind; 5] = [Self::Synthetic, Self::IRacing, Self::Acc, Self::F1, Self::Forza];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::Synthetic => "Demo sintetica (nessun simulatore)",
             Self::IRacing => "iRacing (memoria condivisa)",
             Self::Acc => "Assetto Corsa Competizione (memoria condivisa)",
-            Self::F1 => "F1 25 (UDP 20777)",
+            Self::F1 => "F1 25 (UDP)",
+            Self::Forza => "Forza Motorsport (UDP, sperimentale)",
+        }
+    }
+
+    /// UDP port the simulator must be configured to send to (None for shared-memory sims).
+    pub fn default_udp_port(self) -> Option<u16> {
+        match self {
+            Self::F1 => Some(f1::DEFAULT_PORT),
+            Self::Forza => Some(forza::DEFAULT_PORT),
+            _ => None,
         }
     }
 
     pub fn available_here(self) -> bool {
         match self {
-            Self::Synthetic | Self::F1 => true,
+            Self::Synthetic | Self::F1 | Self::Forza => true,
             Self::IRacing | Self::Acc => cfg!(windows),
         }
     }
 }
 
-/// Opens a source; shared-memory sims only exist on Windows.
-pub fn open(kind: SourceKind, synthetic_speedup: f64) -> Result<Box<dyn TelemetrySource>, String> {
+/// Opens a source; shared-memory sims only exist on Windows. `udp_port` overrides the
+/// default for the UDP simulators.
+pub fn open(kind: SourceKind, synthetic_speedup: f64, udp_port: Option<u16>) -> Result<Box<dyn TelemetrySource>, String> {
+    let port_err = |p: u16, e: std::io::Error| format!("impossibile aprire la porta UDP {p}: {e} (già in uso da un altro programma?)");
     match kind {
         SourceKind::Synthetic => Ok(Box::new(sim::SyntheticSource::new(synthetic_speedup))),
-        SourceKind::F1 => f1::F1UdpSource::bind(f1::DEFAULT_PORT)
-            .map(|s| Box::new(s) as Box<dyn TelemetrySource>)
-            .map_err(|e| format!("impossibile aprire UDP {}: {e} (porta già in uso?)", f1::DEFAULT_PORT)),
+        SourceKind::F1 => {
+            let p = udp_port.unwrap_or(f1::DEFAULT_PORT);
+            f1::F1UdpSource::bind(p).map(|s| Box::new(s) as Box<dyn TelemetrySource>).map_err(|e| port_err(p, e))
+        }
+        SourceKind::Forza => {
+            let p = udp_port.unwrap_or(forza::DEFAULT_PORT);
+            forza::ForzaUdpSource::bind(p).map(|s| Box::new(s) as Box<dyn TelemetrySource>).map_err(|e| port_err(p, e))
+        }
         #[cfg(windows)]
         SourceKind::IRacing => Ok(Box::new(irsdk::open_windows())),
         #[cfg(windows)]

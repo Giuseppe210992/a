@@ -22,10 +22,14 @@ use widgets::{card, color};
 struct SetupState {
     kind: SourceKind,
     synthetic_speedup: f64,
+    /// 0 = the default port of the selected UDP simulator.
+    udp_port: u16,
     hr_ble: bool,
     hr_demo: bool,
     hr_name: String,
     voice: bool,
+    /// Offline voice commands (microphone), experimental.
+    stt: bool,
     resting_hr: f32,
     max_hr: f32,
     tyre_hot_c: f32,
@@ -43,19 +47,81 @@ impl Default for SetupState {
         Self {
             kind: if cfg!(windows) { SourceKind::IRacing } else { SourceKind::Synthetic },
             synthetic_speedup: 10.0,
+            udp_port: 0,
             hr_ble: false,
             hr_demo: true,
             hr_name: String::new(),
             voice: crate::voice_sinks::CAN_SPEAK,
+            stt: false,
             resting_hr: bio.resting_hr,
             max_hr: bio.max_hr,
             tyre_hot_c: def.tyre_hot_c,
             tyre_cold_c: def.tyre_cold_c,
             brake_lead_s: def.brake_call_lead_s,
             save_laps: true,
-            lap_dir: "laps".into(),
+            lap_dir: crate::diag::default_lap_dir().display().to_string(),
             error: None,
         }
+    }
+}
+
+impl SetupState {
+    fn path() -> std::path::PathBuf {
+        crate::diag::data_dir().join("settings.txt")
+    }
+
+    fn kind_key(k: SourceKind) -> &'static str {
+        match k {
+            SourceKind::Synthetic => "synthetic",
+            SourceKind::IRacing => "iracing",
+            SourceKind::Acc => "acc",
+            SourceKind::F1 => "f1",
+            SourceKind::Forza => "forza",
+        }
+    }
+
+    fn save(&self, fps: u32) {
+        let t = format!(
+            "kind={}\nsynthetic_speedup={}\nudp_port={}\nhr_ble={}\nhr_demo={}\nhr_name={}\nvoice={}\nstt={}\nresting_hr={}\nmax_hr={}\ntyre_hot_c={}\ntyre_cold_c={}\nbrake_lead_s={}\nsave_laps={}\nlap_dir={}\nfps={}\n",
+            Self::kind_key(self.kind), self.synthetic_speedup, self.udp_port, self.hr_ble, self.hr_demo, self.hr_name.replace('\n', " "),
+            self.voice, self.stt, self.resting_hr, self.max_hr, self.tyre_hot_c, self.tyre_cold_c, self.brake_lead_s, self.save_laps,
+            self.lap_dir.replace('\n', " "), fps
+        );
+        let _ = std::fs::write(Self::path(), t);
+    }
+
+    /// Reads `settings.txt`; unknown or invalid lines are ignored so a bad file never blocks startup.
+    fn load(fps: &mut u32) -> Self {
+        let mut s = Self::default();
+        let Ok(text) = std::fs::read_to_string(Self::path()) else { return s };
+        for line in text.lines() {
+            let Some((k, v)) = line.split_once('=') else { continue };
+            let v = v.trim();
+            match k.trim() {
+                "kind" => {
+                    if let Some(kind) = SourceKind::ALL.into_iter().find(|k| Self::kind_key(*k) == v && k.available_here()) {
+                        s.kind = kind;
+                    }
+                }
+                "synthetic_speedup" => s.synthetic_speedup = v.parse().ok().filter(|x: &f64| (1.0..=60.0).contains(x)).unwrap_or(s.synthetic_speedup),
+                "udp_port" => s.udp_port = v.parse().unwrap_or(0),
+                "hr_ble" => s.hr_ble = v == "true",
+                "hr_demo" => s.hr_demo = v == "true",
+                "hr_name" => s.hr_name = v.to_string(),
+                "voice" => s.voice = v == "true" && crate::voice_sinks::CAN_SPEAK,
+                "stt" => s.stt = v == "true",
+                "resting_hr" => s.resting_hr = v.parse().ok().filter(|x: &f32| (35.0..=100.0).contains(x)).unwrap_or(s.resting_hr),
+                "max_hr" => s.max_hr = v.parse().ok().filter(|x: &f32| (120.0..=230.0).contains(x)).unwrap_or(s.max_hr),
+                "tyre_hot_c" => s.tyre_hot_c = v.parse().ok().filter(|x: &f32| (60.0..=160.0).contains(x)).unwrap_or(s.tyre_hot_c),
+                "tyre_cold_c" => s.tyre_cold_c = v.parse().ok().filter(|x: &f32| (20.0..=90.0).contains(x)).unwrap_or(s.tyre_cold_c),
+                "brake_lead_s" => s.brake_lead_s = v.parse().ok().filter(|x: &f32| (0.3..=2.5).contains(x)).unwrap_or(s.brake_lead_s),
+                "save_laps" => s.save_laps = v == "true",
+                "lap_dir" if !v.is_empty() => s.lap_dir = v.to_string(),
+                "fps" => *fps = v.parse().ok().filter(|f| [15, 30, 60].contains(f)).unwrap_or(*fps),
+                _ => {}
+            }
+        }
+        s
     }
 }
 
@@ -64,6 +130,8 @@ struct Session {
     /// Helper threads (BLE client, demo heart rate) and the flag that stops them.
     aux: Vec<std::thread::JoinHandle<()>>,
     aux_stop: Arc<AtomicBool>,
+    #[cfg(feature = "stt")]
+    _stt: Option<crate::stt::SttHandle>,
     tyre_hot_c: f32,
     tyre_cold_c: f32,
     started: Instant,
@@ -92,11 +160,13 @@ pub struct ReApp {
 
 impl Default for ReApp {
     fn default() -> Self {
+        let mut fps = 30;
+        let setup = SetupState::load(&mut fps);
         Self {
-            setup: SetupState::default(),
+            setup,
             session: None,
             view: Snapshot::default(),
-            fps: 30,
+            fps,
             trail: vec![],
             last_frames_in: 0,
             last_frames_change: Instant::now(),
@@ -105,6 +175,7 @@ impl Default for ReApp {
 }
 
 pub fn run() -> eframe::Result {
+    crate::diag::init("re-gui.log");
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([1360.0, 820.0]).with_min_inner_size([1000.0, 640.0]).with_title("Race Engineer"),
         renderer: eframe::Renderer::Glow,
@@ -114,13 +185,15 @@ pub fn run() -> eframe::Result {
         "Race Engineer",
         options,
         Box::new(|cc| {
-            cc.egui_ctx.set_visuals(egui::Visuals::dark());
+            // Always dark: the cards use fixed dark colours, so following a light Windows theme would clash.
+            cc.egui_ctx.set_theme(egui::ThemePreference::Dark);
             let mut app = ReApp::default();
             // `--autostart synthetic|f1|iracing|acc` skips the setup screen (kiosk / testing).
             let args: Vec<String> = std::env::args().collect();
             if let Some(i) = args.iter().position(|a| a == "--autostart") {
                 app.setup.kind = match args.get(i + 1).map(String::as_str) {
                     Some("f1") => SourceKind::F1,
+                    Some("forza") => SourceKind::Forza,
                     Some("iracing") => SourceKind::IRacing,
                     Some("acc") => SourceKind::Acc,
                     _ => SourceKind::Synthetic,
@@ -135,7 +208,7 @@ pub fn run() -> eframe::Result {
 impl ReApp {
     fn start(&mut self) {
         let s = &self.setup;
-        let source = match sources::open(s.kind, s.synthetic_speedup) {
+        let source = match sources::open(s.kind, s.synthetic_speedup, s.kind.default_udp_port().map(|d| if s.udp_port == 0 { d } else { s.udp_port })) {
             Ok(src) => src,
             Err(e) => {
                 self.setup.error = Some(e);
@@ -169,13 +242,33 @@ impl ReApp {
             lap_dir: s.save_laps.then(|| s.lap_dir.clone().into()),
             ..Default::default()
         };
+        crate::diag::clear_error();
+        s.save(self.fps);
         let runtime = Runtime::spawn(source, hr_rx, crate::voice_sinks::default_factory(s.voice), cfg);
+        #[cfg(feature = "stt")]
+        let stt = if s.stt {
+            match crate::stt::start(runtime.command_tx.clone()) {
+                Ok(h) => Some(h),
+                Err(e) => {
+                    crate::diag::error(format!("comandi vocali non attivi: {e}"));
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        #[cfg(not(feature = "stt"))]
+        if s.stt {
+            crate::diag::error("questa build non include i comandi vocali (feature stt)");
+        }
         self.trail.clear();
         self.view = Snapshot::default();
         self.session = Some(Session {
             runtime,
             aux,
             aux_stop,
+            #[cfg(feature = "stt")]
+            _stt: stt,
             tyre_hot_c: s.tyre_hot_c,
             tyre_cold_c: s.tyre_cold_c,
             started: Instant::now(),
@@ -222,6 +315,7 @@ impl eframe::App for ReApp {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.setup.save(self.fps);
         self.stop();
     }
 }
@@ -231,7 +325,8 @@ fn hint(kind: SourceKind) -> &'static str {
         SourceKind::Synthetic => "Genera una vettura e una pista simulate: serve a provare dashboard, voce e analisi senza simulatore.",
         SourceKind::IRacing => "Nessuna impostazione necessaria: avvia iRacing e vai in pista. (Opzionale: 360 Hz con irsdkEnableMem=1 e irsdkLog360Hz=1 in app.ini.)",
         SourceKind::Acc => "Nessuna impostazione necessaria: avvia ACC e vai in pista. Gli offset della memoria condivisa vanno validati (docs/VALIDATION.md).",
-        SourceKind::F1 => "In gioco: Impostazioni > Telemetria > UDP attivo, IP 127.0.0.1, porta 20777, formato 2025, frequenza 60 Hz. Sono letti solo i dati vettura (niente curve/delta senza il pacchetto Lap Data).",
+        SourceKind::Forza => "In gioco: Impostazioni > Gameplay e HUD > Data Out (telemetria UDP) attivo, IP 127.0.0.1, la porta qui sotto, formato \"Dash\". Formato non verificato su un PC reale: niente curve/delta (il gioco non invia la posizione sul giro), ma dashboard, pedali, giri e mappa dal vivo.",
+        SourceKind::F1 => "In gioco: Impostazioni > Telemetria > UDP attivo, IP 127.0.0.1, porta 20777, formato 2025, frequenza 60 Hz. Curve, delta e chiamate di frenata funzionano grazie ai pacchetti Lap Data e Sessione.",
     }
 }
 
@@ -267,6 +362,13 @@ impl ReApp {
                     }
                 });
             ui.label(RichText::new(hint(s.kind)).size(12.0).color(color::TEXT_DIM));
+            if let Some(def) = s.kind.default_udp_port() {
+                ui.horizontal(|ui| {
+                    ui.label("Porta UDP (0 = predefinita");
+                    ui.label(format!("{def})"));
+                    ui.add(egui::DragValue::new(&mut s.udp_port).range(0..=65535));
+                });
+            }
             if s.kind == SourceKind::Synthetic {
                 ui.checkbox(&mut s.hr_demo, "Battito simulato (per provare il pannello del pilota)");
                 ui.horizontal(|ui| {
@@ -304,6 +406,12 @@ impl ReApp {
             ui.add_enabled_ui(crate::voice_sinks::CAN_SPEAK, |ui| ui.checkbox(&mut s.voice, "Parla attraverso l'audio di Windows (cuffie predefinite)"));
             if !crate::voice_sinks::CAN_SPEAK {
                 ui.label(RichText::new("Questa build non include la sintesi vocale (feature tts): i messaggi restano a schermo.").color(color::AMBER).size(12.0));
+            }
+            ui.add_enabled_ui(cfg!(feature = "stt"), |ui| {
+                ui.checkbox(&mut s.stt, "Comandi vocali (microfono, sperimentale): «silenzio», «solo critici», «completo», «muto», «stato»")
+            });
+            if !cfg!(feature = "stt") {
+                ui.label(RichText::new("Questa build non include i comandi vocali (feature stt).").color(color::AMBER).size(12.0));
             }
             ui.horizontal(|ui| {
                 ui.label("Gomme: fredda sotto");
@@ -393,6 +501,17 @@ impl ReApp {
 
         let v = &self.view;
         let f = v.frame.as_ref();
+        let session = f.and_then(|f| f.session.as_deref());
+        if let Some(err) = crate::diag::last_error() {
+            egui::Panel::top("error").show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(format!("Attenzione: {err}")).color(color::RED));
+                    if ui.small_button("Chiudi").clicked() {
+                        crate::diag::clear_error();
+                    }
+                });
+            });
+        }
 
         egui::Panel::left("left").exact_size(300.0).show(ui, |ui| {
             card(ui, "Vettura", |ui| {
@@ -409,7 +528,7 @@ impl ReApp {
                         ui.label(RichText::new("marcia").color(color::TEXT_DIM));
                     });
                 });
-                widgets::rpm_bar(ui, f.map_or(0.0, |f| f.rpm), v.rpm_max_seen);
+                widgets::rpm_bar(ui, f.map_or(0.0, |f| f.rpm), f.and_then(|f| f.max_rpm).unwrap_or(v.rpm_max_seen));
                 ui.add_space(4.0);
                 widgets::bar(ui, "Gas", f.map_or(0.0, |f| f.throttle), color::GREEN);
                 widgets::bar(ui, "Freno", f.map_or(0.0, |f| f.brake), color::RED);
@@ -466,13 +585,31 @@ impl ReApp {
                 }
             });
             ui.add_space(6.0);
-            card(ui, "Setup corrente", |ui| {
-                ui.label(RichText::new("Non disponibile").color(color::TEXT_DIM));
-                ui.label(
-                    RichText::new("I simulatori supportati non espongono il setup nei dati letti da questa versione; non viene inventato.")
-                        .size(12.0)
-                        .color(color::TEXT_DIM),
-                );
+            card(ui, "Setup corrente", |ui| match session {
+                Some(info) if !info.setup.is_empty() => {
+                    if let Some(n) = &info.setup_note {
+                        ui.label(RichText::new(n).size(12.0).color(color::TEXT_DIM));
+                    }
+                    egui::ScrollArea::vertical().id_salt("setup").max_height(170.0).show(ui, |ui| {
+                        egui::Grid::new("setup_grid").num_columns(2).spacing([10.0, 2.0]).show(ui, |ui| {
+                            for (k, val) in &info.setup {
+                                ui.label(RichText::new(k).size(11.0).color(color::TEXT_DIM));
+                                ui.label(RichText::new(val).size(12.0));
+                                ui.end_row();
+                            }
+                        });
+                    });
+                }
+                Some(info) => {
+                    ui.label(RichText::new("Non disponibile").color(color::TEXT_DIM));
+                    if let Some(n) = &info.setup_note {
+                        ui.label(RichText::new(n).size(12.0).color(color::TEXT_DIM));
+                    }
+                }
+                None => {
+                    ui.label(RichText::new("Non disponibile").color(color::TEXT_DIM));
+                    ui.label(RichText::new("Questo simulatore non pubblica il setup nei dati letti; non viene inventato.").size(12.0).color(color::TEXT_DIM));
+                }
             });
             ui.add_space(6.0);
             card(ui, "Suggerimenti", |ui| {
@@ -512,7 +649,7 @@ impl ReApp {
                 stat(ui, "Giro", &lap_txt, Color32::WHITE);
                 stat(ui, "Tempo", &widgets::fmt_lap(f.and_then(|f| f.lap_time_s)), Color32::WHITE);
                 stat(ui, "Ultimo", &widgets::fmt_lap(f.and_then(|f| f.last_lap_s)), Color32::WHITE);
-                stat(ui, "Miglior", &widgets::fmt_lap(f.and_then(|f| f.best_lap_s)), color::GREEN);
+                stat(ui, "Miglior", &widgets::fmt_lap(f.and_then(|f| f.best_lap_s).or(v.analysis.best_lap_s)), color::GREEN);
                 let (dt, dc) = match v.analysis.delta_s {
                     Some(d) => (format!("{d:+.3}"), if d > 0.0 { color::RED } else { color::GREEN }),
                     None => ("--".into(), color::TEXT_DIM),
@@ -520,6 +657,12 @@ impl ReApp {
                 stat(ui, "Delta", &dt, dc);
                 let corner = v.analysis.corner.map_or("—".to_string(), |c| format!("Curva {c}"));
                 stat(ui, "Posizione", &corner, color::AMBER);
+                if let Some(s) = session {
+                    let label = [s.car.as_deref(), s.track.as_deref()].into_iter().flatten().collect::<Vec<_>>().join(" · ");
+                    if !label.is_empty() {
+                        ui.label(RichText::new(label).color(color::TEXT_DIM));
+                    }
+                }
             });
             ui.add_space(6.0);
             widgets::track_map(ui, v.analysis.track.as_deref(), &self.trail, f, v.analysis.corner);

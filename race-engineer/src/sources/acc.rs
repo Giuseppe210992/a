@@ -12,12 +12,14 @@
 
 use super::TelemetrySource;
 use crate::clock::monotonic_s;
-use crate::telemetry::{SimId, TelemetryFrame, PSI_TO_KPA};
+use crate::telemetry::{SessionInfo, SimId, TelemetryFrame, PSI_TO_KPA};
+use std::sync::Arc;
 
 pub const PHYSICS_MAP: &str = "Local\\acpmf_physics";
 pub const GRAPHICS_MAP: &str = "Local\\acpmf_graphics";
+pub const STATIC_MAP: &str = "Local\\acpmf_static";
 
-mod phys {
+pub mod phys {
     pub const PACKET_ID: usize = 0;
     pub const GAS: usize = 4;
     pub const BRAKE: usize = 8;
@@ -31,7 +33,15 @@ mod phys {
     pub const MIN_LEN: usize = 168;
 }
 
-mod gfx {
+pub mod stat {
+    // SPageFileStatic (Pack = 4, wchar_t strings; offsets confirmed against a public C# mapping)
+    pub const CAR_MODEL: usize = 68; // wchar[33]
+    pub const TRACK: usize = 134; // wchar[33]
+    pub const MAX_RPM: usize = 412; // int
+    pub const MIN_LEN: usize = 420;
+}
+
+pub mod gfx {
     pub const STATUS: usize = 4; // 0 off, 1 replay, 2 live, 3 pause
     pub const COMPLETED_LAPS: usize = 132;
     pub const I_CURRENT_TIME: usize = 140; // ms
@@ -39,7 +49,8 @@ mod gfx {
     pub const I_BEST_TIME: usize = 148; // ms
     pub const IS_IN_PIT: usize = 160;
     pub const NORM_CAR_POS: usize = 248;
-    pub const MIN_LEN: usize = 252;
+    pub const CAR_COORDS: usize = 252; // [3] f32 world x, y, z (metres)
+    pub const MIN_LEN: usize = 264;
 }
 
 fn f32_at(b: &[u8], o: usize) -> Option<f32> {
@@ -50,6 +61,28 @@ fn i32_at(b: &[u8], o: usize) -> Option<i32> {
 }
 fn f32x4(b: &[u8], o: usize) -> Option<[f32; 4]> {
     Some([f32_at(b, o)?, f32_at(b, o + 4)?, f32_at(b, o + 8)?, f32_at(b, o + 12)?])
+}
+
+fn utf16_at(b: &[u8], o: usize, chars: usize) -> Option<String> {
+    let raw = b.get(o..o + chars * 2)?;
+    let units: Vec<u16> = raw.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|&u| u != 0).collect();
+    Some(String::from_utf16_lossy(&units)).filter(|s| !s.trim().is_empty())
+}
+
+/// Car, track and rev limit from the static page. ACC does not expose the setup in shared memory.
+pub fn parse_static(page: &[u8]) -> Option<(SessionInfo, Option<f32>)> {
+    if page.len() < stat::MIN_LEN {
+        return None;
+    }
+    let info = SessionInfo {
+        car: utf16_at(page, stat::CAR_MODEL, 33),
+        track: utf16_at(page, stat::TRACK, 33),
+        track_length_m: None,
+        setup_note: Some("ACC non espone il setup nella memoria condivisa: non è disponibile.".into()),
+        setup: vec![],
+    };
+    let rpm = i32_at(page, stat::MAX_RPM).filter(|r| (1000..=30_000).contains(r)).map(|r| r as f32);
+    Some((info, rpm))
 }
 
 pub fn physics_packet_id(physics: &[u8]) -> Option<i32> {
@@ -111,34 +144,46 @@ pub fn parse(physics: &[u8], graphics: Option<&[u8]>, t_s: f64) -> Option<Teleme
         f.best_lap_s = ms(gfx::I_BEST_TIME);
         f.in_pit = i32_at(g, gfx::IS_IN_PIT).unwrap_or(0) != 0;
         f.lap_dist_pct = f32_at(g, gfx::NORM_CAR_POS).filter(|p| (0.0..=1.0).contains(p));
+        // Horizontal plane is x/z (y is height).
+        f.pos_m = f32_at(g, gfx::CAR_COORDS)
+            .zip(f32_at(g, gfx::CAR_COORDS + 8))
+            .filter(|(x, z)| x.is_finite() && z.is_finite() && (x.abs() + z.abs()) < 1.0e6 && (*x != 0.0 || *z != 0.0))
+            .map(|(x, z)| [x, z]);
     }
     Some(f)
 }
 
-pub struct AccSource<P, G>
+pub struct AccSource<P, G, S>
 where
     P: FnMut() -> Option<Vec<u8>> + Send,
     G: FnMut() -> Option<Vec<u8>> + Send,
+    S: FnMut() -> Option<Vec<u8>> + Send,
 {
     physics: P,
     graphics: G,
+    statics: S,
     last_packet: i32,
+    last_static_read: f64,
+    session: Option<Arc<SessionInfo>>,
+    max_rpm: Option<f32>,
 }
 
-impl<P, G> AccSource<P, G>
+impl<P, G, S> AccSource<P, G, S>
 where
     P: FnMut() -> Option<Vec<u8>> + Send,
     G: FnMut() -> Option<Vec<u8>> + Send,
+    S: FnMut() -> Option<Vec<u8>> + Send,
 {
-    pub fn new(physics: P, graphics: G) -> Self {
-        Self { physics, graphics, last_packet: -1 }
+    pub fn new(physics: P, graphics: G, statics: S) -> Self {
+        Self { physics, graphics, statics, last_packet: -1, last_static_read: f64::MIN, session: None, max_rpm: None }
     }
 }
 
-impl<P, G> TelemetrySource for AccSource<P, G>
+impl<P, G, S> TelemetrySource for AccSource<P, G, S>
 where
     P: FnMut() -> Option<Vec<u8>> + Send,
     G: FnMut() -> Option<Vec<u8>> + Send,
+    S: FnMut() -> Option<Vec<u8>> + Send,
 {
     fn name(&self) -> &'static str {
         "Assetto Corsa Competizione"
@@ -149,8 +194,19 @@ where
         if id == self.last_packet {
             return None;
         }
+        let now = monotonic_s();
+        // The static page only changes when a session loads: re-read it every 2 s.
+        if now - self.last_static_read > 2.0 {
+            self.last_static_read = now;
+            if let Some((info, rpm)) = (self.statics)().and_then(|s| parse_static(&s)) {
+                self.session = Some(Arc::new(info));
+                self.max_rpm = rpm;
+            }
+        }
         let g = (self.graphics)();
-        let frame = parse(&p, g.as_deref(), monotonic_s())?;
+        let mut frame = parse(&p, g.as_deref(), now)?;
+        frame.session = self.session.clone();
+        frame.max_rpm = self.max_rpm;
         // Only mark the packet consumed once it parsed, so a transient bad read retries.
         self.last_packet = id;
         Some(frame)
@@ -158,24 +214,18 @@ where
 }
 
 #[cfg(windows)]
-pub fn open_windows() -> AccSource<impl FnMut() -> Option<Vec<u8>> + Send, impl FnMut() -> Option<Vec<u8>> + Send> {
+pub fn open_windows() -> AccSource<impl FnMut() -> Option<Vec<u8>> + Send, impl FnMut() -> Option<Vec<u8>> + Send, impl FnMut() -> Option<Vec<u8>> + Send> {
     use super::winshm::Mapping;
-    let mut p: Option<Mapping> = None;
-    let mut g: Option<Mapping> = None;
-    AccSource::new(
+    fn lazy(name: &'static str) -> impl FnMut() -> Option<Vec<u8>> + Send {
+        let mut m: Option<Mapping> = None;
         move || {
-            if p.is_none() {
-                p = Mapping::open(PHYSICS_MAP);
+            if m.is_none() {
+                m = Mapping::open(name);
             }
-            p.as_ref().map(|m| m.to_vec())
-        },
-        move || {
-            if g.is_none() {
-                g = Mapping::open(GRAPHICS_MAP);
-            }
-            g.as_ref().map(|m| m.to_vec())
-        },
-    )
+            m.as_ref().map(|m| m.to_vec())
+        }
+    }
+    AccSource::new(lazy(PHYSICS_MAP), lazy(GRAPHICS_MAP), lazy(STATIC_MAP))
 }
 
 #[cfg(test)]
@@ -207,6 +257,9 @@ mod tests {
         put_i(&mut g, gfx::COMPLETED_LAPS, 3);
         put_i(&mut g, gfx::I_LAST_TIME, 92_345);
         put_f(&mut g, gfx::NORM_CAR_POS, 0.42);
+        put_f(&mut g, gfx::CAR_COORDS, 120.5);
+        put_f(&mut g, gfx::CAR_COORDS + 4, 3.0);
+        put_f(&mut g, gfx::CAR_COORDS + 8, -80.25);
         (p, g)
     }
 
@@ -222,6 +275,27 @@ mod tests {
         assert!((f.last_lap_s.unwrap() - 92.345).abs() < 1e-4);
         assert_eq!(f.lap_time_s, None, "0 ms = no valid current lap time");
         assert_eq!(f.lap_dist_pct, Some(0.42));
+        assert_eq!(f.pos_m, Some([120.5, -80.25]), "x and z, y is height");
+    }
+
+    fn put_utf16(b: &mut [u8], o: usize, s: &str) {
+        for (i, u) in s.encode_utf16().enumerate() {
+            b[o + i * 2..o + i * 2 + 2].copy_from_slice(&u.to_le_bytes());
+        }
+    }
+
+    #[test]
+    fn static_page_gives_car_track_and_rev_limit() {
+        let mut st = vec![0u8; 500];
+        put_utf16(&mut st, stat::CAR_MODEL, "amr_v8_vantage_gt3");
+        put_utf16(&mut st, stat::TRACK, "monza");
+        put_i(&mut st, stat::MAX_RPM, 7600);
+        let (info, rpm) = parse_static(&st).unwrap();
+        assert_eq!(info.car.as_deref(), Some("amr_v8_vantage_gt3"));
+        assert_eq!(info.track.as_deref(), Some("monza"));
+        assert_eq!(rpm, Some(7600.0));
+        assert!(info.setup.is_empty() && info.setup_note.is_some());
+        assert!(parse_static(&st[..100]).is_none());
     }
 
     #[test]
@@ -239,7 +313,7 @@ mod tests {
     fn source_only_emits_new_packets() {
         let (p, g) = pages();
         let (p2, g2) = (p.clone(), g.clone());
-        let mut s = AccSource::new(move || Some(p2.clone()), move || Some(g2.clone()));
+        let mut s = AccSource::new(move || Some(p2.clone()), move || Some(g2.clone()), || None);
         assert!(s.poll().is_some());
         assert!(s.poll().is_none());
         let _ = (p, g);

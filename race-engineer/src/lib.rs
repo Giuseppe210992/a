@@ -12,12 +12,16 @@
 pub mod ble;
 pub mod biometrics;
 pub mod clock;
+pub mod commands;
+pub mod diag;
 #[cfg(feature = "gui")]
 pub mod gui;
 pub mod engineer;
 pub mod recorder;
 pub mod runtime;
 pub mod sources;
+#[cfg(feature = "stt")]
+pub mod stt;
 pub mod telemetry;
 pub mod track;
 pub mod voice;

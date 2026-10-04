@@ -3,6 +3,8 @@
 //! Every source normalises into this struct. Fields a simulator does not expose
 //! are `None` (never invented). Tyre arrays are ordered FL, FR, RL, RR.
 
+use std::sync::Arc;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SimId {
     #[default]
@@ -10,6 +12,7 @@ pub enum SimId {
     IRacing,
     Acc,
     F1_25,
+    Forza,
     Synthetic,
 }
 
@@ -40,6 +43,23 @@ pub struct TelemetryFrame {
     pub in_pit: bool,
     /// Position in metres in a local frame (east, north), when the sim exposes one.
     pub pos_m: Option<[f32; 2]>,
+    /// Rev limit when the simulator publishes it (scales the RPM bar).
+    pub max_rpm: Option<f32>,
+    /// Static session data (car, track, setup); shared, cheap to clone.
+    pub session: Option<Arc<SessionInfo>>,
+}
+
+/// Car/track/setup text published by simulators that expose it. Nothing is invented:
+/// every entry comes from the simulator's own data.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SessionInfo {
+    pub car: Option<String>,
+    pub track: Option<String>,
+    pub track_length_m: Option<f32>,
+    /// Why the setup list is empty, or a note about its units (shown in the UI).
+    pub setup_note: Option<String>,
+    /// (parameter, value) in the simulator's order.
+    pub setup: Vec<(String, String)>,
 }
 
 pub const PSI_TO_KPA: f32 = 6.894_757;

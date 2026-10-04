@@ -20,15 +20,16 @@ fn main() {
     let kind = match which.as_str() {
         "synthetic" => SourceKind::Synthetic,
         "f1" => SourceKind::F1,
+        "forza" => SourceKind::Forza,
         "acc" => SourceKind::Acc,
         "iracing" => SourceKind::IRacing,
         other => {
-            eprintln!("unknown source '{other}' (synthetic|f1|acc|iracing)");
+            eprintln!("unknown source '{other}' (synthetic|f1|forza|acc|iracing)");
             std::process::exit(2);
         }
     };
     let speedup = arg("--speedup").and_then(|s| s.parse().ok()).unwrap_or(10.0);
-    let source = sources::open(kind, speedup).unwrap_or_else(|e| {
+    let source = sources::open(kind, speedup, arg("--port").and_then(|p| p.parse().ok())).unwrap_or_else(|e| {
         eprintln!("{e}");
         std::process::exit(2);
     });

@@ -13,8 +13,9 @@
 
 use super::TelemetrySource;
 use crate::clock::monotonic_s;
-use crate::telemetry::{SimId, TelemetryFrame, PSI_TO_KPA};
+use crate::telemetry::{SessionInfo, SimId, TelemetryFrame, PSI_TO_KPA};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 pub const MAP_NAME: &str = "Local\\IRSDKMemMapFileName";
 const HEADER_LEN: usize = 112;
@@ -68,6 +69,9 @@ pub struct IrsdkLayout {
     num_buf: usize,
     buf_len: usize,
     vars: HashMap<String, VarHeader>,
+    session_update_off: usize,
+    session_len: usize,
+    session_off: usize,
     /// First valid (lat, lon) seen: origin of the local metric frame used for the map.
     origin: std::cell::Cell<Option<(f64, f64)>>,
 }
@@ -92,6 +96,8 @@ impl IrsdkLayout {
         let tick_rate = i32_at(mem, 8).ok_or(IrsdkError::BadHeader)?;
         let num_vars = i32_at(mem, 24).ok_or(IrsdkError::BadHeader)?;
         let var_off = i32_at(mem, 28).ok_or(IrsdkError::BadHeader)?;
+        let session_len = i32_at(mem, 16).ok_or(IrsdkError::BadHeader)?;
+        let session_off = i32_at(mem, 20).ok_or(IrsdkError::BadHeader)?;
         let num_buf = i32_at(mem, 32).ok_or(IrsdkError::BadHeader)?;
         let buf_len = i32_at(mem, 36).ok_or(IrsdkError::BadHeader)?;
         if num_vars < 0 || var_off < 0 || !(1..=4).contains(&num_buf) || buf_len <= 0 {
@@ -117,39 +123,47 @@ impl IrsdkLayout {
             let unit = cstr(&mem[o + 112..o + 144]);
             vars.insert(name, VarHeader { ty, offset: offset as usize, unit });
         }
-        Ok(Self { tick_rate, num_buf: num_buf as usize, buf_len: buf_len as usize, vars, origin: Default::default() })
+        Ok(Self { tick_rate, num_buf: num_buf as usize, buf_len: buf_len as usize, vars,
+            session_update_off: 12,
+            session_len: session_len.max(0) as usize,
+            session_off: session_off.max(0) as usize,
+            origin: Default::default(),
+        })
     }
 
-    /// (tickCount, bufOffset) of the most recently written buffer.
-    fn latest_buf(&self, mem: &[u8]) -> Option<(i32, usize)> {
+    /// (index, tickCount, bufOffset) of the newest buffer that is not being written.
+    /// Each var buffer is { tickCount (after write), bufOffset, tickCountBegin (before write) };
+    /// older SDKs leave the last field 0.
+    fn latest_buf(&self, mem: &[u8]) -> Option<(usize, i32, usize)> {
         (0..self.num_buf)
             .filter_map(|i| {
                 let o = 48 + i * 16;
-                Some((i32_at(mem, o)?, i32_at(mem, o + 4)? as usize))
+                let (tick, off, begin) = (i32_at(mem, o)?, i32_at(mem, o + 4)?, i32_at(mem, o + 8)?);
+                (off >= 0 && (begin == 0 || begin == tick)).then_some((i, tick, off as usize))
             })
-            .max_by_key(|&(tick, _)| tick)
+            .max_by_key(|&(_, tick, _)| tick)
     }
 
-    /// Copies the newest buffer into `scratch` and re-checks the tick counter so a
-    /// frame being overwritten by the simulator is discarded rather than returned torn.
-    /// Returns the tick count of the copied frame.
+    /// Copies the newest consistent buffer into `scratch` and re-checks that the simulator
+    /// did not start rewriting it meanwhile. Returns the tick count of the copied frame.
     pub fn copy_latest(&self, mem: &[u8], scratch: &mut Vec<u8>) -> Option<i32> {
-        let (tick, off) = self.latest_buf(mem)?;
+        let (idx, tick, off) = self.latest_buf(mem)?;
         let slice = mem.get(off..off.checked_add(self.buf_len)?)?;
         scratch.clear();
         scratch.extend_from_slice(slice);
-        let (tick_after, _) = self.latest_buf(mem)?;
-        // The SDK keeps 3-4 rotating buffers: if the one we copied was re-used in
-        // the meantime, its tick count changed.
-        let still = (0..self.num_buf).any(|i| {
-            let o = 48 + i * 16;
-            i32_at(mem, o) == Some(tick) && i32_at(mem, o + 4) == Some(off as i32)
-        });
-        if still && tick_after >= tick {
-            Some(tick)
-        } else {
-            None
-        }
+        let o = 48 + idx * 16;
+        let (tick2, begin2) = (i32_at(mem, o)?, i32_at(mem, o + 8)?);
+        (tick2 == tick && (begin2 == 0 || begin2 == tick)).then_some(tick)
+    }
+
+    pub fn session_update(&self, mem: &[u8]) -> i32 {
+        i32_at(mem, self.session_update_off).unwrap_or(0)
+    }
+
+    /// Parses the YAML "session info" block into car/track/setup text.
+    pub fn session_info(&self, mem: &[u8]) -> Option<SessionInfo> {
+        let raw = mem.get(self.session_off..self.session_off.checked_add(self.session_len)?)?;
+        Some(yaml::session_info(&decode_text(raw)))
     }
 
     fn f(&self, buf: &[u8], name: &str) -> Option<f32> {
@@ -235,7 +249,111 @@ impl IrsdkLayout {
             best_lap_s: lap_time("LapBestLapTime"),
             in_pit: self.i(buf, "OnPitRoad").unwrap_or(0) != 0,
             pos_m: self.position_m(buf),
+            max_rpm: None,
+            session: None,
         }
+    }
+}
+
+/// iRacing writes the session YAML as UTF-8 on current builds and Windows-1252 on old ones.
+fn decode_text(raw: &[u8]) -> String {
+    let raw = &raw[..raw.iter().position(|&c| c == 0).unwrap_or(raw.len())];
+    match std::str::from_utf8(raw) {
+        Ok(s) => s.to_string(),
+        Err(_) => raw.iter().map(|&b| b as char).collect(),
+    }
+}
+
+/// Minimal reader for the flat-ish YAML iRacing publishes (no external parser needed).
+pub mod yaml {
+    use crate::telemetry::SessionInfo;
+
+    /// Lines of the top-level section `key` (without the header line).
+    pub fn section<'a>(text: &'a str, key: &str) -> Option<Vec<&'a str>> {
+        let header = format!("{key}:");
+        let mut lines = text.lines().map(|l| l.trim_end_matches('\r'));
+        lines.by_ref().find(|l| *l == header)?;
+        Some(lines.take_while(|l| !l.is_empty() && !l.starts_with(|c: char| !c.is_whitespace())).collect())
+    }
+
+    fn unquote(v: &str) -> String {
+        v.trim().trim_matches(|c| c == '"' || c == '\'').to_string()
+    }
+
+    /// First `key: value` anywhere in the section lines.
+    pub fn find(lines: &[&str], key: &str) -> Option<String> {
+        let pat = format!("{key}:");
+        lines.iter().find_map(|l| {
+            let t = l.trim_start().trim_start_matches("- ");
+            t.strip_prefix(&pat).map(unquote).filter(|v| !v.is_empty())
+        })
+    }
+
+    /// Flattens nested keys to ("Group › Key", value), keeping the last two group levels.
+    pub fn flatten(lines: &[&str]) -> Vec<(String, String)> {
+        let mut stack: Vec<(usize, String)> = vec![];
+        let mut out = vec![];
+        for l in lines {
+            let indent = l.len() - l.trim_start().len();
+            let t = l.trim_start().trim_start_matches("- ");
+            let Some((k, v)) = t.split_once(':') else { continue };
+            while stack.last().is_some_and(|(i, _)| *i >= indent) {
+                stack.pop();
+            }
+            let v = unquote(v);
+            if v.is_empty() {
+                stack.push((indent, k.trim().to_string()));
+            } else if k.trim() != "UpdateCount" {
+                let groups: Vec<&str> = stack.iter().rev().take(2).map(|(_, g)| g.as_str()).collect::<Vec<_>>().into_iter().rev().collect();
+                let label = if groups.is_empty() { k.trim().to_string() } else { format!("{} › {}", groups.join(" › "), k.trim()) };
+                out.push((label, v));
+            }
+        }
+        out
+    }
+
+    fn leading_number(v: &str) -> Option<f32> {
+        v.split_whitespace().next()?.parse().ok()
+    }
+
+    /// "4.05 km" / "2.52 mi" -> metres.
+    pub fn length_m(v: &str) -> Option<f32> {
+        let n = leading_number(v)?;
+        let unit = v.split_whitespace().nth(1).unwrap_or("km").to_ascii_lowercase();
+        Some(if unit.starts_with("mi") { n * 1609.344 } else if unit == "m" { n } else { n * 1000.0 })
+    }
+
+    pub fn session_info(text: &str) -> SessionInfo {
+        let mut info = SessionInfo::default();
+        if let Some(w) = section(text, "WeekendInfo") {
+            info.track = find(&w, "TrackDisplayName");
+            if let (Some(t), Some(c)) = (&info.track, find(&w, "TrackConfigName")) {
+                info.track = Some(format!("{t} ({c})"));
+            }
+            info.track_length_m = find(&w, "TrackLength").and_then(|v| length_m(&v));
+        }
+        if let Some(d) = section(text, "DriverInfo") {
+            if let Some(idx) = find(&d, "DriverCarIdx") {
+                // CarScreenName of the driver entry whose CarIdx is ours
+                let mut in_ours = false;
+                for l in &d {
+                    let t = l.trim_start().trim_start_matches("- ");
+                    if let Some(v) = t.strip_prefix("CarIdx:") {
+                        in_ours = unquote(v) == idx;
+                    } else if in_ours {
+                        if let Some(v) = t.strip_prefix("CarScreenName:") {
+                            info.car = Some(unquote(v));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        match section(text, "CarSetup") {
+            Some(s) => info.setup = flatten(&s),
+            None => info.setup_note = Some("iRacing non ha pubblicato il setup (è disponibile dopo essere entrati in pista).".into()),
+        }
+        info
     }
 }
 
@@ -246,11 +364,14 @@ pub struct IrsdkSource<M: FnMut() -> Option<Vec<u8>> + Send> {
     layout: Option<IrsdkLayout>,
     last_tick: i32,
     scratch: Vec<u8>,
+    session_update: i32,
+    session: Option<Arc<SessionInfo>>,
+    max_rpm: Option<f32>,
 }
 
 impl<M: FnMut() -> Option<Vec<u8>> + Send> IrsdkSource<M> {
     pub fn new(snapshot: M) -> Self {
-        Self { snapshot, layout: None, last_tick: -1, scratch: Vec::new() }
+        Self { snapshot, layout: None, last_tick: -1, scratch: Vec::new(), session_update: -1, session: None, max_rpm: None }
     }
 }
 
@@ -260,17 +381,42 @@ impl<M: FnMut() -> Option<Vec<u8>> + Send> TelemetrySource for IrsdkSource<M> {
     }
     fn poll(&mut self) -> Option<TelemetryFrame> {
         let mem = (self.snapshot)()?;
+        // iRacing closed / left the session: forget the layout so a new one is parsed.
+        if i32_at(&mem, 4).is_none_or(|st| st & ST_CONNECTED == 0) {
+            self.layout = None;
+            self.last_tick = -1;
+            return None;
+        }
         if self.layout.is_none() {
             self.layout = IrsdkLayout::parse(&mem).ok();
+            self.session_update = -1;
         }
         let layout = self.layout.as_ref()?;
+        let upd = layout.session_update(&mem);
+        if upd != self.session_update {
+            if let Some(info) = layout.session_info(&mem) {
+                self.session_update = upd;
+                self.max_rpm = yaml::section(&decode_text_of(&mem, layout), "DriverInfo")
+                    .and_then(|d| yaml::find(&d, "DriverCarRedLine"))
+                    .and_then(|v| v.parse::<f32>().ok())
+                    .filter(|&r| r > 500.0);
+                self.session = Some(Arc::new(info));
+            }
+        }
         let tick = layout.copy_latest(&mem, &mut self.scratch)?;
         if tick == self.last_tick {
             return None;
         }
         self.last_tick = tick;
-        Some(layout.frame(&self.scratch, monotonic_s()))
+        let mut f = layout.frame(&self.scratch, monotonic_s());
+        f.max_rpm = self.max_rpm;
+        f.session = self.session.clone();
+        Some(f)
     }
+}
+
+fn decode_text_of(mem: &[u8], layout: &IrsdkLayout) -> String {
+    mem.get(layout.session_off..layout.session_off + layout.session_len).map(decode_text).unwrap_or_default()
 }
 
 #[cfg(windows)]
@@ -287,34 +433,48 @@ pub fn open_windows() -> IrsdkSource<impl FnMut() -> Option<Vec<u8>> + Send> {
     })
 }
 
-#[cfg(test)]
-pub(crate) mod tests {
+/// Builds a structurally faithful iRacing mapping. Used by unit tests and by the
+/// `re-fakesim` tool that lets the Windows build be exercised without the simulator.
+pub mod fake {
     use super::*;
 
     pub fn put_i32(b: &mut [u8], o: usize, v: i32) {
         b[o..o + 4].copy_from_slice(&v.to_le_bytes());
     }
 
-    /// Builds a minimal but structurally faithful irsdk mapping.
-    pub fn synthetic(vars: &[(&str, i32, &str)], buf_len: usize, ticks: [i32; 2]) -> (Vec<u8>, Vec<usize>) {
+    pub struct Fake {
+        pub mem: Vec<u8>,
+        pub offsets: Vec<usize>,
+        pub data_start: usize,
+        pub buf_len: usize,
+    }
+
+    /// `vars`: (name, type, unit); every variable gets an 8-byte slot in each buffer.
+    pub fn build(vars: &[(&str, i32, &str)], buf_len: usize, ticks: [i32; 2], session_yaml: &str) -> Fake {
         let var_off = HEADER_LEN;
-        let data_start = var_off + vars.len() * VAR_HEADER_LEN;
+        let session_off = var_off + vars.len() * VAR_HEADER_LEN;
+        let data_start = session_off + session_yaml.len() + 1;
         let mut m = vec![0u8; data_start + 2 * buf_len];
         put_i32(&mut m, 0, 2);
         put_i32(&mut m, 4, ST_CONNECTED);
         put_i32(&mut m, 8, 60);
+        put_i32(&mut m, 12, 1);
+        put_i32(&mut m, 16, session_yaml.len() as i32 + 1);
+        put_i32(&mut m, 20, session_off as i32);
         put_i32(&mut m, 24, vars.len() as i32);
         put_i32(&mut m, 28, var_off as i32);
         put_i32(&mut m, 32, 2);
         put_i32(&mut m, 36, buf_len as i32);
+        m[session_off..session_off + session_yaml.len()].copy_from_slice(session_yaml.as_bytes());
         for i in 0..2 {
             put_i32(&mut m, 48 + i * 16, ticks[i]);
             put_i32(&mut m, 48 + i * 16 + 4, (data_start + i * buf_len) as i32);
+            put_i32(&mut m, 48 + i * 16 + 8, ticks[i]); // tickCountBegin == tickCount: consistent
         }
         let mut offsets = vec![];
         for (i, (name, ty, unit)) in vars.iter().enumerate() {
             let o = var_off + i * VAR_HEADER_LEN;
-            let off = i * 8; // 8 bytes per var keeps floats/doubles/ints aligned
+            let off = i * 8;
             offsets.push(off);
             put_i32(&mut m, o, *ty);
             put_i32(&mut m, o + 4, off as i32);
@@ -322,50 +482,108 @@ pub(crate) mod tests {
             m[o + 16..o + 16 + name.len()].copy_from_slice(name.as_bytes());
             m[o + 112..o + 112 + unit.len()].copy_from_slice(unit.as_bytes());
         }
-        (m, offsets)
+        Fake { mem: m, offsets, data_start, buf_len }
+    }
+
+    impl Fake {
+        pub fn set_f32(&mut self, buf: usize, var: usize, v: f32) {
+            let o = self.data_start + buf * self.buf_len + self.offsets[var];
+            self.mem[o..o + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        pub fn set_f64(&mut self, buf: usize, var: usize, v: f64) {
+            let o = self.data_start + buf * self.buf_len + self.offsets[var];
+            self.mem[o..o + 8].copy_from_slice(&v.to_le_bytes());
+        }
+        pub fn set_i32(&mut self, buf: usize, var: usize, v: i32) {
+            let o = self.data_start + buf * self.buf_len + self.offsets[var];
+            put_i32(&mut self.mem, o, v);
+        }
+        /// Publishes `buf` as newest with tick `tick` (end tick written last, like the sim).
+        pub fn publish(&mut self, buf: usize, tick: i32) {
+            put_i32(&mut self.mem, 48 + buf * 16 + 8, tick);
+            put_i32(&mut self.mem, 48 + buf * 16, tick);
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::fake::*;
+    use super::*;
+
+    const YAML: &str = "---\nWeekendInfo:\n TrackDisplayName: Spa-Francorchamps\n TrackConfigName: Grand Prix Pits\n TrackLength: 7.00 km\n\nDriverInfo:\n DriverCarIdx: 3\n DriverCarRedLine: 8500.000\n Drivers:\n - CarIdx: 0\n   CarScreenName: Other Car\n - CarIdx: 3\n   CarScreenName: \"Mazda MX-5 Cup\"\n\nCarSetup:\n UpdateCount: 4\n TiresAero:\n  LeftFrontTire:\n   StartingPressure: 20.0 psi\n   LastHotPressure: 27.5 psi\n  AeroSettings:\n   RearWingAngle: 7 deg\n Chassis:\n  Front:\n   ArbSetting: 3\n\nSessionInfo:\n Sessions:\n";
+
+    #[test]
+    fn yaml_session_info_track_car_setup() {
+        let info = yaml::session_info(YAML);
+        assert_eq!(info.track.as_deref(), Some("Spa-Francorchamps (Grand Prix Pits)"));
+        assert_eq!(info.track_length_m, Some(7000.0));
+        assert_eq!(info.car.as_deref(), Some("Mazda MX-5 Cup"));
+        assert!(info.setup.contains(&("TiresAero › LeftFrontTire › StartingPressure".into(), "20.0 psi".into())), "{:?}", info.setup);
+        assert!(info.setup.contains(&("TiresAero › AeroSettings › RearWingAngle".into(), "7 deg".into())));
+        assert!(info.setup.contains(&("Chassis › Front › ArbSetting".into(), "3".into())));
+        assert!(info.setup.iter().all(|(k, _)| !k.contains("UpdateCount")));
+        assert!(info.setup_note.is_none());
+    }
+
+    #[test]
+    fn yaml_without_setup_says_so_and_miles_convert() {
+        let info = yaml::session_info("---\nWeekendInfo:\n TrackLength: 2.50 mi\n\nSessionInfo:\n");
+        assert!(info.setup.is_empty() && info.setup_note.is_some());
+        assert!((info.track_length_m.unwrap() - 4023.36).abs() < 0.1);
     }
 
     #[test]
     fn parses_named_variables_and_picks_newest_buffer() {
         let vars = [("Speed", 4, "m/s"), ("Gear", 2, ""), ("LFpressure", 4, "psi"), ("Brake", 4, "%")];
-        let (mut m, offs) = synthetic(&vars, 64, [10, 11]);
-        let data_start = HEADER_LEN + vars.len() * VAR_HEADER_LEN;
-        // buffer 1 has tick 11 -> newest
-        let b1 = data_start + 64;
-        m[b1 + offs[0]..b1 + offs[0] + 4].copy_from_slice(&50.0f32.to_le_bytes());
-        put_i32(&mut m, b1 + offs[1], 4);
-        m[b1 + offs[2]..b1 + offs[2] + 4].copy_from_slice(&30.0f32.to_le_bytes());
-        m[b1 + offs[3]..b1 + offs[3] + 4].copy_from_slice(&0.5f32.to_le_bytes());
-        // buffer 0 (older) holds different data that must be ignored
-        m[data_start + offs[0]..data_start + offs[0] + 4].copy_from_slice(&1.0f32.to_le_bytes());
-
-        let layout = IrsdkLayout::parse(&m).unwrap();
+        let mut m = build(&vars, 64, [10, 11], "---\n");
+        m.set_f32(1, 0, 50.0);
+        m.set_i32(1, 1, 4);
+        m.set_f32(1, 2, 30.0);
+        m.set_f32(1, 3, 0.5);
+        m.set_f32(0, 0, 1.0); // older buffer must be ignored
+        let layout = IrsdkLayout::parse(&m.mem).unwrap();
         assert_eq!(layout.tick_rate, 60);
         let mut scratch = vec![];
-        assert_eq!(layout.copy_latest(&m, &mut scratch), Some(11));
+        assert_eq!(layout.copy_latest(&m.mem, &mut scratch), Some(11));
         let f = layout.frame(&scratch, 1.0);
         assert!((f.speed_kmh - 180.0).abs() < 1e-3);
         assert_eq!(f.gear, 4);
         assert!((f.brake - 0.5).abs() < 1e-6);
         assert!(f.tyre_pressure_kpa.is_none(), "needs all four wheels, others missing");
         assert!(f.lap.is_none());
-        // psi -> kPa conversion is driven by the unit string of the variable
         assert!((layout.pressure_kpa(&scratch, "LFpressure").unwrap() - 30.0 * PSI_TO_KPA).abs() < 1e-3);
     }
 
     #[test]
-    fn rejects_disconnected_and_truncated() {
-        let (mut m, _) = synthetic(&[("Speed", 4, "m/s")], 16, [1, 2]);
-        assert_eq!(IrsdkLayout::parse(&m[..50]).unwrap_err(), IrsdkError::TooShort);
-        put_i32(&mut m, 4, 0);
-        assert_eq!(IrsdkLayout::parse(&m).unwrap_err(), IrsdkError::NotConnected);
+    fn buffer_being_written_is_skipped() {
+        let vars = [("Speed", 4, "m/s")];
+        let mut m = build(&vars, 16, [5, 6], "---\n");
+        // sim started rewriting buffer 1: begin tick advanced, end tick not yet
+        put_i32(&mut m.mem, 48 + 16 + 8, 7);
+        let layout = IrsdkLayout::parse(&m.mem).unwrap();
+        let mut scratch = vec![];
+        assert_eq!(layout.copy_latest(&m.mem, &mut scratch), Some(5), "falls back to the consistent buffer");
     }
 
     #[test]
-    fn source_skips_unchanged_ticks() {
-        let (m, _) = synthetic(&[("Speed", 4, "m/s")], 16, [5, 6]);
-        let mut src = IrsdkSource::new(move || Some(m.clone()));
-        assert!(src.poll().is_some());
+    fn rejects_disconnected_and_truncated() {
+        let mut m = build(&[("Speed", 4, "m/s")], 16, [1, 2], "---\n");
+        assert_eq!(IrsdkLayout::parse(&m.mem[..50]).unwrap_err(), IrsdkError::TooShort);
+        put_i32(&mut m.mem, 4, 0);
+        assert_eq!(IrsdkLayout::parse(&m.mem).unwrap_err(), IrsdkError::NotConnected);
+    }
+
+    #[test]
+    fn source_emits_session_info_and_skips_unchanged_ticks() {
+        let vars = [("Speed", 4, "m/s")];
+        let m = build(&vars, 16, [5, 6], YAML);
+        let mem = m.mem.clone();
+        let mut src = IrsdkSource::new(move || Some(mem.clone()));
+        let f = src.poll().unwrap();
+        let s = f.session.as_ref().unwrap();
+        assert_eq!(s.car.as_deref(), Some("Mazda MX-5 Cup"));
+        assert_eq!(f.max_rpm, Some(8500.0));
         assert!(src.poll().is_none());
     }
 }

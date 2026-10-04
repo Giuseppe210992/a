@@ -116,7 +116,7 @@ pub fn default_factory(voice: bool) -> SinkFactory {
                 }
             };
             #[cfg(feature = "audio")]
-            return match ClipSink::new(std::path::Path::new("clips"), tts) {
+            return match ClipSink::new(&crate::diag::clips_dir(), tts) {
                 Ok(c) => Box::new(c) as Box<dyn AudioSink>,
                 Err(e) => {
                     eprintln!("[voice] no audio output for clips: {e}");

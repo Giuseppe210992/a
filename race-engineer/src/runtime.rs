@@ -7,13 +7,15 @@
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
-use std::sync::mpsc::{channel, sync_channel, Receiver, TrySendError};
+use std::sync::mpsc::{channel, sync_channel, Receiver, Sender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use crate::biometrics::{BiometricConfig, BiometricEngine, BiometricState, HrMeasurement};
 use crate::clock::monotonic_s;
+use crate::commands::VoiceCommand;
+use crate::diag;
 use crate::engineer::{Analysis, Engineer, EngineerConfig};
 use crate::sources::TelemetrySource;
 use crate::telemetry::TelemetryFrame;
@@ -147,6 +149,8 @@ pub struct Runtime {
     stop: Arc<AtomicBool>,
     pub snapshot: Arc<Mutex<Snapshot>>,
     pub controls: Arc<Controls>,
+    /// Voice commands (from speech recognition or the UI) are applied by the engineer thread.
+    pub command_tx: Sender<VoiceCommand>,
     handles: Vec<JoinHandle<()>>,
 }
 
@@ -167,6 +171,7 @@ impl Runtime {
         let dropped = Arc::new(AtomicU64::new(0));
         let (frame_tx, frame_rx) = sync_channel::<(Instant, TelemetryFrame)>(16);
         let (voice_tx, voice_rx) = channel();
+        let (command_tx, cmd_rx) = channel::<VoiceCommand>();
         let mut handles = vec![];
 
         // Source: poll, never wait for anyone downstream.
@@ -174,7 +179,13 @@ impl Runtime {
             let (stop, dropped, interval) = (stop.clone(), dropped.clone(), cfg.poll_interval);
             handles.push(thread::Builder::new().name("re-source".into()).spawn(move || {
                 while !stop.load(Ordering::Relaxed) {
-                    if let Some(f) = source.poll() {
+                    let polled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| source.poll()));
+                    let polled = polled.unwrap_or_else(|_| {
+                        diag::error("errore interno nel lettore del simulatore (vedi log); riprovo");
+                        thread::sleep(Duration::from_millis(500));
+                        None
+                    });
+                    if let Some(f) = polled {
                         match frame_tx.try_send((Instant::now(), f)) {
                             Ok(()) => {}
                             Err(TrySendError::Full(_)) => {
@@ -209,6 +220,25 @@ impl Runtime {
                             bio.ingest(m, t);
                         }
                     }
+                    while let Ok(cmd) = cmd_rx.try_recv() {
+                        match cmd {
+                            VoiceCommand::SetMode(m) => {
+                                controls.set_mode(m);
+                                if m == EngineerMode::Full {
+                                    controls.set_muted(false);
+                                }
+                            }
+                            VoiceCommand::Mute(b) => controls.set_muted(b),
+                            VoiceCommand::Status => {
+                                let u = eng.status_message(last_frame.as_ref(), bio.state(monotonic_s()), monotonic_s());
+                                let spoken = !controls.muted();
+                                pending.push(Message { t_s: monotonic_s(), priority: u.priority, text: u.text.clone(), spoken });
+                                if spoken {
+                                    let _ = voice_tx.send(u);
+                                }
+                            }
+                        }
+                    }
                     match frame_rx.recv_timeout(Duration::from_millis(50)) {
                         Ok((captured, f)) => {
                             frames_in += 1;
@@ -221,7 +251,8 @@ impl Runtime {
                                 let spoken = !muted && mode.allows(u.priority);
                                 pending.push(Message { t_s: f.t_s, priority: u.priority, text: u.text.clone(), spoken });
                                 if spoken {
-                                    let _ = voice_tx.send(u);
+                                    // lifetime counts from the moment the call is handed to the voice engine
+                                    let _ = voice_tx.send(crate::voice::Utterance { created_s: monotonic_s(), ..u });
                                 }
                             }
                             if let Some(dir) = &lap_dir {
@@ -288,7 +319,7 @@ impl Runtime {
             }).expect("spawn voice thread"));
         }
 
-        Self { stop, snapshot, controls, handles }
+        Self { stop, snapshot, controls, command_tx, handles }
     }
 
     pub fn shutdown(self) {
