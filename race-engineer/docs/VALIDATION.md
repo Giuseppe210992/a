@@ -39,3 +39,9 @@ Windows desktop (DPI, GPU drivers). Everything below is for a real Windows PC.
 16. **EA WRC**: start the game once, press «Prepara EA WRC» (or `re-cli --prepare-wrc`), restart the game, start
     a stage, then «Avvia». If nothing arrives: open `Documents\My Games\WRC\telemetry\config.json` and
     check our `race_engineer` entry; `config.json.re-backup` restores the original. Verify speed units.
+17. **Access code**: start `re-gui.exe` on a clean profile, paste a code from the generator, check the expiry line
+    on top; then generate a code that expires in 2 minutes and confirm the app locks (and asks for a new code).
+18. **Error e-mail**: put your `report.json` in `%LOCALAPPDATA%\RaceEngineer`, tick the consent box, press
+    «Invia messaggio di prova» and check the inbox (also spam). For Gmail use an *app password*.
+19. **Smartwatch**: run with the watch off and with «Collega sensore» ticked: the dashboard must work normally and
+    show only an amber notice.

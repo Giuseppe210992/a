@@ -139,7 +139,7 @@ impl SafeSink {
             Ok(v) => v,
             Err(_) => {
                 if !self.failed {
-                    crate::diag::error("errore nell'audio di Windows: la voce passa alla modalità testo");
+                    crate::diag::error("RE-AUD-01", "errore nell'audio di Windows: la voce passa alla modalità testo");
                 }
                 self.failed = true;
                 self.inner = Box::new(ConsoleSink);

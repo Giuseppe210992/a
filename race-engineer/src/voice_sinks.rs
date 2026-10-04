@@ -111,7 +111,7 @@ pub fn default_factory(voice: bool) -> SinkFactory {
             let tts = match TtsSink::new() {
                 Ok(t) => t,
                 Err(e) => {
-                    eprintln!("[voice] Windows speech synthesis unavailable: {e}");
+                    crate::diag::warn("RE-AUD-03", format!("sintesi vocale di Windows non disponibile ({e}): i messaggi restano a schermo"));
                     return Box::new(ConsoleSink) as Box<dyn AudioSink>;
                 }
             };
@@ -119,7 +119,7 @@ pub fn default_factory(voice: bool) -> SinkFactory {
             return match ClipSink::new(&crate::diag::clips_dir(), tts) {
                 Ok(c) => Box::new(c) as Box<dyn AudioSink>,
                 Err(e) => {
-                    eprintln!("[voice] no audio output for clips: {e}");
+                    crate::diag::warn("RE-AUD-04", format!("uscita audio per le clip non disponibile ({e}): uso la sintesi vocale"));
                     Box::new(ConsoleSink) as Box<dyn AudioSink>
                 }
             };

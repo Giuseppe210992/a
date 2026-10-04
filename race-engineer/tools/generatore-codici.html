@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generatore codici Race Engineer</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --text: #1b1f27; --dim: #5d6675; --line: #dde1e8;
+    --accent: #1f6feb; --accent-text: #ffffff; --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e;
+    --code-bg: #f0f2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151a; --card: #1c2027; --text: #e7eaf0; --dim: #9aa3b2; --line: #2c333d;
+      --accent: #4c8dff; --accent-text: #0b0e13; --ok: #3fb950; --warn: #d29922; --bad: #f85149;
+      --code-bg: #14181e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 0 0 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--dim); }
+  p.lead { margin: 0 0 20px; color: var(--dim); }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+  label { display: block; font-weight: 600; margin: 12px 0 4px; }
+  input[type=text], input[type=datetime-local], textarea {
+    width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); font: inherit;
+  }
+  textarea { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 13px; background: var(--code-bg); resize: vertical; }
+  button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  button.danger { color: var(--bad); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .chips button { padding: 6px 12px; }
+  .chips button.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .status { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; border-radius: 999px; font-weight: 600; font-size: 13px; border: 1px solid var(--line); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); }
+  .status.ok .dot { background: var(--ok); } .status.bad .dot { background: var(--bad); }
+  .note { color: var(--dim); font-size: 13px; margin-top: 6px; }
+  .msg { margin-top: 10px; font-weight: 600; } .msg.ok { color: var(--ok); } .msg.bad { color: var(--bad); } .msg.warn { color: var(--warn); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { color: var(--dim); font-weight: 600; }
+  td.mono, .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }
+  .tag { padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid var(--line); }
+  .tag.ok { color: var(--ok); } .tag.bad { color: var(--bad); } .tag.warn { color: var(--warn); }
+  details summary { cursor: pointer; font-weight: 600; }
+  @media (max-width: 560px) { th:nth-child(4), td:nth-child(4) { display: none; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Generatore di codici di accesso</h1>
+  <p class="lead">Crea i codici per Race Engineer con la scadenza che vuoi. Tutto avviene in questa pagina, sul tuo computer: nessun dato viene inviato in rete.</p>
+
+  <section id="keySection" aria-labelledby="keyTitle">
+    <h2 id="keyTitle">1 · Chiave di firma</h2>
+    <div class="row">
+      <span class="status" id="keyStatus"><span class="dot"></span><span id="keyStatusText">Nessuna chiave caricata</span></span>
+    </div>
+    <label for="keyFile">Carica il file della chiave privata (<span class="mono">race-engineer-chiave-privata.json</span>)</label>
+    <input type="file" id="keyFile" accept=".json,application/json">
+    <label for="keyPaste">…oppure incolla il contenuto del file</label>
+    <textarea id="keyPaste" rows="3" placeholder='{"app":"race-engineer","alg":"Ed25519","private":"…","public":"…"}'></textarea>
+    <div class="row" style="margin-top:8px">
+      <button id="keyLoad">Carica chiave</button>
+      <label style="margin:0;font-weight:400"><input type="checkbox" id="keyRemember"> Ricorda su questo browser</label>
+      <button id="keyForget" class="danger" hidden>Dimentica la chiave</button>
+    </div>
+    <p class="note">La chiave privata è ciò che permette di creare codici: conservala in un posto sicuro e non condividerla. Se la perdi non potrai più creare codici validi per questa versione dell'app.</p>
+    <details style="margin-top:10px">
+      <summary>Avanzate: crea una nuova coppia di chiavi</summary>
+      <p class="note">Serve solo per cambiare chiave (ad esempio se la vecchia è stata esposta). I codici fatti con la vecchia chiave smetteranno di funzionare quando distribuisci una versione dell'app ricompilata con la nuova chiave pubblica.</p>
+      <button id="keyNew">Crea nuova coppia di chiavi</button>
+      <div id="newKeyOut" class="note" hidden></div>
+    </details>
+  </section>
+
+  <section id="genSection" aria-labelledby="genTitle">
+    <h2 id="genTitle">2 · Nuovo codice</h2>
+    <label for="label">Per chi è (facoltativo, max 24 caratteri)</label>
+    <input type="text" id="label" maxlength="24" placeholder="es. Mario Rossi" autocomplete="off">
+    <label>Scadenza</label>
+    <div class="row chips" id="presets" role="group" aria-label="Durata">
+      <button type="button" data-days="1">1 giorno</button>
+      <button type="button" data-days="7">7 giorni</button>
+      <button type="button" data-days="30" class="on">30 giorni</button>
+      <button type="button" data-days="90">90 giorni</button>
+      <button type="button" data-days="365">1 anno</button>
+      <button type="button" data-days="0">Nessuna scadenza</button>
+    </div>
+    <label for="expiry">Data e ora di scadenza (ora del tuo computer)</label>
+    <input type="datetime-local" id="expiry">
+    <div class="note" id="expiryInfo"></div>
+    <div class="row" style="margin-top:14px"><button id="generate" class="primary" disabled>Genera codice</button></div>
+    <div id="genMsg" class="msg" role="status"></div>
+    <div id="result" hidden>
+      <label for="codeOut">Codice</label>
+      <textarea id="codeOut" rows="4" readonly></textarea>
+      <div class="row" style="margin-top:8px"><button id="copyCode" class="primary">Copia codice</button><button id="copyMsg">Copia messaggio per il cliente</button></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="verTitle">
+    <h2 id="verTitle">3 · Verifica un codice</h2>
+    <textarea id="verifyIn" rows="3" placeholder="Incolla qui un codice RE1-…"></textarea>
+    <div class="row" style="margin-top:8px"><button id="verify">Verifica</button></div>
+    <div id="verifyMsg" class="msg" role="status"></div>
+  </section>
+
+  <section aria-labelledby="histTitle">
+    <h2 id="histTitle">Codici creati su questo browser</h2>
+    <div class="row" style="margin-bottom:8px"><button id="exportCsv">Esporta CSV</button><button id="clearHist" class="danger">Svuota elenco</button></div>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>Stato</th><th>Per chi</th><th>Scade</th><th>Creato</th><th>ID</th><th></th></tr></thead>
+      <tbody id="hist"></tbody>
+    </table></div>
+    <p class="note" id="histEmpty">Nessun codice ancora.</p>
+    <p class="note">Un codice non può essere annullato prima della scadenza: per un controllo stretto usa scadenze brevi. L'elenco è salvato solo in questo browser.</p>
+  </section>
+</main>
+
+<script>
+"use strict";
+/* ---- core: identical format to src/license.rs ---------------------------------------- */
+const DOMAIN = new TextEncoder().encode("RE-ACCESS-v1");
+const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+const PKCS8_ED25519_PREFIX = Uint8Array.from([0x30,0x2e,0x02,0x01,0x00,0x30,0x05,0x06,0x03,0x2b,0x65,0x70,0x04,0x22,0x04,0x20]);
+
+const hex = (u8) => Array.from(u8, b => b.toString(16).padStart(2, "0")).join("");
+const unhex = (s) => { const t = s.trim(); if (!/^[0-9a-fA-F]*$/.test(t) || t.length % 2) throw new Error("hex non valido"); return Uint8Array.from(t.match(/../g) || [], h => parseInt(h, 16)); };
+
+function b32encode(bytes) {
+  let out = "", acc = 0, bits = 0;
+  for (const b of bytes) { acc = ((acc << 8) | b) >>> 0; bits += 8; while (bits >= 5) { out += B32[(acc >>> (bits - 5)) & 31]; bits -= 5; } acc &= (1 << bits) - 1; }
+  if (bits > 0) out += B32[(acc << (5 - bits)) & 31];
+  return out;
+}
+function b32decode(str) {
+  const out = []; let acc = 0, bits = 0;
+  for (const c of str) { const v = B32.indexOf(c); if (v < 0) return null; acc = ((acc << 5) | v) >>> 0; bits += 5; if (bits >= 8) { out.push((acc >>> (bits - 8)) & 255); bits -= 8; } acc &= (1 << bits) - 1; }
+  return Uint8Array.from(out);
+}
+
+async function importPrivate(seedHex) {
+  const seed = unhex(seedHex);
+  if (seed.length !== 32) throw new Error("la chiave privata deve essere di 32 byte");
+  const pkcs8 = new Uint8Array(48); pkcs8.set(PKCS8_ED25519_PREFIX); pkcs8.set(seed, 16);
+  return crypto.subtle.importKey("pkcs8", pkcs8, { name: "Ed25519" }, true, ["sign"]);
+}
+async function publicFromPrivate(privKey) {
+  const jwk = await crypto.subtle.exportKey("jwk", privKey);           // jwk.x = public key, base64url
+  const b64 = jwk.x.replace(/-/g, "+").replace(/_/g, "/");
+  return Uint8Array.from(atob(b64 + "=".repeat((4 - b64.length % 4) % 4)), c => c.charCodeAt(0));
+}
+async function importPublic(pubHex) { return crypto.subtle.importKey("raw", unhex(pubHex), { name: "Ed25519" }, true, ["verify"]); }
+
+function u32be(n) { return [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255]; }
+
+/** expiresAt: unix seconds, 0 = never. */
+async function issueCode(privKey, { label = "", expiresAt = 0, issuedAt = Math.floor(Date.now() / 1000) } = {}) {
+  const lab = new TextEncoder().encode(label);
+  if (lab.length > 24) throw new Error("etichetta troppo lunga");
+  const id = crypto.getRandomValues(new Uint8Array(8));
+  const payload = Uint8Array.from([1, ...u32be(issuedAt), ...u32be(expiresAt), 0, ...id, lab.length, ...lab]);
+  const msg = new Uint8Array(DOMAIN.length + payload.length); msg.set(DOMAIN); msg.set(payload, DOMAIN.length);
+  const sig = new Uint8Array(await crypto.subtle.sign({ name: "Ed25519" }, privKey, msg));
+  const raw = new Uint8Array(payload.length + 64); raw.set(payload); raw.set(sig, payload.length);
+  const b = b32encode(raw);
+  return { code: "RE1-" + b.match(/.{1,8}/g).join("-"), id: hex(id), issuedAt, expiresAt, label };
+}
+
+async function verifyCode(pubKey, code) {
+  const n = code.replace(/[\s-]/g, "").toUpperCase();
+  if (!n.startsWith("RE1")) return { ok: false, reason: "Il codice deve iniziare con RE1-" };
+  const raw = b32decode(n.slice(3));
+  if (!raw || raw.length < 83 || raw[0] !== 1) return { ok: false, reason: "Codice incompleto o danneggiato" };
+  const labLen = raw[18], plen = 19 + labLen;
+  if (raw.length !== plen + 64) return { ok: false, reason: "Codice incompleto o danneggiato" };
+  const payload = raw.slice(0, plen), sig = raw.slice(plen);
+  const msg = new Uint8Array(DOMAIN.length + payload.length); msg.set(DOMAIN); msg.set(payload, DOMAIN.length);
+  if (!(await crypto.subtle.verify({ name: "Ed25519" }, pubKey, sig, msg))) return { ok: false, reason: "Firma non valida: codice non creato con questa chiave" };
+  const dv = new DataView(payload.buffer, payload.byteOffset);
+  const expires = dv.getUint32(5);
+  return { ok: true, issuedAt: dv.getUint32(1), expiresAt: expires, id: hex(payload.slice(10, 18)), label: new TextDecoder().decode(payload.slice(19)) };
+}
+
+/* ---- UI ----------------------------------------------------------------------------- */
+const $ = (id) => document.getElementById(id);
+const LS_KEY = "re-gen-key", LS_HIST = "re-gen-hist";
+let signKey = null, pubHex = "", pubKey = null;
+
+const fmtLocal = (s) => new Date(s * 1000).toLocaleString("it-IT", { dateStyle: "medium", timeStyle: "short" });
+const fmtUtc = (s) => new Date(s * 1000).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short", timeZone: "UTC" }) + " UTC";
+const pad = (n) => String(n).padStart(2, "0");
+const toLocalInput = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const fingerprint = (h) => h.slice(0, 12).toUpperCase();
+
+function setMsg(el, text, kind) { el.textContent = text; el.className = "msg " + (kind || ""); }
+
+async function loadKey(json, remember) {
+  let k;
+  try { k = typeof json === "string" ? JSON.parse(json) : json; } catch { throw new Error("Il file non è un JSON valido"); }
+  if (!k || k.alg !== "Ed25519" || typeof k.private !== "string") throw new Error("Non sembra una chiave di Race Engineer");
+  signKey = await importPrivate(k.private);
+  pubHex = hex(await publicFromPrivate(signKey));
+  if (k.public && k.public.toLowerCase() !== pubHex) throw new Error("La chiave pubblica nel file non corrisponde alla privata");
+  pubKey = await importPublic(pubHex);
+  if (remember) { try { localStorage.setItem(LS_KEY, JSON.stringify(k)); } catch {} }
+  refreshKeyUi();
+}
+function refreshKeyUi() {
+  const ok = !!signKey;
+  $("keyStatus").className = "status " + (ok ? "ok" : "bad");
+  $("keyStatusText").textContent = ok ? `Chiave caricata · impronta ${fingerprint(pubHex)}` : "Nessuna chiave caricata";
+  $("generate").disabled = !ok;
+  $("keyForget").hidden = !localStorage.getItem(LS_KEY);
+}
+
+/* presets / expiry */
+function setPreset(days) {
+  document.querySelectorAll("#presets button").forEach(b => b.classList.toggle("on", Number(b.dataset.days) === days));
+  $("expiry").disabled = days === 0;
+  if (days === 0) { $("expiry").value = ""; } else { $("expiry").value = toLocalInput(new Date(Date.now() + days * 86400000)); }
+  updateExpiryInfo();
+}
+function currentExpiry() {   // unix seconds, 0 = never, null = invalid
+  if ($("expiry").disabled) return 0;
+  const v = $("expiry").value; if (!v) return null;
+  const t = Math.floor(new Date(v).getTime() / 1000);
+  return Number.isFinite(t) ? t : null;
+}
+function updateExpiryInfo() {
+  const e = currentExpiry(), el = $("expiryInfo");
+  if (e === 0) { el.textContent = "Il codice non scadrà mai."; return; }
+  if (e === null) { el.textContent = "Scegli una data di scadenza."; return; }
+  const left = e - Date.now() / 1000;
+  if (left <= 0) { el.textContent = "La data è già passata."; return; }
+  const d = Math.floor(left / 86400), h = Math.floor((left % 86400) / 3600);
+  el.textContent = `Scade il ${fmtLocal(e)} (${fmtUtc(e)}) — tra ${d} giorni e ${h} ore.`;
+}
+
+/* history */
+const loadHist = () => { try { return JSON.parse(localStorage.getItem(LS_HIST) || "[]"); } catch { return []; } };
+const saveHist = (h) => { try { localStorage.setItem(LS_HIST, JSON.stringify(h)); } catch {} };
+function renderHist() {
+  const h = loadHist(), body = $("hist"); body.innerHTML = "";
+  $("histEmpty").hidden = h.length > 0;
+  const now = Date.now() / 1000;
+  h.slice().reverse().forEach((r, idx) => {
+    const tr = document.createElement("tr");
+    const st = r.expiresAt === 0 ? ["senza scadenza", "ok"] : r.expiresAt <= now ? ["scaduto", "bad"] : r.expiresAt - now < 3 * 86400 ? ["scade presto", "warn"] : ["attivo", "ok"];
+    const cells = [
+      `<span class="tag ${st[1]}">${st[0]}</span>`,
+      null, r.expiresAt === 0 ? "mai" : fmtLocal(r.expiresAt), fmtLocal(r.issuedAt), `<span class="mono">${r.id.slice(0, 8)}</span>`, ""
+    ];
+    cells.forEach((c, i) => { const td = document.createElement("td"); if (i === 1) td.textContent = r.label || "—"; else td.innerHTML = c; tr.appendChild(td); });
+    const act = tr.lastChild;
+    const copy = document.createElement("button"); copy.textContent = "Copia"; copy.onclick = () => copyText(r.code, copy);
+    const del = document.createElement("button"); del.textContent = "✕"; del.className = "danger"; del.title = "Rimuovi dall'elenco"; del.onclick = () => { const all = loadHist(); all.splice(all.length - 1 - idx, 1); saveHist(all); renderHist(); };
+    act.append(copy, " ", del);
+    body.appendChild(tr);
+  });
+}
+async function copyText(t, btn) {
+  try { await navigator.clipboard.writeText(t); } catch { const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); }
+  if (btn) { const o = btn.textContent; btn.textContent = "Copiato"; setTimeout(() => btn.textContent = o, 1200); }
+}
+
+/* events */
+$("keyFile").addEventListener("change", async (ev) => {
+  const f = ev.target.files[0]; if (!f) return;
+  try { await loadKey(await f.text(), $("keyRemember").checked); } catch (e) { alert(e.message); }
+});
+$("keyLoad").addEventListener("click", async () => {
+  try { await loadKey($("keyPaste").value, $("keyRemember").checked); $("keyPaste").value = ""; } catch (e) { alert(e.message); }
+});
+$("keyForget").addEventListener("click", () => { localStorage.removeItem(LS_KEY); signKey = null; pubKey = null; pubHex = ""; refreshKeyUi(); });
+$("keyNew").addEventListener("click", async () => {
+  if (!confirm("Creare una nuova coppia di chiavi? Dovrai ricompilare l'app con la nuova chiave pubblica.")) return;
+  const kp = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+  const pkcs8 = new Uint8Array(await crypto.subtle.exportKey("pkcs8", kp.privateKey));
+  const seed = hex(pkcs8.slice(pkcs8.length - 32));
+  const pub = hex(new Uint8Array(await crypto.subtle.exportKey("raw", kp.publicKey)));
+  const json = JSON.stringify({ app: "race-engineer", v: 1, alg: "Ed25519", private: seed, public: pub, created: new Date().toISOString() }, null, 2);
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([json], { type: "application/json" })); a.download = "race-engineer-chiave-privata.json"; a.click();
+  const out = $("newKeyOut"); out.hidden = false;
+  out.innerHTML = "File della chiave privata scaricato: conservalo al sicuro.<br>Chiave pubblica (da mettere in <span class='mono'>license/pubkey.txt</span> prima di ricompilare):<br><span class='mono' style='word-break:break-all'>" + pub + "</span>";
+  await loadKey(json, false);
+});
+$("presets").addEventListener("click", (ev) => { const b = ev.target.closest("button"); if (b) setPreset(Number(b.dataset.days)); });
+$("expiry").addEventListener("input", () => { document.querySelectorAll("#presets button").forEach(b => b.classList.remove("on")); updateExpiryInfo(); });
+
+$("generate").addEventListener("click", async () => {
+  const msg = $("genMsg"); setMsg(msg, "");
+  if (!signKey) return setMsg(msg, "Carica prima la chiave privata.", "bad");
+  const exp = currentExpiry();
+  if (exp === null) return setMsg(msg, "Scegli una data di scadenza.", "bad");
+  if (exp !== 0 && exp <= Date.now() / 1000) return setMsg(msg, "La scadenza è già passata.", "bad");
+  if (exp > 0xFFFFFFFF) return setMsg(msg, "Scadenza troppo lontana (massimo anno 2106).", "bad");
+  try {
+    const r = await issueCode(signKey, { label: $("label").value.trim(), expiresAt: exp });
+    $("codeOut").value = r.code; $("result").hidden = false;
+    $("result").dataset.expires = String(exp); $("result").dataset.label = r.label;
+    const h = loadHist(); h.push({ ...r, code: r.code }); saveHist(h); renderHist();
+    setMsg(msg, exp === 0 ? "Codice creato: nessuna scadenza." : `Codice creato: scade il ${fmtLocal(exp)}.`, "ok");
+  } catch (e) { setMsg(msg, "Errore: " + e.message, "bad"); }
+});
+$("copyCode").addEventListener("click", () => copyText($("codeOut").value, $("copyCode")));
+$("copyMsg").addEventListener("click", () => {
+  const exp = Number($("result").dataset.expires), lab = $("result").dataset.label;
+  const t = `${lab ? "Ciao " + lab + ",\n" : ""}ecco il tuo codice di accesso per Race Engineer:\n\n${$("codeOut").value}\n\n${exp ? "Valido fino al " + fmtLocal(exp) + "." : "Senza scadenza."}\nAvvia Race Engineer, incolla il codice nella schermata di accesso e premi «Accedi».`;
+  copyText(t, $("copyMsg"));
+});
+$("verify").addEventListener("click", async () => {
+  const el = $("verifyMsg");
+  if (!pubKey) return setMsg(el, "Carica prima la chiave (serve la chiave pubblica per verificare).", "bad");
+  const r = await verifyCode(pubKey, $("verifyIn").value);
+  if (!r.ok) return setMsg(el, r.reason, "bad");
+  const now = Date.now() / 1000;
+  const state = r.expiresAt === 0 ? "senza scadenza" : r.expiresAt <= now ? `SCADUTO il ${fmtLocal(r.expiresAt)}` : `valido fino al ${fmtLocal(r.expiresAt)}`;
+  setMsg(el, `Codice autentico · ${state}${r.label ? " · per " + r.label : ""} · ID ${r.id.slice(0, 8)}`, r.expiresAt !== 0 && r.expiresAt <= now ? "warn" : "ok");
+});
+$("exportCsv").addEventListener("click", () => {
+  const rows = [["id", "per_chi", "creato_utc", "scade_utc", "codice"]].concat(loadHist().map(r => [r.id, r.label, new Date(r.issuedAt * 1000).toISOString(), r.expiresAt ? new Date(r.expiresAt * 1000).toISOString() : "mai", r.code]));
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = "codici-race-engineer.csv"; a.click();
+});
+$("clearHist").addEventListener("click", () => { if (confirm("Svuotare l'elenco? I codici già consegnati continuano a funzionare.")) { saveHist([]); renderHist(); } });
+
+(async function init() {
+  if (!(window.crypto && crypto.subtle)) { setMsg($("genMsg"), "Questo browser non supporta la crittografia necessaria: aggiorna Chrome, Edge, Firefox o Safari.", "bad"); return; }
+  try { await crypto.subtle.generateKey({ name: "Ed25519" }, false, ["sign"]); }
+  catch { setMsg($("genMsg"), "Questo browser non supporta le firme Ed25519: aggiorna il browser (Chrome/Edge 137+, Firefox 129+, Safari 17+).", "bad"); $("generate").disabled = true; return; }
+  setPreset(30);
+  renderHist();
+  const saved = localStorage.getItem(LS_KEY);
+  if (saved) { try { await loadKey(saved, false); } catch { localStorage.removeItem(LS_KEY); } }
+  refreshKeyUi();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "to": "TUO-INDIRIZZO@esempio.it",
+  "default_consent": false,
+  "transport": "webhook",
+  "webhook": {
+    "url": "https://api.web3forms.com/submit",
+    "headers": {},
+    "extra_fields": { "access_key": "LA-TUA-CHIAVE-WEB3FORMS" }
+  }
+}

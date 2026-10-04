@@ -34,6 +34,9 @@ settings, logs) but NOT the real games, real Bluetooth, real speech or real audi
 | Voice output: priority queue, expiry, preemption, panic-safe sink; Windows TTS + WAV clips | queue tested; Windows backends compile; in Wine TTS is unavailable and the app falls back to text (verified); **not run on real audio** |
 | Voice input (offline commands: silenzio / solo critici / completo / muto / stato) | **experimental**, Windows speech recognizer; compiles for Windows; mapping tested; **never run** |
 | GUI (`re-gui`) | E2E (Wine) incl. dark theme, settings persistence, log file; not run on a real Windows desktop |
+| **Smartwatch optional** | everything runs without it (no HR → no heart-rate advice, nothing else changes); with Bluetooth requested but no device/adapter you get an amber notice and automatic retries; tested |
+| **Error reports by e-mail** (SMTP or webhook, consent-gated, anonymous, queued, rate-limited) | tested against local SMTP/HTTP servers incl. the Windows exe under Wine; **not tested against Gmail / a real form service** (needs your credentials) — see docs/SEGNALAZIONI.md |
+| **Access codes with expiry** (Ed25519, offline) + HTML generator `tools/generatore-codici.html` | generator tested in real Chromium; codes verified by the Rust app (cross-language test vector); access screen, expiry, tamper and clock-rollback tested in the Windows exe under Wine — see docs/CODICI-ACCESSO.md |
 | Offline lap recording (CSV) | implemented + tested + E2E (Wine) |
 
 ## Build / test
@@ -67,3 +70,9 @@ See `docs/RESEARCH.md` (what was verified and what was not) and `docs/VALIDATION
 * `re-fakesim.exe` — test tool: fake iRacing/ACC shared memory and F1/Forza UDP.
 * Optional `clips\brake.wav`, `lift.wav`, `throttle.wav`, `attention.wav` next to the exe: used for the critical calls
   instead of speech synthesis (lower latency). Laps are saved to `Documents\RaceEngineer\laps`.
+
+## Access codes and error reports
+
+* `tools/generatore-codici.html` creates access codes with an expiry (owner only; never distribute it or the
+  private key). The app asks for a code at start (`license/pubkey.txt` holds the public key; empty = no gate).
+* `report.json` (not shipped) enables error e-mails. See `docs/CODICI-ACCESSO.md` and `docs/SEGNALAZIONI.md`.

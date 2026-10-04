@@ -39,6 +39,8 @@ struct SetupState {
     lap_dir: String,
     error: Option<String>,
     wrc_msg: Option<Result<String, String>>,
+    report_result: Arc<std::sync::Mutex<Option<Result<String, String>>>>,
+    report_busy: Arc<AtomicBool>,
 }
 
 impl Default for SetupState {
@@ -63,6 +65,8 @@ impl Default for SetupState {
             lap_dir: crate::diag::default_lap_dir().display().to_string(),
             error: None,
             wrc_msg: None,
+            report_result: Arc::new(std::sync::Mutex::new(None)),
+            report_busy: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -139,6 +143,7 @@ struct Session {
     _stt: Option<crate::stt::SttHandle>,
     tyre_hot_c: f32,
     tyre_cold_c: f32,
+    hr_requested: bool,
     started: Instant,
 }
 
@@ -152,7 +157,58 @@ impl Session {
     }
 }
 
+/// Access-code gate (see `license`). `licence == None` while the gate is shown.
+struct Access {
+    licence: Option<crate::license::Licence>,
+    input: String,
+    message: Option<String>,
+    /// last time the expiry was evaluated while running
+    last_check: Instant,
+}
+
+impl Access {
+    fn startup() -> Self {
+        use crate::license::Startup;
+        let (licence, message) = match crate::license::startup() {
+            Startup::Open => (Some(crate::license::Licence { id: String::new(), label: String::new(), issued_at: 0, expires_at: None }), None),
+            Startup::Granted(l) => (Some(l), None),
+            Startup::NeedsCode(e) => (None, e.map(|e| format!("{} ({})", e.message(), e.code()))),
+        };
+        Self { licence, input: String::new(), message, last_check: Instant::now() }
+    }
+
+    fn open(&self) -> bool {
+        self.licence.is_some()
+    }
+
+    fn try_code(&mut self) {
+        match crate::license::validate(&self.input) {
+            Ok(l) => {
+                crate::license::save_code(&self.input);
+                crate::diag::log(&format!("accesso consentito (id {})", l.id));
+                self.licence = Some(l);
+                self.message = None;
+                self.input.clear();
+            }
+            Err(e) => {
+                crate::diag::log(&format!("codice rifiutato: {}", e.code()));
+                self.message = Some(format!("{} ({})", e.message(), e.code()));
+            }
+        }
+    }
+
+    /// One-line summary for the header / setup screen.
+    fn summary(&self) -> Option<(String, bool)> {
+        let l = self.licence.as_ref()?;
+        let exp = l.expires_at?;
+        let left = exp.saturating_sub(crate::license::now_s());
+        let who = if l.label.is_empty() { String::new() } else { format!("{} · ", l.label) };
+        Some((format!("{who}accesso valido fino al {} ({})", crate::license::fmt_date(exp), if left >= 86_400 { format!("{} giorni", left / 86_400) } else { format!("{} ore", left / 3600) }), left < 3 * 86_400))
+    }
+}
+
 pub struct ReApp {
+    access: Access,
     setup: SetupState,
     session: Option<Session>,
     view: Snapshot,
@@ -168,6 +224,7 @@ impl Default for ReApp {
         let mut fps = 30;
         let setup = SetupState::load(&mut fps);
         Self {
+            access: Access::startup(),
             setup,
             session: None,
             view: Snapshot::default(),
@@ -190,6 +247,9 @@ fn native_options(renderer: eframe::Renderer) -> eframe::NativeOptions {
 fn create_app(cc: &eframe::CreationContext<'_>) -> Result<Box<dyn eframe::App>, Box<dyn std::error::Error + Send + Sync>> {
     // Always dark: the cards use fixed dark colours, so following a light Windows theme would clash.
     cc.egui_ctx.set_theme(egui::ThemePreference::Dark);
+    if std::env::var_os("RE_DEBUG_RAISE").is_some() {
+        crate::diag::error("RE-TEST-01", "errore di prova (RE_DEBUG_RAISE)");
+    }
     let mut app = ReApp::default();
     // `--autostart synthetic|f1|forza|iracing|acc` skips the setup screen (kiosk / testing).
     let args: Vec<String> = std::env::args().collect();
@@ -211,10 +271,11 @@ fn create_app(cc: &eframe::CreationContext<'_>) -> Result<Box<dyn eframe::App>, 
 
 pub fn run() -> eframe::Result {
     crate::diag::init("re-gui.log");
+    crate::report::start();
     let r = eframe::run_native("Race Engineer", native_options(eframe::Renderer::Glow), Box::new(create_app));
     if let Err(e) = &r {
         let msg = format!("Impossibile aprire la finestra grafica (serve OpenGL 2.0 o superiore; aggiorna i driver video): {e}");
-        crate::diag::error(&msg);
+        crate::diag::error("RE-GUI-01", msg.clone());
         #[cfg(windows)]
         crate::diag::message_box("Race Engineer", &msg);
     }
@@ -258,7 +319,8 @@ impl ReApp {
             lap_dir: s.save_laps.then(|| s.lap_dir.clone().into()),
             ..Default::default()
         };
-        crate::diag::clear_error();
+        crate::diag::clear_notice();
+        crate::report::set_context(s.kind.label(), &self.access.licence.as_ref().map(|l| l.id.clone()).unwrap_or_default());
         s.save(self.fps);
         let runtime = Runtime::spawn(source, hr_rx, crate::voice_sinks::default_factory(s.voice), cfg);
         #[cfg(feature = "stt")]
@@ -266,7 +328,7 @@ impl ReApp {
             match crate::stt::start(runtime.command_tx.clone()) {
                 Ok(h) => Some(h),
                 Err(e) => {
-                    crate::diag::error(format!("comandi vocali non attivi: {e}"));
+                    crate::diag::warn("RE-STT-01", format!("comandi vocali non attivi: {e}"));
                     None
                 }
             }
@@ -275,7 +337,7 @@ impl ReApp {
         };
         #[cfg(not(feature = "stt"))]
         if s.stt {
-            crate::diag::error("questa build non include i comandi vocali (feature stt)");
+            crate::diag::warn("RE-STT-02", "questa build non include i comandi vocali (feature stt)");
         }
         self.trail.clear();
         self.view = Snapshot::default();
@@ -287,6 +349,7 @@ impl ReApp {
             _stt: stt,
             tyre_hot_c: s.tyre_hot_c,
             tyre_cold_c: s.tyre_cold_c,
+            hr_requested: s.hr_ble || (s.kind == SourceKind::Synthetic && s.hr_demo),
             started: Instant::now(),
         });
         self.setup.error = None;
@@ -322,6 +385,21 @@ impl ReApp {
 impl eframe::App for ReApp {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         ui.ctx().request_repaint_after(Duration::from_millis(1000 / self.fps.max(1) as u64));
+        // expiry while running: stop everything and ask for a new code
+        if self.access.open() && self.access.last_check.elapsed() >= Duration::from_secs(1) {
+            self.access.last_check = Instant::now();
+            if let Some(exp) = self.access.licence.as_ref().and_then(|l| l.expires_at) {
+                if crate::license::now_s() >= exp {
+                    self.stop();
+                    self.access.message = Some(format!("{} ({})", "Il codice è scaduto: inserisci un nuovo codice.", "RE-ACC-03"));
+                    self.access.licence = None;
+                }
+            }
+        }
+        if !self.access.open() {
+            self.access_screen(ui);
+            return;
+        }
         if self.session.is_some() {
             self.pull_snapshot();
             self.dashboard(ui);
@@ -350,12 +428,43 @@ fn hint(kind: SourceKind) -> &'static str {
 }
 
 impl ReApp {
+    fn access_screen(&mut self, ui: &mut Ui) {
+        egui::CentralPanel::default().show(ui, |ui| {
+            ui.vertical_centered(|ui| {
+                ui.add_space(60.0);
+                ui.label(RichText::new("Race Engineer").size(30.0).strong());
+                ui.label(RichText::new("Inserisci il tuo codice di accesso").color(color::TEXT_DIM));
+                ui.add_space(18.0);
+                ui.add(
+                    egui::TextEdit::multiline(&mut self.access.input)
+                        .desired_width(560.0)
+                        .desired_rows(4)
+                        .hint_text("RE1-XXXXXXXX-XXXXXXXX-…")
+                        .font(egui::TextStyle::Monospace),
+                );
+                ui.add_space(8.0);
+                if let Some(m) = &self.access.message {
+                    ui.label(RichText::new(m).color(color::RED));
+                    ui.add_space(6.0);
+                }
+                if ui.add_sized([200.0, 36.0], egui::Button::new(RichText::new("Accedi").size(16.0))).clicked() {
+                    self.access.try_code();
+                }
+                ui.add_space(16.0);
+                ui.label(RichText::new(format!("Il codice ti viene fornito da chi ti ha dato il programma. Impronta chiave: {}", crate::license::key_fingerprint())).size(11.0).color(color::TEXT_DIM));
+            });
+        });
+    }
+
     fn setup_screen(&mut self, ui: &mut Ui) {
         egui::CentralPanel::default().show(ui, |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space(24.0);
                 ui.label(RichText::new("Race Engineer").size(30.0).strong());
                 ui.label(RichText::new("AI Race Engineer + Co-Driver · tutto in locale sul PC").color(color::TEXT_DIM));
+                if let Some((txt, soon)) = self.access.summary() {
+                    ui.label(RichText::new(txt).size(12.0).color(if soon { color::AMBER } else { color::TEXT_DIM }));
+                }
                 ui.add_space(16.0);
             });
             ui.horizontal(|ui| {
@@ -464,6 +573,47 @@ impl ReApp {
                 ui.add_enabled(s.save_laps, egui::TextEdit::singleline(&mut s.lap_dir).desired_width(380.0));
             });
         });
+        ui.add_space(8.0);
+        card(ui, "Segnalazione errori", |ui| {
+            let cfg = crate::report::load_config();
+            match &cfg {
+                Ok(Some(c)) => {
+                    let mut yes = crate::report::consent_effective(Some(c));
+                    if ui.checkbox(&mut yes, format!("Invia automaticamente i codici di errore a {}", c.to)).changed() {
+                        crate::report::set_consent(yes);
+                    }
+                    ui.label(RichText::new("Contenuto: codice errore, messaggio senza nomi utente o cartelle, versione, sistema, simulatore, un ID casuale dell'installazione e l'ID del codice di accesso. Nessun altro dato.").size(11.0).color(color::TEXT_DIM));
+                    ui.horizontal(|ui| {
+                        if ui.button("Invia messaggio di prova").clicked() && !s.report_busy.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                            let slot = s.report_result.clone();
+                            let busy = s.report_busy.clone();
+                            std::thread::spawn(move || {
+                                let r = crate::report::send_test();
+                                if let Ok(mut g) = slot.lock() {
+                                    *g = Some(r);
+                                }
+                                busy.store(false, std::sync::atomic::Ordering::Relaxed);
+                            });
+                        }
+                        if s.report_busy.load(std::sync::atomic::Ordering::Relaxed) {
+                            ui.label(RichText::new("invio in corso…").size(12.0).color(color::TEXT_DIM));
+                        }
+                    });
+                    if let Some(r) = s.report_result.lock().ok().and_then(|g| g.clone()) {
+                        match r {
+                            Ok(m) => ui.label(RichText::new(m).size(12.0).color(color::GREEN)),
+                            Err(e) => ui.label(RichText::new(e).size(12.0).color(color::RED)),
+                        };
+                    }
+                }
+                Ok(None) => {
+                    ui.label(RichText::new("Non configurata: senza report.json gli errori restano solo nel file di log.").size(12.0).color(color::TEXT_DIM));
+                }
+                Err(e) => {
+                    ui.label(RichText::new(e).size(12.0).color(color::RED));
+                }
+            }
+        });
         if let Some(e) = &s.error {
             ui.add_space(6.0);
             ui.label(RichText::new(e).color(color::RED));
@@ -481,6 +631,7 @@ impl ReApp {
         let live = self.last_frames_change.elapsed() < Duration::from_millis(1500);
         let mut stop = false;
         let mut fps = self.fps;
+        let hr_requested = self.session.as_ref().is_some_and(|s| s.hr_requested);
         let (mode, muted, speaking) = {
             let c = &self.session.as_ref().unwrap().runtime.controls;
             (c.mode(), c.muted(), c.speaking())
@@ -490,6 +641,9 @@ impl ReApp {
         egui::Panel::top("top").show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.label(RichText::new("Race Engineer").strong().size(16.0));
+                if let Some((txt, soon)) = self.access.summary() {
+                    ui.label(RichText::new(txt).size(11.0).color(if soon { color::AMBER } else { color::TEXT_DIM }));
+                }
                 ui.separator();
                 let (txt, c) = if live { ("telemetria attiva", color::GREEN) } else { ("in attesa del simulatore", color::AMBER) };
                 widgets::status(ui, c, txt);
@@ -541,20 +695,40 @@ impl ReApp {
             return;
         }
 
-        let v = &self.view;
-        let f = v.frame.as_ref();
-        let session = f.and_then(|f| f.session.as_deref());
-        if let Some(err) = crate::diag::last_error() {
-            egui::Panel::top("error").show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(format!("Attenzione: {err}")).color(color::RED));
+        for n in crate::diag::notices() {
+            let err = n.severity == crate::diag::Severity::Error;
+            egui::Panel::top(if err { "notice_err" } else { "notice_warn" }).show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new(format!("[{}] {}", n.code, n.message)).color(if err { color::RED } else { color::AMBER }));
+                    if err {
+                        let st = match &n.report_id {
+                            Some(id) => format!("Segnalazione inviata allo sviluppatore (ID {id})"),
+                            None => match crate::report::status() {
+                                crate::report::Status::Declined => "Segnalazione non inviata (non hai acconsentito)".to_string(),
+                                crate::report::Status::NoTransport => "Segnalazione automatica non configurata".to_string(),
+                                _ => String::new(),
+                            },
+                        };
+                        if !st.is_empty() {
+                            ui.label(RichText::new(st).size(11.0).color(color::TEXT_DIM));
+                        }
+                        if let Ok(Some(cfg)) = crate::report::load_config() {
+                            if ui.small_button("Invia per e-mail").clicked() {
+                                let r = crate::report::build_report(n.code, &n.message);
+                                crate::report::open_url(&crate::report::mailto_url(&cfg.to, &r));
+                            }
+                        }
+                    }
                     if ui.small_button("Chiudi").clicked() {
-                        crate::diag::clear_error();
+                        crate::diag::clear_severity(n.severity);
                     }
                 });
             });
         }
 
+        let v = &self.view;
+        let f = v.frame.as_ref();
+        let session = f.and_then(|f| f.session.as_deref());
         egui::Panel::left("left").exact_size(300.0).show(ui, |ui| {
             card(ui, "Vettura", |ui| {
                 ui.horizontal(|ui| {
@@ -598,8 +772,16 @@ impl ReApp {
         egui::Panel::right("right").exact_size(330.0).show(ui, |ui| {
             card(ui, "Pilota · battito", |ui| match v.bio {
                 None => {
-                    ui.label(RichText::new("Nessun dispositivo collegato").color(color::TEXT_DIM));
-                    ui.label(RichText::new("Attiva il Bluetooth LE e la trasmissione del battito sull'orologio.").size(12.0).color(color::TEXT_DIM));
+                    ui.label(RichText::new(if hr_requested { "Smartwatch non collegato" } else { "Smartwatch non usato" }).color(color::TEXT_DIM));
+                    ui.label(
+                        RichText::new(if hr_requested {
+                            "In ricerca. Il Race Engineer funziona normalmente senza battito: gli avvisi sul battito restano spenti finché l'orologio non si collega."
+                        } else {
+                            "Opzionale: attivalo dalla schermata iniziale. Senza smartwatch tutto il resto funziona normalmente."
+                        })
+                        .size(12.0)
+                        .color(color::TEXT_DIM),
+                    );
                 }
                 Some(b) => {
                     ui.horizontal(|ui| {

@@ -14,6 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: ilammy/setup-nasm@v1   # needed by `ring` (TLS) on MSVC
       - name: Test
         run: cargo test
       - name: Build (GUI + BLE + speech + clips)

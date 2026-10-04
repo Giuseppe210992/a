@@ -1,0 +1,13 @@
+{
+  "to": "TUO-INDIRIZZO@esempio.it",
+  "default_consent": false,
+  "transport": "smtp",
+  "smtp": {
+    "host": "smtp.gmail.com",
+    "port": 465,
+    "security": "tls",
+    "username": "TUO-INDIRIZZO@gmail.com",
+    "password": "PASSWORD-PER-LE-APP-DI-16-LETTERE",
+    "from": "TUO-INDIRIZZO@gmail.com"
+  }
+}

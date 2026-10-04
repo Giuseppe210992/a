@@ -1,3 +1,11 @@
 target/
 laps/
 dist/
+
+# access-code signing keys must never be committed
+*chiave-privata*.json
+*.privatekey.json
+race-engineer-chiave-privata.json
+
+# error-report credentials stay on the owner machine
+report.json

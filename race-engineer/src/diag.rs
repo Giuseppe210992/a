@@ -1,19 +1,42 @@
-//! Diagnostics for a GUI app that has no console: log file, panic hook, last-error banner.
+//! Diagnostics for a GUI app that has no console: log file, panic hook, notices with stable
+//! error codes. `error()` also files a (consent-gated) report, see `report`; `warn()` is for
+//! things that must not alarm anyone or generate mail (e.g. no smartwatch found).
 
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-static LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Severity {
+    /// Shown in amber, logged, never reported.
+    Warning,
+    /// Shown in red, logged, reported (when the user has consented and a transport is configured).
+    Error,
+}
+
+#[derive(Debug, Clone)]
+pub struct Notice {
+    pub code: &'static str,
+    pub message: String,
+    pub severity: Severity,
+    pub report_id: Option<String>,
+}
+
+/// One slot per severity: an amber warning must never hide a red error.
+static NOTICE_ERR: Mutex<Option<Notice>> = Mutex::new(None);
+static NOTICE_WARN: Mutex<Option<Notice>> = Mutex::new(None);
 static LOG_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
 
-/// `%LOCALAPPDATA%\RaceEngineer` (or the temp dir when unavailable).
+/// `RE_DATA_DIR`, else `%LOCALAPPDATA%\RaceEngineer` (or the temp dir when unavailable).
 pub fn data_dir() -> PathBuf {
-    let base = std::env::var_os("LOCALAPPDATA")
-        .or_else(|| std::env::var_os("XDG_DATA_HOME"))
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
-    let dir = base.join("RaceEngineer");
+    let dir = match std::env::var_os("RE_DATA_DIR") {
+        Some(d) => PathBuf::from(d),
+        None => std::env::var_os("LOCALAPPDATA")
+            .or_else(|| std::env::var_os("XDG_DATA_HOME"))
+            .map(PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir)
+            .join("RaceEngineer"),
+    };
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
@@ -62,27 +85,57 @@ pub fn log(msg: &str) {
     }
 }
 
-/// Records an error for the UI banner and the log.
-pub fn error(msg: impl Into<String>) {
-    let m = msg.into();
-    log(&format!("ERROR: {m}"));
-    if let Ok(mut e) = LAST_ERROR.lock() {
-        *e = Some(m);
+fn slot(sev: Severity) -> &'static Mutex<Option<Notice>> {
+    match sev {
+        Severity::Error => &NOTICE_ERR,
+        Severity::Warning => &NOTICE_WARN,
     }
 }
 
-pub fn last_error() -> Option<String> {
-    LAST_ERROR.lock().ok().and_then(|e| e.clone())
+fn set_notice(n: Notice) {
+    if let Ok(mut g) = slot(n.severity).lock() {
+        *g = Some(n);
+    }
 }
 
-pub fn clear_error() {
-    if let Ok(mut e) = LAST_ERROR.lock() {
+/// Soft problem (amber banner, log only). Example: the heart-rate device is not found.
+pub fn warn(code: &'static str, msg: impl Into<String>) {
+    let message = msg.into();
+    log(&format!("WARN {code}: {message}"));
+    set_notice(Notice { code, message, severity: Severity::Warning, report_id: None });
+}
+
+/// A bug or a failure that matters (red banner, log, report).
+pub fn error(code: &'static str, msg: impl Into<String>) {
+    let message = msg.into();
+    log(&format!("ERROR {code}: {message}"));
+    let report_id = crate::report::submit(code, &message);
+    set_notice(Notice { code, message, severity: Severity::Error, report_id });
+}
+
+/// Current notices, error first.
+pub fn notices() -> Vec<Notice> {
+    [Severity::Error, Severity::Warning].into_iter().filter_map(|sv| slot(sv).lock().ok().and_then(|n| n.clone())).collect()
+}
+
+/// The most important notice (error before warning).
+pub fn notice() -> Option<Notice> {
+    notices().into_iter().next()
+}
+
+pub fn clear_severity(sev: Severity) {
+    if let Ok(mut e) = slot(sev).lock() {
         *e = None;
     }
 }
 
-/// Installs the log file and a panic hook that logs instead of vanishing (a GUI build has
-/// no console). On Windows a fatal panic on the main thread also shows a message box.
+pub fn clear_notice() {
+    clear_severity(Severity::Error);
+    clear_severity(Severity::Warning);
+}
+
+/// Installs the log file and a panic hook that logs and reports instead of vanishing (a GUI build
+/// has no console). On Windows a fatal panic on the main thread also shows a message box.
 pub fn init(log_file: &str) -> PathBuf {
     let path = data_dir().join(log_file);
     if let Ok(mut g) = LOG_PATH.lock() {
@@ -94,10 +147,10 @@ pub fn init(log_file: &str) -> PathBuf {
         let payload = info.payload();
         let msg = payload.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| payload.downcast_ref::<String>().cloned()).unwrap_or_else(|| "panic".into());
         let thread = std::thread::current().name().unwrap_or("?").to_string();
-        error(format!("panic in thread '{thread}' at {loc}: {msg}"));
+        error("RE-PANIC", format!("panic in thread '{thread}' at {loc}: {msg}"));
         #[cfg(windows)]
         if thread == "main" {
-            message_box("Race Engineer", &format!("Errore interno: {msg}\n\nDettagli in {}", shown.display()));
+            message_box("Race Engineer", &format!("Errore interno (RE-PANIC): {msg}\n\nDettagli in {}", shown.display()));
         }
         #[cfg(not(windows))]
         let _ = &shown;
@@ -120,12 +173,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn error_banner_set_and_cleared() {
-        clear_error();
-        assert!(last_error().is_none());
-        error("boom");
-        assert_eq!(last_error().as_deref(), Some("boom"));
-        clear_error();
-        assert!(last_error().is_none());
+    fn warn_never_reports_and_error_sets_a_coded_notice() {
+        clear_notice();
+        warn("RE-BLE-01", "nessun orologio");
+        let n = notice().unwrap();
+        assert_eq!((n.code, n.severity, n.report_id.is_none()), ("RE-BLE-01", Severity::Warning, true));
+        error("RE-TEST-01", "boom");
+        let n = notice().unwrap();
+        assert_eq!((n.code, n.severity), ("RE-TEST-01", Severity::Error));
+        warn("RE-BLE-01", "again");
+        let all = notices();
+        assert_eq!(all.len(), 2, "a later warning must not hide the error");
+        assert_eq!((all[0].code, all[1].code), ("RE-TEST-01", "RE-BLE-01"));
+        clear_notice();
+        assert!(notice().is_none());
     }
 }

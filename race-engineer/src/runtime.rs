@@ -181,7 +181,7 @@ impl Runtime {
                 while !stop.load(Ordering::Relaxed) {
                     let polled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| source.poll()));
                     let polled = polled.unwrap_or_else(|_| {
-                        diag::error("errore interno nel lettore del simulatore (vedi log); riprovo");
+                        diag::error("RE-SRC-01", "errore interno nel lettore del simulatore; riprovo");
                         thread::sleep(Duration::from_millis(500));
                         None
                     });
@@ -316,7 +316,7 @@ impl Runtime {
             let controls = controls.clone();
             handles.push(thread::Builder::new().name("re-voice".into()).spawn(move || {
                 let sink = std::panic::catch_unwind(std::panic::AssertUnwindSafe(sink_factory)).unwrap_or_else(|_| {
-                    diag::error("audio di Windows non inizializzabile: la voce resta in modalità testo");
+                    diag::error("RE-AUD-02", "audio di Windows non inizializzabile: la voce resta in modalità testo");
                     Box::new(crate::voice::ConsoleSink)
                 });
                 run_voice_loop(voice_rx, Box::new(crate::voice::SafeSink::new(sink)), &controls.voice_status)
@@ -370,6 +370,7 @@ mod tests {
         thread::sleep(Duration::from_millis(5000));
         let snap = rt.snapshot.lock().unwrap().clone();
         rt.shutdown();
+        assert!(snap.bio.is_none(), "no smartwatch: biometrics stay empty, nothing else is affected");
         assert!(snap.frames_in > 100, "frames {}", snap.frames_in);
         assert!(snap.pipeline_latency_ms < 100.0, "latency {}", snap.pipeline_latency_ms);
         assert!(snap.analysis.track.as_ref().is_some_and(|t| t.corners.len() == 4));

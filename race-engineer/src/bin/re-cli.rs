@@ -16,7 +16,76 @@ fn flag(name: &str) -> bool {
     std::env::args().any(|x| x == name)
 }
 
+fn which_label() -> String {
+    arg("--source").unwrap_or_else(|| "synthetic".into())
+}
+
 fn main() {
+    race_engineer::diag::init("re-cli.log");
+    race_engineer::report::start();
+    if flag("--raise-test-error") {
+        // debugging aid: raises a coded error and gives the background sender time to deliver it
+        race_engineer::diag::error("RE-TEST-01", "errore di prova generato con --raise-test-error");
+        std::thread::sleep(Duration::from_secs(arg("--wait").and_then(|s| s.parse().ok()).unwrap_or(6)));
+        return;
+    }
+    if flag("--test-report") {
+        match race_engineer::report::send_test() {
+            Ok(m) => println!("{m}"),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(2);
+            }
+        }
+        return;
+    }
+    // --check-code CODE: prints what a code is (signature, label, expiry) without needing access
+    if let Some(code) = arg("--check-code") {
+        use race_engineer::license::*;
+        let Some(key) = verifying_key(PUBLIC_KEY_HEX) else {
+            println!("controllo accessi non attivo in questa build");
+            return;
+        };
+        match parse_and_verify(&code, &key) {
+            Ok(l) => {
+                let exp = l.expires_at.map_or("mai".to_string(), fmt_date);
+                let state = match check(&code, now_s(), 0, &key) {
+                    Ok(_) => "VALIDO".to_string(),
+                    Err(e) => format!("NON VALIDO ({})", e.code()),
+                };
+                println!("{state} · id {} · etichetta '{}' · scade: {exp}", l.id, l.label);
+            }
+            Err(e) => {
+                println!("NON VALIDO ({}): {}", e.code(), e.message());
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+    // access gate for the command-line runner too: --code CODE, RE_ACCESS_CODE, or the code saved by the GUI
+    if race_engineer::license::enforced() {
+        use race_engineer::license::*;
+        let code = arg("--code").or_else(|| std::env::var("RE_ACCESS_CODE").ok()).or_else(load_saved_code);
+        match code.as_deref().map(validate) {
+            Some(Ok(l)) => {
+                race_engineer::report::set_context(&which_label(), &l.id);
+                if arg("--code").is_some() {
+                    save_code(&arg("--code").unwrap());
+                }
+                if let Some(e) = l.expires_at {
+                    eprintln!("accesso valido fino al {}", fmt_date(e));
+                }
+            }
+            Some(Err(e)) => {
+                eprintln!("{} ({})", e.message(), e.code());
+                std::process::exit(3);
+            }
+            None => {
+                eprintln!("serve un codice di accesso: --code CODICE (oppure variabile RE_ACCESS_CODE)");
+                std::process::exit(3);
+            }
+        }
+    }
     if flag("--prepare-wrc") {
         let port = arg("--port").and_then(|p| p.parse().ok()).unwrap_or(race_engineer::sources::wrc::DEFAULT_PORT);
         match race_engineer::sources::wrc::prepare(&race_engineer::sources::wrc::telemetry_dir(), port) {

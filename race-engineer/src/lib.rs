@@ -14,10 +14,12 @@ pub mod biometrics;
 pub mod clock;
 pub mod commands;
 pub mod diag;
+pub mod license;
 #[cfg(feature = "gui")]
 pub mod gui;
 pub mod engineer;
 pub mod recorder;
+pub mod report;
 pub mod runtime;
 pub mod sources;
 #[cfg(feature = "stt")]
