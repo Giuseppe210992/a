@@ -19,6 +19,21 @@ use crate::runtime::{EngineerMode, Runtime, RuntimeConfig, Snapshot};
 use crate::sources::{self, SourceKind};
 use widgets::{card, color};
 
+/// Sends the test message on a worker thread; on success, optionally turns automatic reports on.
+fn spawn_report_test(slot: Arc<std::sync::Mutex<Option<Result<String, String>>>>, busy: Arc<AtomicBool>, enable_on_success: bool) {
+    std::thread::spawn(move || {
+        let r = crate::report::send_test();
+        if enable_on_success && r.is_ok() {
+            crate::report::set_consent(true);
+        }
+        let r = r.map(|m| if enable_on_success { format!("{m}. Invio automatico degli errori attivato.") } else { m });
+        if let Ok(mut g) = slot.lock() {
+            *g = Some(r);
+        }
+        busy.store(false, std::sync::atomic::Ordering::Relaxed);
+    });
+}
+
 struct SetupState {
     kind: SourceKind,
     synthetic_speedup: f64,
@@ -41,6 +56,9 @@ struct SetupState {
     wrc_msg: Option<Result<String, String>>,
     report_result: Arc<std::sync::Mutex<Option<Result<String, String>>>>,
     report_busy: Arc<AtomicBool>,
+    gmail_addr: String,
+    gmail_pw: String,
+    show_gmail: bool,
 }
 
 impl Default for SetupState {
@@ -67,6 +85,9 @@ impl Default for SetupState {
             wrc_msg: None,
             report_result: Arc::new(std::sync::Mutex::new(None)),
             report_busy: Arc::new(AtomicBool::new(false)),
+            gmail_addr: crate::report::gmail_prefill().unwrap_or_default(),
+            gmail_pw: String::new(),
+            show_gmail: false,
         }
     }
 }
@@ -468,11 +489,15 @@ impl ReApp {
                 }
                 ui.add_space(16.0);
             });
-            ui.horizontal(|ui| {
-                ui.add_space((ui.available_width() - 640.0).max(0.0) / 2.0);
-                ui.vertical(|ui| {
-                    ui.set_width(640.0);
-                    self.setup_form(ui);
+            // scrollable: the form grows when the Gmail fields are open, and windows can be small
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add_space((ui.available_width() - 640.0).max(0.0) / 2.0);
+                    ui.vertical(|ui| {
+                        ui.set_width(640.0);
+                        self.setup_form(ui);
+                        ui.add_space(24.0);
+                    });
                 });
             });
         });
@@ -577,42 +602,63 @@ impl ReApp {
         ui.add_space(8.0);
         card(ui, "Segnalazione errori", |ui| {
             let cfg = crate::report::load_config();
-            match &cfg {
-                Ok(Some(c)) => {
-                    let mut yes = crate::report::consent_effective(Some(c));
-                    if ui.checkbox(&mut yes, format!("Invia automaticamente i codici di errore a {}", c.to)).changed() {
-                        crate::report::set_consent(yes);
+            let show_form = !matches!(cfg, Ok(Some(_))) || s.show_gmail;
+            if let Ok(Some(c)) = &cfg {
+                let mut yes = crate::report::consent_effective(Some(c));
+                if ui.checkbox(&mut yes, format!("Invia automaticamente i codici di errore a {}", c.to)).changed() {
+                    crate::report::set_consent(yes);
+                }
+                ui.label(RichText::new("Contenuto: codice errore, messaggio senza nomi utente o cartelle, versione, sistema, simulatore, un ID casuale dell'installazione e l'ID del codice di accesso. Nessun altro dato.").size(11.0).color(color::TEXT_DIM));
+                ui.horizontal(|ui| {
+                    if ui.button("Invia messaggio di prova").clicked() && !s.report_busy.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                        spawn_report_test(s.report_result.clone(), s.report_busy.clone(), false);
                     }
-                    ui.label(RichText::new("Contenuto: codice errore, messaggio senza nomi utente o cartelle, versione, sistema, simulatore, un ID casuale dell'installazione e l'ID del codice di accesso. Nessun altro dato.").size(11.0).color(color::TEXT_DIM));
-                    ui.horizontal(|ui| {
-                        if ui.button("Invia messaggio di prova").clicked() && !s.report_busy.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                            let slot = s.report_result.clone();
-                            let busy = s.report_busy.clone();
-                            std::thread::spawn(move || {
-                                let r = crate::report::send_test();
-                                if let Ok(mut g) = slot.lock() {
-                                    *g = Some(r);
+                    if ui.button(if s.show_gmail { "Chiudi" } else { "Cambia account Gmail…" }).clicked() {
+                        s.show_gmail = !s.show_gmail;
+                    }
+                });
+            } else if let Err(e) = &cfg {
+                ui.label(RichText::new(e).size(12.0).color(color::AMBER));
+            } else {
+                ui.label(RichText::new("Non configurata: senza un account gli errori restano solo nel file di log.").size(12.0).color(color::TEXT_DIM));
+            }
+            if show_form {
+                ui.add_space(4.0);
+                ui.label(RichText::new("Invio con Gmail").strong());
+                ui.horizontal(|ui| {
+                    ui.label("Indirizzo Gmail");
+                    ui.add(egui::TextEdit::singleline(&mut s.gmail_addr).desired_width(300.0).hint_text("nome@gmail.com"));
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Password per le app");
+                    ui.add(egui::TextEdit::singleline(&mut s.gmail_pw).password(true).desired_width(220.0).hint_text("16 lettere"));
+                    if ui.small_button("Come si ottiene").clicked() {
+                        crate::report::open_url("https://myaccount.google.com/apppasswords");
+                    }
+                });
+                ui.label(RichText::new("Serve la verifica in due passaggi sull'account Google. Non è la password normale: è una password a parte, revocabile in ogni momento, salvata solo su questo PC. L'e-mail arriva allo stesso indirizzo.").size(11.0).color(color::TEXT_DIM));
+                ui.horizontal(|ui| {
+                    if ui.button("Salva e invia messaggio di prova").clicked() && !s.report_busy.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                        match crate::report::save_gmail_config(&s.gmail_addr, &s.gmail_pw) {
+                            Ok(()) => spawn_report_test(s.report_result.clone(), s.report_busy.clone(), true),
+                            Err(e) => {
+                                if let Ok(mut g) = s.report_result.lock() {
+                                    *g = Some(Err(e));
                                 }
-                                busy.store(false, std::sync::atomic::Ordering::Relaxed);
-                            });
+                                s.report_busy.store(false, std::sync::atomic::Ordering::Relaxed);
+                            }
                         }
-                        if s.report_busy.load(std::sync::atomic::Ordering::Relaxed) {
-                            ui.label(RichText::new("invio in corso…").size(12.0).color(color::TEXT_DIM));
-                        }
-                    });
-                    if let Some(r) = s.report_result.lock().ok().and_then(|g| g.clone()) {
-                        match r {
-                            Ok(m) => ui.label(RichText::new(m).size(12.0).color(color::GREEN)),
-                            Err(e) => ui.label(RichText::new(e).size(12.0).color(color::RED)),
-                        };
                     }
-                }
-                Ok(None) => {
-                    ui.label(RichText::new("Non configurata: senza report.json gli errori restano solo nel file di log.").size(12.0).color(color::TEXT_DIM));
-                }
-                Err(e) => {
-                    ui.label(RichText::new(e).size(12.0).color(color::RED));
-                }
+                });
+            }
+            if s.report_busy.load(std::sync::atomic::Ordering::Relaxed) {
+                ui.label(RichText::new("invio in corso…").size(12.0).color(color::TEXT_DIM));
+            }
+            if let Some(r) = s.report_result.lock().ok().and_then(|g| g.clone()) {
+                match r {
+                    Ok(m) => ui.label(RichText::new(m).size(12.0).color(color::GREEN)),
+                    Err(e) => ui.label(RichText::new(e).size(12.0).color(color::RED)),
+                };
             }
         });
         if let Some(e) = &s.error {

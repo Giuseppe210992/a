@@ -34,6 +34,13 @@ Due modi:
 `"default_consent": true` precompila la casella di consenso nella schermata iniziale (l'utente la vede,
 vede l'indirizzo di destinazione e può togliere la spunta).
 
+## Gmail senza modificare file
+Nella schermata iniziale, riquadro «Segnalazione errori» > «Invio con Gmail»: scrivi l'indirizzo, incolla la
+«password per le app» di Google (16 lettere, anche con gli spazi) e premi **Salva e invia messaggio di prova**.
+Il programma crea `report.json` per te (smtp.gmail.com, porta 465, TLS), invia la prova e, se arriva, attiva
+l'invio automatico. Da riga di comando: `re-cli --setup-gmail INDIRIZZO --app-password PASSWORD`.
+Antivirus/proxy che intercettano il TLS: `RE_SMTP_EXTRA_CA=<file.pem>` aggiunge una CA fidata.
+
 ## Prova
 Schermata iniziale > «Segnalazione errori» > **Invia messaggio di prova** (oppure
 `re-cli --test-report`). Per simulare un errore: `re-cli --raise-test-error`.

@@ -1,0 +1,36 @@
+RACE ENGINEER - BUILD DI TEST CON GMAIL
+
+Questa build serve a verificare che le e-mail con il codice errore arrivino davvero nella tua casella Gmail.
+
+PRIMA VOLTA (5 minuti)
+1. Crea una "password per le app" di Google (serve la verifica in due passaggi attiva sull'account):
+   https://myaccount.google.com/apppasswords  ->  nome "Race Engineer"  ->  copia le 16 lettere.
+   (NON e' la password normale dell'account. La puoi revocare in qualsiasi momento dalla stessa pagina.)
+2. Avvia re-gui.exe e incolla il codice di accesso che ti ho dato nella chat, poi "Accedi".
+3. Nella schermata iniziale, riquadro "Segnalazione errori" > "Invio con Gmail":
+   scrivi il tuo indirizzo Gmail, incolla la password per le app (anche con gli spazi, come la mostra
+   Google) e premi "Salva e invia messaggio di prova".
+4. Se tutto va bene compare in verde "Messaggio di prova inviato..." e in pochi secondi trovi in Gmail un
+   messaggio "[Race Engineer] Errore RE-TEST-00". Controlla anche la cartella Spam la prima volta.
+   Dopo il test positivo l'invio automatico degli errori e' attivo.
+
+PROVA CON UN ERRORE VERO
+   Da prompt dei comandi nella cartella:   re-cli.exe --raise-test-error
+   Arriva un'e-mail "Errore RE-TEST-01" (codice, versione, sistema, simulatore, ID installazione).
+   Dentro re-gui.exe, un errore serio mostra un banner rosso con il codice e "Segnalazione inviata".
+
+SE IL TEST E' ROSSO
+ - "Gmail ha rifiutato l'accesso": serve la password per le app (16 lettere), non la password normale.
+ - "Nessuna risposta" / "Impossibile raggiungere": controlla Internet o un firewall sulla porta 465.
+ - "Certificato TLS non riconosciuto": antivirus o proxy che intercetta le connessioni sicure.
+ In ogni caso mandami il file %LOCALAPPDATA%\RaceEngineer\re-gui.log.
+
+SICUREZZA E PRIVACY
+ - La password per le app e' salvata in chiaro in %LOCALAPPDATA%\RaceEngineer\report.json (solo sul tuo PC).
+   Per toglierla: cancella quel file e revoca la password su myaccount.google.com/apppasswords.
+ - Nelle e-mail non ci sono nomi utente ne' cartelle: solo codice errore, versione, sistema, simulatore,
+   un ID casuale dell'installazione e l'ID del codice di accesso.
+ - Per distribuire il programma ad altre persone NON usare la tua password: usa il webhook
+   (vedi SEGNALAZIONI.md nel kit del titolare).
+
+Il resto del programma e' identico alla build normale.

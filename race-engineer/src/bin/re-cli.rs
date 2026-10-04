@@ -23,6 +23,25 @@ fn which_label() -> String {
 fn main() {
     race_engineer::diag::init("re-cli.log");
     race_engineer::report::start();
+    // --setup-gmail ADDRESS --app-password PASSWORD: writes report.json for Gmail, sends a test, enables reports
+    if let Some(addr) = arg("--setup-gmail") {
+        let pw = arg("--app-password").unwrap_or_default();
+        if let Err(e) = race_engineer::report::save_gmail_config(&addr, &pw) {
+            eprintln!("{e}");
+            std::process::exit(2);
+        }
+        match race_engineer::report::send_test() {
+            Ok(m) => {
+                race_engineer::report::set_consent(true);
+                println!("{m}\nInvio automatico degli errori attivato.");
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(2);
+            }
+        }
+        return;
+    }
     if flag("--raise-test-error") {
         // debugging aid: raises a coded error and gives the background sender time to deliver it
         race_engineer::diag::error("RE-TEST-01", "errore di prova generato con --raise-test-error");

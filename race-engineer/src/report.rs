@@ -66,10 +66,14 @@ pub fn parse_config(text: &str) -> Result<Config, String> {
                 return Err("smtp.security deve essere tls, starttls o none".into());
             }
             let username = s(c, "username");
+            let password = s(c, "password").map(|p| p.replace(char::is_whitespace, "")).filter(|p| !p.is_empty());
+            if username.is_some() && security != "none" && password.is_none() {
+                return Err("smtp: manca la password (per Gmail serve una «password per le app», vedi docs/SEGNALAZIONI.md)".into());
+            }
             Transport::Smtp(SmtpCfg {
                 port: c.get("port").and_then(Value::as_u64).map_or(if security == "starttls" { 587 } else { 465 }, |p| p as u16),
                 from: s(c, "from").or_else(|| username.clone()).ok_or("smtp: manca from/username")?,
-                password: s(c, "password"),
+                password,
                 username,
                 security,
                 host,
@@ -293,9 +297,19 @@ fn send_smtp(c: &SmtpCfg, to: &str, r: &Report) -> Result<(), String> {
         .subject(r.subject())
         .body(r.body())
         .map_err(|e| format!("messaggio non valido: {e}"))?;
+    use lettre::transport::smtp::client::{Certificate, Tls, TlsParameters};
+    // RE_SMTP_EXTRA_CA=<file.pem>: trust one more CA (corporate/antivirus TLS inspection, or tests)
+    let tls_params = || -> Result<TlsParameters, String> {
+        let mut b = TlsParameters::builder(c.host.clone());
+        if let Some(path) = std::env::var_os("RE_SMTP_EXTRA_CA") {
+            let pem = std::fs::read(&path).map_err(|e| format!("RE_SMTP_EXTRA_CA non leggibile: {e}"))?;
+            b = b.add_root_certificate(Certificate::from_pem(&pem).map_err(|e| format!("RE_SMTP_EXTRA_CA non valido: {e}"))?);
+        }
+        b.build_rustls().map_err(|e| format!("TLS: {e}"))
+    };
     let builder = match c.security.as_str() {
-        "tls" => SmtpTransport::relay(&c.host).map_err(|e| format!("TLS: {e}"))?,
-        "starttls" => SmtpTransport::starttls_relay(&c.host).map_err(|e| format!("STARTTLS: {e}"))?,
+        "tls" => SmtpTransport::builder_dangerous(&c.host).tls(Tls::Wrapper(tls_params()?)),
+        "starttls" => SmtpTransport::builder_dangerous(&c.host).tls(Tls::Required(tls_params()?)),
         _ => SmtpTransport::builder_dangerous(&c.host),
     };
     let mut b = builder.port(c.port).timeout(Some(Duration::from_secs(20)));
@@ -303,6 +317,69 @@ fn send_smtp(c: &SmtpCfg, to: &str, r: &Report) -> Result<(), String> {
         b = b.credentials(Credentials::new(u.clone(), p.clone()));
     }
     b.build().send(&mail).map(|_| ()).map_err(|e| format!("invio SMTP non riuscito: {e}"))
+}
+
+// ---- Gmail helpers -----------------------------------------------------------------------
+
+/// Explains common failures in plain Italian (the technical text is appended in brackets).
+pub fn friendly_error(raw: &str) -> String {
+    let l = raw.to_ascii_lowercase();
+    let hint = if l.contains("535") || l.contains("534") || l.contains("username and password not accepted") || l.contains("application-specific password") || l.contains("badcredentials") {
+        "Gmail ha rifiutato l'accesso: serve la «password per le app» di 16 lettere (con la verifica in due passaggi attiva), non la password normale dell'account."
+    } else if l.contains("timed out") || l.contains("timeout") {
+        "Nessuna risposta dal server di posta: controlla la connessione a Internet e che un firewall non blocchi la porta 465."
+    } else if l.contains("certificate") || l.contains("unknownissuer") || l.contains("invalid peer") || l.contains("handshake") {
+        "Certificato TLS non riconosciuto: un antivirus o un proxy aziendale potrebbe intercettare la connessione sicura (vedi RE_SMTP_EXTRA_CA in docs/SEGNALAZIONI.md)."
+    } else if l.contains("connection refused") || l.contains("failed to lookup") || l.contains("dns") || l.contains("no such host") || l.contains("unreachable") || l.contains("connection error") || l.contains("os error 100") || l.contains("os error 110") {
+        "Impossibile raggiungere il server di posta: controlla la connessione a Internet."
+    } else if l.contains("550") || l.contains("553") || l.contains("554") {
+        "Il server ha rifiutato il messaggio (indirizzo non valido o bloccato)."
+    } else {
+        return raw.to_string();
+    };
+    format!("{hint} [{raw}]")
+}
+
+pub fn normalise_app_password(p: &str) -> String {
+    p.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
+fn valid_address(a: &str) -> bool {
+    let a = a.trim();
+    let (u, d) = a.split_once('@').unwrap_or(("", ""));
+    !u.is_empty() && d.contains('.') && !d.starts_with('.') && !d.ends_with('.') && !a.contains(char::is_whitespace) && a.matches('@').count() == 1
+}
+
+/// Writes `report.json` for Gmail (smtp.gmail.com:465, TLS), sending to the same address.
+/// The app password is stored in the user's profile folder only, like any other setting.
+pub fn save_gmail_config(address: &str, app_password: &str) -> Result<(), String> {
+    let v = gmail_config_value(address, app_password)?;
+    std::fs::write(crate::diag::data_dir().join("report.json"), serde_json::to_string_pretty(&v).unwrap()).map_err(|e| format!("impossibile salvare report.json: {e}"))
+}
+
+fn gmail_config_value(address: &str, app_password: &str) -> Result<Value, String> {
+    let address = address.trim();
+    let pw = normalise_app_password(app_password);
+    if !valid_address(address) {
+        return Err("Indirizzo e-mail non valido.".into());
+    }
+    if pw.len() != 16 || !pw.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return Err("La «password per le app» di Google ha 16 lettere (gli spazi non contano). Non è la password normale dell'account: creala su myaccount.google.com/apppasswords.".into());
+    }
+    Ok(json!({
+        "to": address, "default_consent": false, "transport": "smtp",
+        "smtp": { "host": "smtp.gmail.com", "port": 465, "security": "tls", "username": address, "password": pw, "from": address }
+    }))
+}
+
+/// Address to pre-fill in the Gmail form: the configured one, else `gmail-prefill.txt` next to the exe.
+pub fn gmail_prefill() -> Option<String> {
+    if let Ok(Some(Config { transport: Transport::Smtp(s), .. })) = load_config() {
+        if let Some(u) = s.username {
+            return Some(u);
+        }
+    }
+    std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.join("gmail-prefill.txt"))).and_then(|p| std::fs::read_to_string(p).ok()).map(|s| s.trim().to_string()).filter(|s| valid_address(s))
 }
 
 // ---- queue + rate limit --------------------------------------------------------------
@@ -474,7 +551,7 @@ pub fn submit(code: &str, message: &str) -> Option<String> {
 pub fn send_test() -> Result<String, String> {
     let cfg = load_config()?.ok_or("nessun report.json: vedi docs/SEGNALAZIONI.md")?;
     let r = build_report("RE-TEST-00", "Messaggio di prova: la segnalazione degli errori funziona.");
-    send_now(&cfg, &r)?;
+    send_now(&cfg, &r).map_err(|e| friendly_error(&e))?;
     Ok(format!("Messaggio di prova inviato a {} (ID {})", cfg.to, r.report_id))
 }
 
@@ -512,6 +589,42 @@ mod tests {
         for bad in ["", "{}", r#"{"to":"nope","transport":"smtp"}"#, r#"{"to":"a@b.c","transport":"ftp"}"#, r#"{"to":"a@b.c","transport":"smtp","smtp":{"host":"h","security":"weird","from":"a@b.c"}}"#, r#"{"to":"a@b.c","transport":"webhook","webhook":{"url":"ftp://x"}}"#] {
             assert!(parse_config(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn smtp_with_a_username_needs_a_password() {
+        let no_pw = r#"{"to":"a@b.it","transport":"smtp","smtp":{"host":"smtp.gmail.com","username":"a@b.it","from":"a@b.it"}}"#;
+        assert!(parse_config(no_pw).unwrap_err().contains("password per le app"));
+        let spaced = r#"{"to":"a@b.it","transport":"smtp","smtp":{"host":"smtp.gmail.com","username":"a@b.it","password":"abcd efgh ijkl mnop"}}"#;
+        let Transport::Smtp(s) = parse_config(spaced).unwrap().transport else { panic!() };
+        assert_eq!(s.password.as_deref(), Some("abcdefghijklmnop"), "Google shows app passwords in groups of four");
+    }
+
+    #[test]
+    fn gmail_form_validation_and_generated_config() {
+        let v = gmail_config_value(" me@gmail.com ", "abcd efgh ijkl mnop").unwrap();
+        let c = parse_config(&v.to_string()).unwrap();
+        assert_eq!(c.to, "me@gmail.com");
+        let Transport::Smtp(s) = c.transport else { panic!() };
+        assert_eq!((s.host.as_str(), s.port, s.security.as_str(), s.username.as_deref(), s.password.as_deref()), ("smtp.gmail.com", 465, "tls", Some("me@gmail.com"), Some("abcdefghijklmnop")));
+        for bad in ["", "me", "me@", "@gmail.com", "me@gmail", "m e@gmail.com", "a@b@c.com"] {
+            assert!(gmail_config_value(bad, "abcdefghijklmnop").is_err(), "{bad:?}");
+        }
+        // a normal account password is not a 16-letter app password
+        assert!(gmail_config_value("me@gmail.com", "MyNormalPassw0rd!").unwrap_err().contains("password per le app"));
+        assert!(gmail_config_value("me@gmail.com", "short").is_err());
+    }
+
+    #[test]
+    fn common_failures_are_explained_in_italian() {
+        let a = friendly_error("permanent error (535): 5.7.8 Username and Password not accepted");
+        assert!(a.contains("password per le app") && a.contains("535"), "{a}");
+        assert!(friendly_error("connection timed out").contains("firewall"));
+        assert!(friendly_error("invalid peer certificate: UnknownIssuer").contains("RE_SMTP_EXTRA_CA"));
+        assert!(friendly_error("failed to lookup address information").contains("connessione"));
+        assert!(friendly_error("Connection error: OS Error 10047 (os error 10047)").contains("connessione"), "Windows socket errors");
+        assert!(friendly_error("Connection error: timed out (os error 10060)").contains("firewall"));
+        assert_eq!(friendly_error("something unexpected"), "something unexpected", "unknown errors are shown as they are");
     }
 
     #[test]

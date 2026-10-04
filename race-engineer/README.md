@@ -36,6 +36,7 @@ settings, logs) but NOT the real games, real Bluetooth, real speech or real audi
 | GUI (`re-gui`) | E2E (Wine) incl. dark theme, settings persistence, log file; not run on a real Windows desktop |
 | **Smartwatch optional** | everything runs without it (no HR → no heart-rate advice, nothing else changes); with Bluetooth requested but no device/adapter you get an amber notice and automatic retries; tested |
 | **Error reports by e-mail** (SMTP or webhook, consent-gated, anonymous, queued, rate-limited) | tested against local SMTP/HTTP servers incl. the Windows exe under Wine; **not tested against Gmail / a real form service** (needs your credentials) — see docs/SEGNALAZIONI.md |
+| **Gmail setup form** (address + app password, friendly errors, TLS+AUTH) | the full TLS-with-login path was tested against a local mail server (custom CA) from the GUI and CLI of the Windows exe under Wine; **real Gmail unreachable from my environment, so real delivery is untested** |
 | **Access codes with expiry** (Ed25519, offline) + HTML generator `tools/generatore-codici.html` | generator tested in real Chromium; codes verified by the Rust app (cross-language test vector); access screen, expiry, tamper and clock-rollback tested in the Windows exe under Wine — see docs/CODICI-ACCESSO.md |
 | Offline lap recording (CSV) | implemented + tested + E2E (Wine) |
 
