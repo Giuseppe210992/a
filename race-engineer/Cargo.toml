@@ -1,0 +1,39 @@
+[package]
+name = "race-engineer"
+version = "0.1.0"
+edition = "2021"
+description = "AI Race Engineer + Co-Driver, PC-only (Windows), offline-first"
+license = "MIT"
+
+[lib]
+name = "race_engineer"
+path = "src/lib.rs"
+
+[[bin]]
+name = "re-cli"
+path = "src/bin/re-cli.rs"
+
+[features]
+default = []
+# Bluetooth LE heart-rate sensor/watch directly from the PC (btleplug -> WinRT on Windows)
+ble = ["dep:btleplug", "dep:tokio", "dep:futures-util", "dep:uuid"]
+# Windows speech output through the OS speech stack (no network needed)
+tts = ["dep:tts"]
+# Pre-decoded WAV clips for critical calls, played through the default Windows audio device
+audio = ["dep:rodio"]
+
+[dependencies]
+btleplug = { version = "0.11", optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"], optional = true }
+futures-util = { version = "0.3", optional = true }
+uuid = { version = "1", optional = true }
+tts = { version = "0.26", optional = true }
+rodio = { version = "0.20", default-features = false, features = ["wav"], optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Memory"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
