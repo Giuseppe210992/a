@@ -11,15 +11,22 @@
     --code-bg: #f0f2f5;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       --bg: #12151a; --card: #1c2027; --text: #e7eaf0; --dim: #9aa3b2; --line: #2c333d;
       --accent: #4c8dff; --accent-text: #0b0e13; --ok: #3fb950; --warn: #d29922; --bad: #f85149;
-      --code-bg: #14181e;
+      --code-bg: #14181e; color-scheme: dark;
     }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12151a; --card: #1c2027; --text: #e7eaf0; --dim: #9aa3b2; --line: #2c333d;
+    --accent: #4c8dff; --accent-text: #0b0e13; --ok: #3fb950; --warn: #d29922; --bad: #f85149;
+    --code-bg: #14181e; color-scheme: dark;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; min-width: 0; }
+  .confirm { margin-top: 10px; padding: 12px; border: 1px solid var(--warn); border-radius: 8px; }
+  .confirm p { margin: 0 0 8px; }
   h1 { font-size: 22px; margin: 0 0 4px; }
   h2 { font-size: 15px; margin: 0 0 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--dim); }
   p.lead { margin: 0 0 20px; color: var(--dim); }
@@ -71,12 +78,24 @@
       <label style="margin:0;font-weight:400"><input type="checkbox" id="keyRemember"> Ricorda su questo browser</label>
       <button id="keyForget" class="danger" hidden>Dimentica la chiave</button>
     </div>
+    <div id="keyMsg" class="msg" role="status"></div>
     <p class="note">La chiave privata è ciò che permette di creare codici: conservala in un posto sicuro e non condividerla. Se la perdi non potrai più creare codici validi per questa versione dell'app.</p>
     <details style="margin-top:10px">
       <summary>Avanzate: crea una nuova coppia di chiavi</summary>
       <p class="note">Serve solo per cambiare chiave (ad esempio se la vecchia è stata esposta). I codici fatti con la vecchia chiave smetteranno di funzionare quando distribuisci una versione dell'app ricompilata con la nuova chiave pubblica.</p>
       <button id="keyNew">Crea nuova coppia di chiavi</button>
-      <div id="newKeyOut" class="note" hidden></div>
+      <div id="newKeyConfirm" class="confirm" hidden>
+        <p>Creare una nuova coppia di chiavi? Dovrai ricompilare l'app con la nuova chiave pubblica e i vecchi codici smetteranno di valere sulle nuove versioni.</p>
+        <div class="row"><button id="newKeyYes" class="primary">Sì, crea nuova coppia</button><button id="newKeyNo">Annulla</button></div>
+      </div>
+      <div id="newKeyOut" hidden>
+        <p class="note">Salva questo testo in un file <span class="mono">race-engineer-chiave-privata.json</span> e conservalo al sicuro: è la chiave privata.</p>
+        <textarea id="newKeyJson" rows="6" readonly></textarea>
+        <div class="row" style="margin-top:8px"><button id="copyNewKey" class="primary">Copia chiave privata</button><button id="saveNewKey">Scarica file</button></div>
+        <p class="note">Chiave pubblica (da mettere in <span class="mono">license/pubkey.txt</span> prima di ricompilare):</p>
+        <textarea id="newPubKey" rows="2" readonly></textarea>
+        <div class="row" style="margin-top:8px"><button id="copyNewPub">Copia chiave pubblica</button></div>
+      </div>
     </details>
   </section>
 
@@ -115,6 +134,14 @@
   <section aria-labelledby="histTitle">
     <h2 id="histTitle">Codici creati su questo browser</h2>
     <div class="row" style="margin-bottom:8px"><button id="exportCsv">Esporta CSV</button><button id="clearHist" class="danger">Svuota elenco</button></div>
+    <div id="clearConfirm" class="confirm" hidden>
+      <p>Svuotare l'elenco? I codici già consegnati continuano a funzionare.</p>
+      <div class="row"><button id="clearYes" class="danger">Sì, svuota</button><button id="clearNo">Annulla</button></div>
+    </div>
+    <div id="csvBox" hidden>
+      <textarea id="csvOut" rows="6" readonly></textarea>
+      <div class="row" style="margin-top:8px"><button id="copyCsv" class="primary">Copia CSV</button></div>
+    </div>
     <div style="overflow-x:auto"><table>
       <thead><tr><th>Stato</th><th>Per chi</th><th>Scade</th><th>Creato</th><th>ID</th><th></th></tr></thead>
       <tbody id="hist"></tbody>
@@ -192,6 +219,12 @@ async function verifyCode(pubKey, code) {
 /* ---- UI ----------------------------------------------------------------------------- */
 const $ = (id) => document.getElementById(id);
 const LS_KEY = "re-gen-key", LS_HIST = "re-gen-hist";
+/* storage can be missing or throw (private windows, sandboxed frames): never rely on it */
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} },
+};
 let signKey = null, pubHex = "", pubKey = null;
 
 const fmtLocal = (s) => new Date(s * 1000).toLocaleString("it-IT", { dateStyle: "medium", timeStyle: "short" });
@@ -210,7 +243,7 @@ async function loadKey(json, remember) {
   pubHex = hex(await publicFromPrivate(signKey));
   if (k.public && k.public.toLowerCase() !== pubHex) throw new Error("La chiave pubblica nel file non corrisponde alla privata");
   pubKey = await importPublic(pubHex);
-  if (remember) { try { localStorage.setItem(LS_KEY, JSON.stringify(k)); } catch {} }
+  if (remember) store.set(LS_KEY, JSON.stringify(k));
   refreshKeyUi();
 }
 function refreshKeyUi() {
@@ -218,7 +251,7 @@ function refreshKeyUi() {
   $("keyStatus").className = "status " + (ok ? "ok" : "bad");
   $("keyStatusText").textContent = ok ? `Chiave caricata · impronta ${fingerprint(pubHex)}` : "Nessuna chiave caricata";
   $("generate").disabled = !ok;
-  $("keyForget").hidden = !localStorage.getItem(LS_KEY);
+  $("keyForget").hidden = !store.get(LS_KEY);
 }
 
 /* presets / expiry */
@@ -245,8 +278,8 @@ function updateExpiryInfo() {
 }
 
 /* history */
-const loadHist = () => { try { return JSON.parse(localStorage.getItem(LS_HIST) || "[]"); } catch { return []; } };
-const saveHist = (h) => { try { localStorage.setItem(LS_HIST, JSON.stringify(h)); } catch {} };
+const loadHist = () => { try { return JSON.parse(store.get(LS_HIST) || "[]"); } catch { return []; } };
+const saveHist = (h) => store.set(LS_HIST, JSON.stringify(h));
 function renderHist() {
   const h = loadHist(), body = $("hist"); body.innerHTML = "";
   $("histEmpty").hidden = h.length > 0;
@@ -266,32 +299,49 @@ function renderHist() {
     body.appendChild(tr);
   });
 }
-async function copyText(t, btn) {
-  try { await navigator.clipboard.writeText(t); } catch { const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); }
-  if (btn) { const o = btn.textContent; btn.textContent = "Copiato"; setTimeout(() => btn.textContent = o, 1200); }
+/* Copy: clipboard API first; if the frame refuses, select the text so Ctrl+C works. */
+async function copyText(t, btn, sourceEl) {
+  let ok = false;
+  try { await navigator.clipboard.writeText(t); ok = true; } catch {}
+  if (!ok) {
+    const el = sourceEl || $("codeOut");
+    if (!sourceEl) { el.value = t; $("result").hidden = false; }
+    try { el.focus(); el.select(); ok = document.execCommand("copy"); } catch {}
+    if (btn) { const o = btn.dataset.label || btn.textContent; btn.dataset.label = o; btn.textContent = ok ? "Copiato" : "Selezionato: premi Ctrl+C"; setTimeout(() => btn.textContent = o, ok ? 1200 : 3500); }
+    return;
+  }
+  if (btn) { const o = btn.dataset.label || btn.textContent; btn.dataset.label = o; btn.textContent = "Copiato"; setTimeout(() => btn.textContent = o, 1200); }
+}
+/* Downloads work in a normal browser tab; some viewers block them, which is why the text is always shown too. */
+function offerDownload(name, text, type) {
+  try { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; document.body.appendChild(a); a.click(); a.remove(); } catch {}
 }
 
 /* events */
 $("keyFile").addEventListener("change", async (ev) => {
   const f = ev.target.files[0]; if (!f) return;
-  try { await loadKey(await f.text(), $("keyRemember").checked); } catch (e) { alert(e.message); }
+  try { await loadKey(await f.text(), $("keyRemember").checked); setMsg($("keyMsg"), "", ""); } catch (e) { setMsg($("keyMsg"), e.message, "bad"); }
 });
 $("keyLoad").addEventListener("click", async () => {
-  try { await loadKey($("keyPaste").value, $("keyRemember").checked); $("keyPaste").value = ""; } catch (e) { alert(e.message); }
+  try { await loadKey($("keyPaste").value, $("keyRemember").checked); $("keyPaste").value = ""; setMsg($("keyMsg"), "", ""); } catch (e) { setMsg($("keyMsg"), e.message, "bad"); }
 });
-$("keyForget").addEventListener("click", () => { localStorage.removeItem(LS_KEY); signKey = null; pubKey = null; pubHex = ""; refreshKeyUi(); });
-$("keyNew").addEventListener("click", async () => {
-  if (!confirm("Creare una nuova coppia di chiavi? Dovrai ricompilare l'app con la nuova chiave pubblica.")) return;
+$("keyForget").addEventListener("click", () => { store.del(LS_KEY); signKey = null; pubKey = null; pubHex = ""; refreshKeyUi(); });
+$("keyNew").addEventListener("click", () => { $("newKeyConfirm").hidden = false; });
+$("newKeyNo").addEventListener("click", () => { $("newKeyConfirm").hidden = true; });
+$("newKeyYes").addEventListener("click", async () => {
+  $("newKeyConfirm").hidden = true;
   const kp = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
   const pkcs8 = new Uint8Array(await crypto.subtle.exportKey("pkcs8", kp.privateKey));
   const seed = hex(pkcs8.slice(pkcs8.length - 32));
   const pub = hex(new Uint8Array(await crypto.subtle.exportKey("raw", kp.publicKey)));
   const json = JSON.stringify({ app: "race-engineer", v: 1, alg: "Ed25519", private: seed, public: pub, created: new Date().toISOString() }, null, 2);
-  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([json], { type: "application/json" })); a.download = "race-engineer-chiave-privata.json"; a.click();
-  const out = $("newKeyOut"); out.hidden = false;
-  out.innerHTML = "File della chiave privata scaricato: conservalo al sicuro.<br>Chiave pubblica (da mettere in <span class='mono'>license/pubkey.txt</span> prima di ricompilare):<br><span class='mono' style='word-break:break-all'>" + pub + "</span>";
+  $("newKeyJson").value = json; $("newPubKey").value = pub; $("newKeyOut").hidden = false;
   await loadKey(json, false);
+  setMsg($("keyMsg"), "Nuova chiave creata e caricata. Copia o scarica la chiave privata prima di chiudere la pagina.", "warn");
 });
+$("copyNewKey").addEventListener("click", () => copyText($("newKeyJson").value, $("copyNewKey"), $("newKeyJson")));
+$("copyNewPub").addEventListener("click", () => copyText($("newPubKey").value, $("copyNewPub"), $("newPubKey")));
+$("saveNewKey").addEventListener("click", () => offerDownload("race-engineer-chiave-privata.json", $("newKeyJson").value, "application/json"));
 $("presets").addEventListener("click", (ev) => { const b = ev.target.closest("button"); if (b) setPreset(Number(b.dataset.days)); });
 $("expiry").addEventListener("input", () => { document.querySelectorAll("#presets button").forEach(b => b.classList.remove("on")); updateExpiryInfo(); });
 
@@ -310,7 +360,7 @@ $("generate").addEventListener("click", async () => {
     setMsg(msg, exp === 0 ? "Codice creato: nessuna scadenza." : `Codice creato: scade il ${fmtLocal(exp)}.`, "ok");
   } catch (e) { setMsg(msg, "Errore: " + e.message, "bad"); }
 });
-$("copyCode").addEventListener("click", () => copyText($("codeOut").value, $("copyCode")));
+$("copyCode").addEventListener("click", () => copyText($("codeOut").value, $("copyCode"), $("codeOut")));
 $("copyMsg").addEventListener("click", () => {
   const exp = Number($("result").dataset.expires), lab = $("result").dataset.label;
   const t = `${lab ? "Ciao " + lab + ",\n" : ""}ecco il tuo codice di accesso per Race Engineer:\n\n${$("codeOut").value}\n\n${exp ? "Valido fino al " + fmtLocal(exp) + "." : "Senza scadenza."}\nAvvia Race Engineer, incolla il codice nella schermata di accesso e premi «Accedi».`;
@@ -328,9 +378,13 @@ $("verify").addEventListener("click", async () => {
 $("exportCsv").addEventListener("click", () => {
   const rows = [["id", "per_chi", "creato_utc", "scade_utc", "codice"]].concat(loadHist().map(r => [r.id, r.label, new Date(r.issuedAt * 1000).toISOString(), r.expiresAt ? new Date(r.expiresAt * 1000).toISOString() : "mai", r.code]));
   const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
-  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = "codici-race-engineer.csv"; a.click();
+  $("csvOut").value = csv; $("csvBox").hidden = false;
+  offerDownload("codici-race-engineer.csv", csv, "text/csv");
 });
-$("clearHist").addEventListener("click", () => { if (confirm("Svuotare l'elenco? I codici già consegnati continuano a funzionare.")) { saveHist([]); renderHist(); } });
+$("copyCsv").addEventListener("click", () => copyText($("csvOut").value, $("copyCsv"), $("csvOut")));
+$("clearHist").addEventListener("click", () => { $("clearConfirm").hidden = false; });
+$("clearNo").addEventListener("click", () => { $("clearConfirm").hidden = true; });
+$("clearYes").addEventListener("click", () => { saveHist([]); renderHist(); $("clearConfirm").hidden = true; $("csvBox").hidden = true; });
 
 (async function init() {
   if (!(window.crypto && crypto.subtle)) { setMsg($("genMsg"), "Questo browser non supporta la crittografia necessaria: aggiorna Chrome, Edge, Firefox o Safari.", "bad"); return; }
@@ -338,8 +392,8 @@ $("clearHist").addEventListener("click", () => { if (confirm("Svuotare l'elenco?
   catch { setMsg($("genMsg"), "Questo browser non supporta le firme Ed25519: aggiorna il browser (Chrome/Edge 137+, Firefox 129+, Safari 17+).", "bad"); $("generate").disabled = true; return; }
   setPreset(30);
   renderHist();
-  const saved = localStorage.getItem(LS_KEY);
-  if (saved) { try { await loadKey(saved, false); } catch { localStorage.removeItem(LS_KEY); } }
+  const saved = store.get(LS_KEY);
+  if (saved) { try { await loadKey(saved, false); } catch { store.del(LS_KEY); } }
   refreshKeyUi();
 })();
 </script>
