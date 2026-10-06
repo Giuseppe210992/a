@@ -3,6 +3,7 @@
 //! The UI never touches the simulator, BLE or audio paths: it reads a snapshot that the
 //! engineer thread refreshes at ~30 Hz and repaints at a capped rate (15/30/60 fps).
 
+mod layout;
 mod widgets;
 
 use std::sync::{
@@ -234,6 +235,10 @@ pub struct ReApp {
     session: Option<Session>,
     view: Snapshot,
     fps: u32,
+    layout: layout::Layout,
+    layout_dirty: bool,
+    /// Bumped when the menu changes the layout, so egui forgets dragged panel sizes and takes the new ones.
+    layout_gen: u32,
     /// Live path while the first lap has not produced a reference map yet.
     trail: Vec<[f32; 2]>,
     last_frames_in: u64,
@@ -250,6 +255,9 @@ impl Default for ReApp {
             session: None,
             view: Snapshot::default(),
             fps,
+            layout: layout::Layout::load(),
+            layout_dirty: false,
+            layout_gen: 0,
             trail: vec![],
             last_frames_in: 0,
             last_frames_change: Instant::now(),
@@ -432,6 +440,7 @@ impl eframe::App for ReApp {
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.setup.save(self.fps);
+        self.layout.save();
         self.stop();
     }
 }
@@ -673,6 +682,49 @@ impl ReApp {
         });
     }
 
+    /// "Layout" menu: presets, per-panel placement, sizes. Changes are saved straight away.
+    fn layout_menu(&mut self, ui: &mut Ui) {
+        let before = self.layout.clone();
+        ui.menu_button("Layout", |ui| {
+            ui.label(RichText::new("Schemi pronti").size(11.0).color(color::TEXT_DIM));
+            ui.horizontal(|ui| {
+                for (name, make) in layout::Layout::PRESETS {
+                    if ui.button(name).clicked() {
+                        self.layout = make();
+                    }
+                }
+            });
+            ui.separator();
+            ui.label(RichText::new("Posizione dei pannelli").size(11.0).color(color::TEXT_DIM));
+            egui::Grid::new("layout_panes").num_columns(2).spacing([12.0, 4.0]).show(ui, |ui| {
+                for p in layout::Pane::ALL {
+                    ui.label(p.label());
+                    ui.horizontal(|ui| {
+                        let mut s = self.layout.slot(p);
+                        ui.selectable_value(&mut s, layout::Slot::Left, "Sinistra");
+                        ui.selectable_value(&mut s, layout::Slot::Right, "Destra");
+                        ui.selectable_value(&mut s, layout::Slot::Hidden, "Nascosto");
+                        self.layout.set_slot(p, s);
+                    });
+                    ui.end_row();
+                }
+            });
+            ui.separator();
+            ui.checkbox(&mut self.layout.bottom, "Tracce velocità/pedali sotto la mappa");
+            ui.checkbox(&mut self.layout.times, "Riga tempi sopra la mappa (giro, delta, curva)");
+            ui.checkbox(&mut self.layout.compact_top, "Barra in alto compatta");
+            ui.add(egui::Slider::new(&mut self.layout.left_w, layout::LEFT_W).text("larghezza sinistra"));
+            ui.add(egui::Slider::new(&mut self.layout.right_w, layout::LEFT_W).text("larghezza destra"));
+            ui.add(egui::Slider::new(&mut self.layout.bottom_h, layout::BOTTOM_H).text("altezza tracce"));
+            ui.separator();
+            ui.label(RichText::new("Tasto F: mappa a tutto schermo / torna ai pannelli. Trascina i bordi dei pannelli per ridimensionarli.").size(11.0).color(color::TEXT_DIM));
+        });
+        if self.layout != before {
+            self.layout_dirty = true;
+            self.layout_gen += 1;
+        }
+    }
+
     fn dashboard(&mut self, ui: &mut Ui) {
         let (hot, cold) = self.session.as_ref().map_or((110.0, 60.0), |s| (s.tyre_hot_c, s.tyre_cold_c));
         let live = self.last_frames_change.elapsed() < Duration::from_millis(1500);
@@ -685,6 +737,10 @@ impl ReApp {
         };
         let (mut new_mode, mut new_muted) = (mode, muted);
 
+        if ui.input(|i| i.key_pressed(egui::Key::F)) {
+            self.layout.focus = !self.layout.focus;
+        }
+        let engineer_hidden = self.layout.focus || self.layout.slot(layout::Pane::Engineer) == layout::Slot::Hidden;
         egui::Panel::top("top").show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.label(RichText::new("Race Engineer").strong().size(16.0));
@@ -702,8 +758,12 @@ impl ReApp {
                     }
                 }
                 ui.separator();
-                ui.label(format!("latenza interna {:.2} ms", self.view.pipeline_latency_ms));
-                ui.label(RichText::new(format!("frame persi {}", self.view.frames_dropped)).color(if self.view.frames_dropped > 0 { color::AMBER } else { color::TEXT_DIM }));
+                if !self.layout.compact_top {
+                    ui.label(format!("latenza interna {:.2} ms", self.view.pipeline_latency_ms));
+                }
+                if !self.layout.compact_top || self.view.frames_dropped > 0 {
+                    ui.label(RichText::new(format!("frame persi {}", self.view.frames_dropped)).color(if self.view.frames_dropped > 0 { color::AMBER } else { color::TEXT_DIM }));
+                }
                 ui.separator();
                 let (vt, vc) = if muted {
                     ("voce: muta", color::TEXT_DIM)
@@ -713,6 +773,16 @@ impl ReApp {
                     ("voce: pronta", color::GREEN)
                 };
                 widgets::status(ui, vc, vt);
+                if engineer_hidden {
+                    if let Some(m) = self.view.messages.back() {
+                        let c = match m.priority {
+                            crate::voice::Priority::Critical => color::RED,
+                            crate::voice::Priority::High => color::AMBER,
+                            _ => Color32::WHITE,
+                        };
+                        ui.label(RichText::new(format!("«{}»", m.text)).strong().color(c));
+                    }
+                }
                 ui.separator();
                 ui.label("Modalità");
                 egui::ComboBox::from_id_salt("mode").selected_text(new_mode.label()).show_ui(ui, |ui| {
@@ -722,11 +792,14 @@ impl ReApp {
                 });
                 ui.checkbox(&mut new_muted, "Muto");
                 ui.separator();
-                egui::ComboBox::from_id_salt("fps").selected_text(format!("UI {fps} fps")).show_ui(ui, |ui| {
-                    for f in [15u32, 30, 60] {
-                        ui.selectable_value(&mut fps, f, format!("{f} fps"));
-                    }
-                });
+                if !self.layout.compact_top {
+                    egui::ComboBox::from_id_salt("fps").selected_text(format!("UI {fps} fps")).show_ui(ui, |ui| {
+                        for f in [15u32, 30, 60] {
+                            ui.selectable_value(&mut fps, f, format!("{f} fps"));
+                        }
+                    });
+                }
+                self.layout_menu(ui);
                 if ui.button("Ferma").clicked() {
                     stop = true;
                 }
@@ -773,22 +846,114 @@ impl ReApp {
             });
         }
 
-        let v = &self.view;
+let layout = self.layout.clone();
+        let ctx = PaneCtx { v: &self.view, hot, cold, hr_requested };
+        let v = ctx.v;
         let f = v.frame.as_ref();
-        let session = f.and_then(|f| f.session.as_deref());
-        egui::Panel::left("left").exact_size(300.0).show(ui, |ui| {
+        let mut left_w = layout.left_w;
+        let mut right_w = layout.right_w;
+        let mut bottom_h = layout.bottom_h;
+        for (slot, id) in [(layout::Slot::Left, "left"), (layout::Slot::Right, "right")] {
+            if !layout.column(slot) {
+                continue;
+            }
+            let w = if slot == layout::Slot::Left { layout.left_w } else { layout.right_w };
+            let pid = egui::Id::new((id, self.layout_gen));
+            let panel = if slot == layout::Slot::Left { egui::Panel::left(pid) } else { egui::Panel::right(pid) };
+            let r = panel
+                .resizable(true)
+                .default_size(w)
+                .size_range(layout::LEFT_W)
+                .show(ui, |ui| {
+                    let mut first = true;
+                    for p in layout::Pane::ALL.into_iter().filter(|p| layout.slot(*p) == slot) {
+                        if !first {
+                            ui.add_space(6.0);
+                        }
+                        first = false;
+                        pane_ui(ui, p, &ctx);
+                    }
+                });
+            let width = r.response.rect.width();
+            if slot == layout::Slot::Left { left_w = width } else { right_w = width }
+        }
+        if layout.show_bottom() {
+            let r = egui::Panel::bottom(egui::Id::new(("bottom", self.layout_gen))).resizable(true).default_size(layout.bottom_h).size_range(layout::BOTTOM_H).show(ui, |ui| {
+                widgets::trace_plot(ui, &v.trace);
+            });
+            bottom_h = r.response.rect.height();
+        }
+
+        egui::CentralPanel::default().show(ui, |ui| {
+            if layout.times {
+                ui.horizontal_wrapped(|ui| {
+                    let lap_txt = f.and_then(|f| f.lap).map_or("-".to_string(), |l| l.to_string());
+                    stat(ui, "Giro", &lap_txt, Color32::WHITE);
+                    stat(ui, "Tempo", &widgets::fmt_lap(f.and_then(|f| f.lap_time_s)), Color32::WHITE);
+                    stat(ui, "Ultimo", &widgets::fmt_lap(f.and_then(|f| f.last_lap_s)), Color32::WHITE);
+                    stat(ui, "Miglior", &widgets::fmt_lap(f.and_then(|f| f.best_lap_s).or(v.analysis.best_lap_s)), color::GREEN);
+                    let (dt, dc) = match v.analysis.delta_s {
+                        Some(d) => (format!("{d:+.3}"), if d > 0.0 { color::RED } else { color::GREEN }),
+                        None => ("--".into(), color::TEXT_DIM),
+                    };
+                    stat(ui, "Delta", &dt, dc);
+                    let corner = v.analysis.corner.map_or("—".to_string(), |c| format!("Curva {c}"));
+                    stat(ui, "Posizione", &corner, color::AMBER);
+                });
+                ui.add_space(6.0);
+            }
+            widgets::track_map(ui, v.analysis.track.as_deref(), &self.trail, f, v.analysis.corner);
+        });
+        // remember dragged sizes (the focus view hides the panels, so it never overwrites them)
+        if !layout.focus {
+            let l = &mut self.layout;
+            for (cur, new) in [(&mut l.left_w, left_w), (&mut l.right_w, right_w), (&mut l.bottom_h, bottom_h)] {
+                if (*cur - new).abs() > 0.5 {
+                    *cur = new;
+                    self.layout_dirty = true;
+                }
+            }
+        }
+        if self.layout_dirty && !ui.input(|i| i.pointer.any_down()) {
+            self.layout.save();
+            self.layout_dirty = false;
+        }
+        let _ = self.session.as_ref().map(|s| s.started);
+    }
+}
+
+/// Everything a panel needs to draw itself.
+struct PaneCtx<'a> {
+    v: &'a Snapshot,
+    hot: f32,
+    cold: f32,
+    hr_requested: bool,
+}
+
+fn pane_ui(ui: &mut Ui, pane: layout::Pane, c: &PaneCtx) {
+    let (v, hot, cold, hr_requested) = (c.v, c.hot, c.cold, c.hr_requested);
+    let f = v.frame.as_ref();
+    let session = f.and_then(|f| f.session.as_deref());
+    let _ = (hot, cold, hr_requested, session);
+    match pane {
+        layout::Pane::Car => {
             card(ui, "Vettura", |ui| {
+                // narrow column: smaller digits, no "marcia" caption
+                let narrow = ui.available_width() < 250.0;
+                let big = if narrow { 38.0 } else { 56.0 };
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(format!("{:.0}", f.map_or(0.0, |f| f.speed_kmh))).size(56.0).strong());
-                    ui.label(RichText::new("km/h").color(color::TEXT_DIM));
+                    ui.label(RichText::new(format!("{:.0}", f.map_or(0.0, |f| f.speed_kmh))).size(big).strong());
+                    ui.label(RichText::new("km/h").size(if narrow { 10.0 } else { 14.0 }).color(color::TEXT_DIM));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let g = f.map_or("-".to_string(), |f| match f.gear {
                             -1 => "R".into(),
                             0 => "N".into(),
                             g => g.to_string(),
                         });
-                        ui.label(RichText::new(g).size(56.0).strong().color(color::AMBER));
-                        ui.label(RichText::new("marcia").color(color::TEXT_DIM));
+                        ui.label(RichText::new(g).size(big).strong().color(color::AMBER));
+                        if !narrow {
+                            ui.label(RichText::new("marcia").color(color::TEXT_DIM));
+                        }
                     });
                 });
                 widgets::rpm_bar(ui, f.map_or(0.0, |f| f.rpm), f.and_then(|f| f.max_rpm).unwrap_or(v.rpm_max_seen));
@@ -797,11 +962,12 @@ impl ReApp {
                 widgets::bar(ui, "Freno", f.map_or(0.0, |f| f.brake), color::RED);
                 widgets::steering(ui, f.and_then(|f| f.steering));
             });
-            ui.add_space(6.0);
+        }
+        layout::Pane::Tyres => {
             card(ui, "Gomme", |ui| {
                 let (t, p) = (f.and_then(|f| f.tyre_temp_c), f.and_then(|f| f.tyre_pressure_kpa));
                 let names = ["Ant. sx", "Ant. dx", "Post. sx", "Post. dx"];
-                egui::Grid::new("tyres").num_columns(2).spacing([6.0, 6.0]).min_col_width(130.0).show(ui, |ui| {
+                egui::Grid::new("tyres").num_columns(2).spacing([6.0, 6.0]).min_col_width(((ui.available_width() - 6.0) / 2.0).max(60.0)).show(ui, |ui| {
                     for row in 0..2 {
                         for col in 0..2 {
                             let i = row * 2 + col;
@@ -814,9 +980,8 @@ impl ReApp {
                     ui.label(RichText::new(format!("Carburante {fuel:.1} l")).color(color::TEXT_DIM));
                 }
             });
-        });
-
-        egui::Panel::right("right").exact_size(330.0).show(ui, |ui| {
+        }
+        layout::Pane::Heart => {
             card(ui, "Pilota · battito", |ui| match v.bio {
                 None => {
                     ui.label(RichText::new(if hr_requested { "Smartwatch non collegato" } else { "Smartwatch non usato" }).color(color::TEXT_DIM));
@@ -855,7 +1020,8 @@ impl ReApp {
                     }
                 }
             });
-            ui.add_space(6.0);
+        }
+        layout::Pane::Setup => {
             card(ui, "Setup corrente", |ui| match session {
                 Some(info) if !info.setup.is_empty() => {
                     if let Some(n) = &info.setup_note {
@@ -882,7 +1048,8 @@ impl ReApp {
                     ui.label(RichText::new("Questo simulatore non pubblica il setup nei dati letti; non viene inventato.").size(12.0).color(color::TEXT_DIM));
                 }
             });
-            ui.add_space(6.0);
+        }
+        layout::Pane::Hints => {
             card(ui, "Suggerimenti", |ui| {
                 if v.suggestions.is_empty() {
                     ui.label(RichText::new(if v.analysis.track.is_some() { "Nessuna perdita rilevante nell'ultimo giro." } else { "Servono due giri validi per confrontare le curve." }).color(color::TEXT_DIM));
@@ -891,7 +1058,8 @@ impl ReApp {
                     ui.label(RichText::new(format!("• {s}")).color(color::AMBER));
                 }
             });
-            ui.add_space(6.0);
+        }
+        layout::Pane::Engineer => {
             card(ui, "Race Engineer", |ui| {
                 egui::ScrollArea::vertical().max_height(ui.available_height().max(120.0)).stick_to_bottom(true).show(ui, |ui| {
                     if v.messages.is_empty() {
@@ -908,31 +1076,7 @@ impl ReApp {
                     }
                 });
             });
-        });
-
-        egui::Panel::bottom("bottom").exact_size(170.0).show(ui, |ui| {
-            widgets::trace_plot(ui, &v.trace);
-        });
-
-        egui::CentralPanel::default().show(ui, |ui| {
-            ui.horizontal(|ui| {
-                let lap_txt = f.and_then(|f| f.lap).map_or("-".to_string(), |l| l.to_string());
-                stat(ui, "Giro", &lap_txt, Color32::WHITE);
-                stat(ui, "Tempo", &widgets::fmt_lap(f.and_then(|f| f.lap_time_s)), Color32::WHITE);
-                stat(ui, "Ultimo", &widgets::fmt_lap(f.and_then(|f| f.last_lap_s)), Color32::WHITE);
-                stat(ui, "Miglior", &widgets::fmt_lap(f.and_then(|f| f.best_lap_s).or(v.analysis.best_lap_s)), color::GREEN);
-                let (dt, dc) = match v.analysis.delta_s {
-                    Some(d) => (format!("{d:+.3}"), if d > 0.0 { color::RED } else { color::GREEN }),
-                    None => ("--".into(), color::TEXT_DIM),
-                };
-                stat(ui, "Delta", &dt, dc);
-                let corner = v.analysis.corner.map_or("—".to_string(), |c| format!("Curva {c}"));
-                stat(ui, "Posizione", &corner, color::AMBER);
-            });
-            ui.add_space(6.0);
-            widgets::track_map(ui, v.analysis.track.as_deref(), &self.trail, f, v.analysis.corner);
-        });
-        let _ = self.session.as_ref().map(|s| s.started);
+        }
     }
 }
 

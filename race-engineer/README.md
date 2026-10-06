@@ -33,7 +33,7 @@ settings, logs) but NOT the real games, real Bluetooth, real speech or real audi
 | Track model: corners, live delta, per-corner comparison, suggestions, map | implemented + tested; E2E (Wine) |
 | Voice output: priority queue, expiry, preemption, panic-safe sink; Windows TTS + WAV clips | queue tested; Windows backends compile; in Wine TTS is unavailable and the app falls back to text (verified); **not run on real audio** |
 | Voice input (offline commands: silenzio / solo critici / completo / muto / stato) | **experimental**, Windows speech recognizer; compiles for Windows; mapping tested; **never run** |
-| GUI (`re-gui`) | E2E (Wine) incl. dark theme, settings persistence, log file; not run on a real Windows desktop |
+| GUI (`re-gui`) | E2E (Wine) incl. dark theme, settings persistence, log file, configurable layout (presets, per-panel placement, saved `layout.txt`); not run on a real Windows desktop |
 | **Smartwatch optional** | everything runs without it (no HR → no heart-rate advice, nothing else changes); with Bluetooth requested but no device/adapter you get an amber notice and automatic retries; tested |
 | **Error reports by e-mail** (SMTP or webhook, consent-gated, anonymous, queued, rate-limited) | tested against local SMTP/HTTP servers incl. the Windows exe under Wine; **not tested against Gmail / a real form service** (needs your credentials) — see docs/SEGNALAZIONI.md |
 | **Gmail setup form** (address + app password, friendly errors, TLS+AUTH) | the full TLS-with-login path was tested against a local mail server (custom CA) from the GUI and CLI of the Windows exe under Wine; **real Gmail unreachable from my environment, so real delivery is untested** |
@@ -67,6 +67,7 @@ See `docs/RESEARCH.md` (what was verified and what was not) and `docs/VALIDATION
 ## Files
 
 * `re-gui.exe` — dashboard; settings in `%LOCALAPPDATA%\RaceEngineer\settings.txt`, log in `re-gui.log` there.
+  The dashboard layout is configurable (button **Layout**: presets *Completo / Mappa grande / Solo mappa*, each panel left / right / hidden, widths and heights; key **F** = map only); it is remembered in `layout.txt` in the same folder.
 * `re-cli.exe` — headless runner, prints calls and a status line per second.
 * `re-fakesim.exe` — test tool: fake iRacing/ACC shared memory and F1/Forza UDP.
 * Optional `clips\brake.wav`, `lift.wav`, `throttle.wav`, `attention.wav` next to the exe: used for the critical calls
