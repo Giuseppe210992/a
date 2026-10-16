@@ -1,0 +1,22 @@
+{
+  "name": "gestione-immobiliare",
+  "productName": "Gestione Immobiliare",
+  "version": "1.0.0",
+  "description": "Gestione Immobiliare - gestionale offline per compravendite, provvigioni e liquidazioni",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test \"tests/unit/**/*.test.mjs\"",
+    "test:e2e": "node tests/e2e/run.mjs"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "sql.js": "^1.15.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "playwright-core": "^1.56.1"
+  }
+}
