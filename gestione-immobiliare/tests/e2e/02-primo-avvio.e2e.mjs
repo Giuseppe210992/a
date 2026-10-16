@@ -29,7 +29,8 @@ describe('Primo avvio', () => {
     // guida ai primi passi
     assert.match(await p.textContent('.primi-passi'), /Per iniziare/);
     assert.equal(await p.locator('.primi-passi .passo').count(), 4);
-    assert.equal(await p.locator('.primi-passi .passo.fatto').count(), 1); // solo i collaboratori
+    assert.equal(await p.locator('.primi-passi .passo.fatto').count(), 2); // i collaboratori e gli scaglioni dell'agenzia, già impostati
+    assert.match(await p.textContent('.primi-passi'), /Controlla scaglioni e percentuali/);
     // la tabella delle ultime pratiche e' vuota ma spiegata
     assert.match(await p.textContent('section[aria-labelledby="ult-titolo"]'), /Nessuna pratica da mostrare/);
     // nessun avviso inutile su un archivio vuoto

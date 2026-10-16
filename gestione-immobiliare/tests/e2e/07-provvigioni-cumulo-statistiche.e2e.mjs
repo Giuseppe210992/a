@@ -336,7 +336,11 @@ describe('Cumulo mensile per zona', () => {
   test('senza scaglioni il cumulo lo segnala e rimanda alle impostazioni', async () => {
     const c = await avvia();
     try {
-      await c.pagina.evaluate(async () => { const { api, app } = window.__gi; await api.creaZona(app.archivio, { nome: 'Unica' }); });
+      await c.pagina.evaluate(async () => {
+        const { api, app } = window.__gi;
+        await api.salvaTabellaScaglioni(app.archivio, null, []); // il programma parte con gli scaglioni dell'agenzia: qui si prova il caso «senza»
+        await api.creaZona(app.archivio, { nome: 'Unica' });
+      });
       await vai(c.pagina, '#/cumulo');
       const t = rimuoviSpazi(await c.pagina.locator('#contenuto').innerText());
       assert.match(t, /Scaglioni non impostati/);

@@ -96,7 +96,7 @@ export const dashboard = {
     const passi = [
       { fatto: m.collaboratori.length > 0, titolo: 'Controlla i collaboratori', testo: 'Luca e Giuseppe sono già inseriti: modificali o aggiungi gli altri collaboratori.', href: '#/impostazioni?sezione=collaboratori' },
       { fatto: m.zone.length > 0, titolo: 'Aggiungi le zone di lavoro', testo: 'Servono per il cumulo mensile e per le statistiche per zona.', href: '#/impostazioni?sezione=zone' },
-      { fatto: nScaglioni > 0, titolo: 'Imposta scaglioni e percentuali', testo: 'Le soglie di fatturato mensile e la percentuale di provvigione di ciascuna.', href: '#/impostazioni?sezione=scaglioni' },
+      { fatto: nScaglioni > 0, titolo: nScaglioni > 0 ? 'Controlla scaglioni e percentuali' : 'Imposta scaglioni e percentuali', testo: nScaglioni > 0 ? 'Sono già impostati quelli dell\'agenzia: verifica le soglie di fatturato mensile e le percentuali, o modificale.' : 'Le soglie di fatturato mensile e la percentuale di provvigione di ciascuna.', href: '#/impostazioni?sezione=scaglioni' },
       { fatto: m.pratiche.length > 0, titolo: 'Inserisci la prima pratica', testo: 'Da qui in poi la dashboard si aggiorna da sola.', href: '#/nuova' },
     ];
     const primiPassi = passi.every((p) => p.fatto) ? null : h('section', { class: 'card primi-passi', 'aria-labelledby': 'pp-titolo' },

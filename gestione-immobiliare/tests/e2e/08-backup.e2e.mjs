@@ -218,7 +218,8 @@ describe('Backup e archivio storico', () => {
     await bottoneFinestra(p, 'Cancella tutto').click();
     await attendiNotifica(p, /Archivio azzerato/);
     assert.deepEqual(await sql(p, 'SELECT (SELECT COUNT(*) FROM pratiche) AS pratiche, (SELECT COUNT(*) FROM zone) AS zone, (SELECT COUNT(*) FROM incassi) AS incassi, (SELECT COUNT(*) FROM liquidazioni) AS liq, (SELECT COUNT(*) FROM scaglioni) AS scaglioni'),
-      [{ pratiche: 0, zone: 0, incassi: 0, liq: 0, scaglioni: 0 }]);
+      [{ pratiche: 0, zone: 0, incassi: 0, liq: 0, scaglioni: 5 }]); // gli scaglioni tornano quelli dell'agenzia (5 righe)
+    assert.deepEqual((await sql(p, 'SELECT da_cent, percentuale FROM scaglioni WHERE zona_id IS NULL ORDER BY da_cent')).map((r) => `${r.da_cent}/${r.percentuale}`), ['0/5', '260001/8', '520001/11', '780001/15', '1300001/20']);
     assert.deepEqual((await sql(p, 'SELECT nome FROM collaboratori ORDER BY id')).map((r) => r.nome), ['Luca', 'Giuseppe']);
     const dopo = await copie(p);
     assert.equal(dopo.length, n0 + 1);

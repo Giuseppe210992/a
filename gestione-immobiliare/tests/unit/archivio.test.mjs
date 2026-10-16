@@ -39,12 +39,20 @@ async function appConDati() {
   return { ...app, zona, luca, giuseppe, id };
 }
 
-test('un archivio nuovo contiene solo Luca e Giuseppe: nessun dato dimostrativo', async () => {
+// Gli scaglioni dell'agenzia: 5% fino a 2.600 €, 8% fino a 5.200 €, 11% fino a 7.800 €, 15% fino a 13.000 €, 20% oltre
+// («fino a» comprende l'estremo, quindi ogni scaglione dopo il primo parte un centesimo più in là).
+const SCAGLIONI_AGENZIA = [
+  { da_cent: 0, percentuale: 5 }, { da_cent: 260001, percentuale: 8 }, { da_cent: 520001, percentuale: 11 },
+  { da_cent: 780001, percentuale: 15 }, { da_cent: 1300001, percentuale: 20 },
+];
+
+test('un archivio nuovo contiene solo Luca e Giuseppe e gli scaglioni dell\'agenzia: nessun dato dimostrativo', async () => {
   const { archivio } = await nuovaApp();
   assert.deepEqual(elencoCollaboratori(archivio).map((c) => c.nome), ['Luca', 'Giuseppe']);
   assert.equal(archivio.valore('SELECT COUNT(*) FROM pratiche'), 0);
   assert.equal(archivio.valore('SELECT COUNT(*) FROM zone'), 0);
-  assert.equal(archivio.valore('SELECT COUNT(*) FROM scaglioni'), 0);
+  assert.deepEqual(leggiTabellaScaglioni(archivio, null), SCAGLIONI_AGENZIA, 'tabella predefinita per tutte le zone');
+  assert.equal(archivio.valore('SELECT COUNT(*) FROM scaglioni WHERE zona_id IS NOT NULL'), 0, 'nessuna tabella propria di una zona');
   assert.equal(archivio.valore('PRAGMA application_id'), ID_APPLICAZIONE);
 });
 
@@ -320,6 +328,7 @@ test('azzeramento: copia di sicurezza, archivio vuoto, collaboratori iniziali', 
   assert.equal(app.archivio.valore('SELECT COUNT(*) FROM pratiche'), 0);
   assert.equal(app.archivio.valore('SELECT COUNT(*) FROM zone'), 0);
   assert.deepEqual(elencoCollaboratori(app.archivio).map((c) => c.nome), ['Luca', 'Giuseppe']);
+  assert.deepEqual(leggiTabellaScaglioni(app.archivio, null), SCAGLIONI_AGENZIA, 'gli scaglioni modificati tornano quelli dell\'agenzia');
   const sic = (await elencoBackup(app)).find((c) => c.tipo === 'pre-azzeramento');
   await ripristinaBackup(app, sic.id); // si puo' tornare indietro
   assert.equal(app.archivio.valore('SELECT COUNT(*) FROM pratiche'), 1);

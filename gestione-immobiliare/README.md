@@ -73,31 +73,31 @@ Tutti gli importi sono in **euro lordi** (nessuna ritenuta o contributo) e calco
 2. **Quota di ciascun collaboratore** = compensi × percentuale di ripartizione (la somma deve fare 100%; gli eventuali centesimi di resto si assegnano con il metodo del «resto maggiore», così la somma torna sempre esatta).
 3. **Mese di competenza** = mese della data del rogito (se manca, della data della pratica). Contano solo le pratiche **concluse**.
 4. **Cumulo mensile** = somma delle quote di fatturato dello stesso mese, per collaboratore e per zona (cambiabile: solo per zona, solo per collaboratore).
-5. **Scaglione raggiunto** = l'ultimo scaglione la cui soglia è raggiunta dal cumulo (raggiungere esattamente la soglia significa essere già nello scaglione superiore).
+5. **Scaglione raggiunto** = l'ultimo scaglione la cui soglia è raggiunta dal cumulo (raggiungere esattamente la soglia significa essere già nello scaglione superiore). Per questo «5% **fino a** 2.600 €» è scritto con un secondo scaglione che parte da **2.600,01 €**: con 2.600,00 € precisi si è ancora al 5%.
 6. **Provvigione**, due metodi (scegli in *Impostazioni → Metodo di calcolo*):
    - **Scaglione raggiunto** (predefinito): la percentuale dello scaglione raggiunto si applica a **tutto** il cumulo del mese;
    - **Progressivo (a fasce)**: ogni percentuale si applica solo alla parte di cumulo che cade nel suo scaglione.
 7. **Maturata** = dovuta al collaboratore: alla conclusione della pratica (predefinito) oppure in proporzione agli incassi. **Da liquidare** = maturata − già liquidata.
 
-**Esempio** (scaglioni di esempio: da 0 € il 30%, da 10.000 € il 35%, da 20.000 € il 40%). Luca, zona Centro, ottobre: due pratiche concluse con quote di fatturato 8.000 € e 6.000 € → cumulo **14.000 €** → secondo scaglione (35%):
+**Esempio** (con gli scaglioni dell'agenzia: 5% fino a 2.600 €, 8% fino a 5.200 €, 11% fino a 7.800 €, 15% fino a 13.000 €, 20% oltre). Luca, zona Centro, ottobre: due pratiche concluse con quote di fatturato 8.000 € e 6.000 € → cumulo **14.000 €** → quinto scaglione (20%):
 
 | Metodo | Calcolo | Provvigione |
 |---|---|---|
-| Scaglione raggiunto | 35% × 14.000 € | **4.900 €** |
-| Progressivo | 30% × 10.000 € + 35% × 4.000 € = 3.000 € + 1.400 € | **4.400 €** |
+| Scaglione raggiunto | 20% × 14.000 € | **2.800 €** |
+| Progressivo | 5% × 2.600 € + 8% × 2.600 € + 11% × 2.600 € + 15% × 5.200 € + 20% × 1.000 € = 130 + 208 + 286 + 780 + 200 | **1.604 €** |
 
-La differenza (500 €) è il motivo per cui il metodo va scelto con attenzione, in base al tuo accordo di collaborazione.
+La differenza (1.196 €) è il motivo per cui il metodo va scelto con attenzione, in base al tuo accordo di collaborazione.
 
 ## 5. Scelte fatte al posto tuo (da confermare)
 
 | Tema | Scelta attuale | Dove si cambia |
 |---|---|---|
-| Scaglioni e percentuali | **Nessuno inserito**: finché non li scrivi le provvigioni sono a zero. «Aggiungi scaglione» propone 0 € → 30%, 10.000 € → 35%, 20.000 € → 40% solo come punto di partenza | Impostazioni → Scaglioni e percentuali |
+| Scaglioni e percentuali | **Quelli che hai indicato**, preimpostati al primo avvio e uguali per Luca, Giuseppe e tutte le zone: 5% fino a 2.600 €, 8% fino a 5.200 €, 11% fino a 7.800 €, 15% fino a 13.000 €, 20% oltre i 13.000 €. «Fino a» comprende l'estremo (2.600,00 € precisi = 5%; da 2.600,01 € = 8%). Si cambiano e si ripristinano con un pulsante; una zona può avere una tabella propria. Se Luca e Giuseppe dovessero avere percentuali diverse tra loro, oggi non è previsto | Impostazioni → Scaglioni e percentuali |
 | Come si applicano | Scaglione raggiunto sul totale del mese | Impostazioni → Metodo di calcolo |
 | Cumulo | Per collaboratore e per zona | Impostazioni → Metodo di calcolo |
 | Quando matura | Alla conclusione della pratica (rogito) | Impostazioni → Metodo di calcolo |
 | Importi | Lordi, senza ritenute né contributi | non previsto |
-| Primo avvio | Archivio vuoto con solo Luca e Giuseppe | Impostazioni → Collaboratori |
+| Primo avvio | Nessuna pratica né zona; ci sono Luca e Giuseppe e gli scaglioni di sopra | Impostazioni → Collaboratori, Scaglioni |
 | IVA | 22% proposta; aliquote 22, 10, 4, 0 | Impostazioni → Aliquote IVA |
 
 ## 6. Stato delle verifiche

@@ -37,11 +37,11 @@ describe('Persistenza dopo chiusura e riapertura', () => {
     await p.getByLabel('Nome della zona').fill('Centro');
     await p.click('#aggiungi-zona');
     await attendiNotifica(p, /Zona “Centro” aggiunta/);
-    // scaglioni 0 → 30%, 10.000 → 35%, 20.000 → 40%
+    // scaglioni: al primo avvio ci sono già quelli dell'agenzia (5% fino a 2.600 €, 8% fino a 5.200 €, 11% fino a 7.800 €, 15% fino a 13.000 €, 20% oltre)
     await vai(p, '#/impostazioni?sezione=scaglioni');
-    assert.equal(await p.locator('#tabella-editor-scaglioni tbody tr').count(), 0, 'primo avvio: nessuno scaglione inventato');
-    for (let i = 0; i < 3; i++) await p.click('#aggiungi-scaglione'); // propone 0 € → 30%, 10.000 € → 35%, 20.000 € → 40%
-    assert.deepEqual(await p.locator('#tabella-editor-scaglioni tbody tr').evaluateAll((tr) => tr.map((r) => [...r.querySelectorAll('input')].map((i) => i.value).join('/'))), ['0,00/30', '10.000,00/35', '20.000,00/40']);
+    assert.deepEqual(await p.locator('#tabella-editor-scaglioni tbody tr').evaluateAll((tr) => tr.map((r) => [...r.querySelectorAll('input')].map((i) => i.value).join('/'))), ['0,00/5', '2.600,01/8', '5.200,01/11', '7.800,01/15', '13.000,01/20']);
+    // se ne cambia uno dall'interfaccia (l'ultimo, che non incide sui numeri sotto): deve restare dopo la chiusura
+    await p.getByLabel('Percentuale dello scaglione 5').fill('22');
     await p.click('#salva-scaglioni');
     await attendiNotifica(p, /Scaglioni predefiniti salvati/);
     // pratica
@@ -69,9 +69,9 @@ describe('Persistenza dopo chiusura e riapertura', () => {
     await p.click('#op-liquidazione');
     await finestra(p).getByLabel('Collaboratore').selectOption({ label: /Luca/.test('Luca') ? (await finestra(p).getByLabel('Collaboratore').locator('option').allInnerTexts()).find((x) => x.startsWith('Luca')) : 'Luca' });
     await finestra(p).locator('button:has-text("Nessuna")').click();
-    await finestra(p).locator('tbody tr input.input').first().fill('500');
+    await finestra(p).locator('tbody tr input.input').first().fill('200');
     await bottoneFinestra(p, 'Registra liquidazione').click();
-    await attendiNotifica(p, /Liquidazione di 500,00 € registrata per Luca/);
+    await attendiNotifica(p, /Liquidazione di 200,00 € registrata per Luca/);
     // impostazioni, tema e barra
     await vai(p, '#/impostazioni?sezione=calcolo');
     await p.locator('input[name="metodo"][value="progressivo"]').check();
@@ -82,7 +82,8 @@ describe('Persistenza dopo chiusura e riapertura', () => {
     await vai(p, '#/');
     await p.click('#op-backup');
     await attendiNotifica(p, /Backup creato/);
-    assert.deepEqual(await riquadri(p), { concluse: 1, compensi: 6000 * E, maturate: 1800 * E, daLiquidare: 1300 * E, valore: 200000 * E, inCorso: 0 });
+    // cumulo di Luca in ottobre 6.000 € = 3° scaglione (11%); metodo progressivo (scelto sopra): 130 + 208 + 800 × 11% = 426 €, meno 200 € già liquidati
+    assert.deepEqual(await riquadri(p), { concluse: 1, compensi: 6000 * E, maturate: 426 * E, daLiquidare: 226 * E, valore: 200000 * E, inCorso: 0 });
     // ultima azione: si chiude SUBITO dopo (la finestra di conferma si chiude solo a salvataggio avvenuto)
     await p.click('#op-incasso');
     await finestra(p).getByLabel('Pratica').selectOption({ index: 1 });
@@ -99,7 +100,8 @@ describe('Persistenza dopo chiusura e riapertura', () => {
     const p = sessione2.pagina;
     try {
     assert.deepEqual(await sql(p, 'SELECT (SELECT COUNT(*) FROM pratiche) AS pratiche, (SELECT COUNT(*) FROM zone) AS zone, (SELECT COUNT(*) FROM incassi) AS incassi, (SELECT COUNT(*) FROM liquidazioni) AS liq, (SELECT COUNT(*) FROM scaglioni) AS scaglioni, (SELECT COUNT(*) FROM quote) AS quote'),
-      [{ pratiche: 1, zone: 1, incassi: 2, liq: 1, scaglioni: 3, quote: 1 }]);
+      [{ pratiche: 1, zone: 1, incassi: 2, liq: 1, scaglioni: 5, quote: 1 }]);
+    assert.deepEqual((await sql(p, 'SELECT percentuale FROM scaglioni WHERE zona_id IS NULL ORDER BY da_cent')).map((r) => r.percentuale), [5, 8, 11, 15, 22], 'anche lo scaglione modificato');
     const pr = (await sql(p, 'SELECT * FROM pratiche'))[0];
     assert.deepEqual([pr.codice, pr.stato, pr.immobile_indirizzo, pr.immobile_comune, pr.data_rogito, pr.prezzo_vendita_cent, pr.compenso_venditore_cent, pr.compenso_acquirente_cent],
       ['2026/001', 'conclusa', 'Via Persistente 1', 'Minturno', '2026-10-14', 20000000, 300000, 300000]);
@@ -109,7 +111,7 @@ describe('Persistenza dopo chiusura e riapertura', () => {
     assert.equal(await p.evaluate(() => document.documentElement.dataset.theme), 'dark');
     assert.equal(await p.evaluate(() => document.body.dataset.sidebar), 'ridotta');
     // numeri (incassato 2.123,45 € di 7.320 €)
-    assert.deepEqual(await riquadri(p), { concluse: 1, compensi: 6000 * E, maturate: 1800 * E, daLiquidare: 1300 * E, valore: 200000 * E, inCorso: 0 });
+    assert.deepEqual(await riquadri(p), { concluse: 1, compensi: 6000 * E, maturate: 426 * E, daLiquidare: 226 * E, valore: 200000 * E, inCorso: 0 });
     // il backup manuale di prima è nell'archivio storico, e all'avvio è stata fatta la copia automatica del giorno
     await vai(p, '#/backup');
     const tipi = await p.evaluate(async () => (await window.__gi.app.driver.elencaCopie()).map((c) => c.tipo).sort());

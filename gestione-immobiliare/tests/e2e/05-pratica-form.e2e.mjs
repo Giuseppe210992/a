@@ -165,6 +165,9 @@ describe('Nuova pratica e modifica', () => {
 
   test('stima delle provvigioni: senza scaglioni lo dice, con gli scaglioni si aggiorna mentre si scrive', async () => {
     const p = app.pagina;
+    // il programma parte con gli scaglioni dell'agenzia: per provare il caso «senza scaglioni» si svuota la tabella e si riapre il modulo
+    await p.evaluate(async () => { const { api, app: a } = window.__gi; await api.salvaTabellaScaglioni(a.archivio, null, []); });
+    await apriNuova();
     await p.getByRole('button', { name: 'Tutto a Luca' }).click();
     await p.waitForFunction(() => /scaglioni non sono ancora impostati/.test(document.querySelector('.stima-provvigione').textContent));
     // imposto zona e scaglioni (0 € → 30%, 10.000 € → 35%, 20.000 € → 40%) e riapro il modulo

@@ -22,7 +22,7 @@ Ti serve: un PC con Windows 10 o 11 e un account GitHub con accesso al repositor
 
 ## 2. Primo avvio
 
-Si apre un archivio **vuoto**: nessun dato dimostrativo. Ci sono solo due collaboratori, **Luca** e **Giuseppe**.
+Si apre un archivio **senza pratiche né zone**: nessun dato dimostrativo. Ci sono i due collaboratori, **Luca** e **Giuseppe**, e gli **scaglioni che hai indicato** (5% fino a 2.600 €, 8% fino a 5.200 €, 11% fino a 7.800 €, 15% fino a 13.000 €, 20% oltre i 13.000 €).
 
 | # | Cosa controllare | Esito |
 |---|---|---|
@@ -33,10 +33,10 @@ Si apre un archivio **vuoto**: nessun dato dimostrativo. Ci sono solo due collab
 
 ## 3. Imposta i tuoi numeri (Impostazioni)
 
-Il programma **non conosce i tuoi scaglioni**: non ne ho inventati. Vai in **Impostazioni** e compila:
+Gli scaglioni sono già impostati con quelli che mi hai indicato. Vai in **Impostazioni**, controllali e completa il resto:
 
 1. **Zone** → aggiungi le tue zone di lavoro (ad esempio i comuni o i quartieri in cui operi).
-2. **Scaglioni e percentuali** → **Aggiungi scaglione** e scrivi le tue soglie di fatturato mensile e le tue percentuali. Il primo scaglione parte sempre da 0,00 €. (Come punto di partenza il programma propone 0 € → 30%, 10.000 € → 35%, 20.000 € → 40%: **sono solo valori di esempio**.)
+2. **Scaglioni e percentuali** → controlla le cinque righe: da 0,00 € il 5%, da 2.600,01 € l'8%, da 5.200,01 € l'11%, da 7.800,01 € il 15%, da 13.000,01 € il 20%. Le soglie partono da un centesimo in più perché «fino a 2.600 €» comprende 2.600,00 €: con quella cifra precisa si è ancora al 5%. Se sono sbagliate le cambi tu; con **Ripristina gli scaglioni dell'agenzia** torni a questi.
 3. **Metodo di calcolo** → scegli le tre cose che incidono sugli importi (ognuna ha una spiegazione e un esempio con i tuoi numeri):
    - *Scaglione raggiunto* oppure *Progressivo (a fasce)*;
    - cumulo *per collaboratore e per zona* / *per zona* / *per collaboratore*;
@@ -47,6 +47,8 @@ Il programma **non conosce i tuoi scaglioni**: non ne ho inventati. Vai in **Imp
 |---|---|---|
 | 3.1 | Dopo aver cambiato il metodo compare «Impostazione salvata» | |
 | 3.2 | L'esempio in *Metodo di calcolo* coincide con il tuo conto a mano per lo stesso cumulo | |
+| 3.3 | In *Scaglioni e percentuali* le cinque righe sono quelle che hai indicato (5%, 8%, 11%, 15%, 20%) e sotto, in «Come vengono lette le soglie», si legge «da 0,00 € a 2.600,00 € → 5%», … «da 13.000,01 € in su → 20%» | |
+| 3.4 | Scrivendo 10.000 in «Prova con un cumulo mensile di» il programma dà **1.500,00 €** con *scaglione raggiunto* e **954,00 €** con *progressivo* (se il tuo conto a mano è diverso, dimmi qual è) | |
 
 ## 4. Inserisci una pratica (vera o di prova)
 

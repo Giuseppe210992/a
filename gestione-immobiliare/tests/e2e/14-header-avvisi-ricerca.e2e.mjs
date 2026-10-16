@@ -130,6 +130,7 @@ describe('Avvisi che dipendono dallo stato dei dati', () => {
       const p = app.pagina;
       await p.evaluate(async () => {
         const { api, app: a } = window.__gi;
+        await api.salvaTabellaScaglioni(a.archivio, null, []); // il programma parte con gli scaglioni dell'agenzia: qui si prova il caso «senza»
         const z = await api.creaZona(a.archivio, { nome: 'Zona prova' });
         const [luca] = api.elencoCollaboratori(a.archivio);
         await api.salvaPratica(a.archivio, {

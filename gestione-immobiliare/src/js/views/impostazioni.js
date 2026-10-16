@@ -13,6 +13,7 @@ import {
 import { scriviImpostazioni } from '../data/repo/impostazioni.js';
 import { creaTabella, controllaTabella, descriviScaglioni, provvigioneSuCumulo } from '../data/calc/scaglioni.js';
 import { VERSIONE_SCHEMA } from '../data/schema.js';
+import { SCAGLIONI_INIZIALI } from '../data/inizializza.js';
 
 const NOMI_COLORE = ['', 'Blu', 'Arancio', 'Turchese', 'Giallo', 'Rosa', 'Verde', 'Viola', 'Rosso'];
 const SEZIONI = [
@@ -26,6 +27,9 @@ const SEZIONI = [
 let ridisegnaSezione = () => {};
 
 const scheda = (titolo, descrizione, ...contenuto) => h('section', { class: 'card sezione-modulo' }, h('h2', null, titolo), descrizione ? h('p', { class: 'descrizione' }, descrizione) : null, ...contenuto);
+
+// Le soglie dette a parole, come le direbbe l'agenzia: «5% fino a 2.600,00 €, …, 20% oltre 13.000,00 €».
+const aParole = (righe) => descriviScaglioni(creaTabella(righe)).map((f) => (f.a === null ? `${pct(f.percentuale)} oltre ${eur(f.da - 1)}` : `${pct(f.percentuale)} fino a ${eur(f.a)}`)).join(', ');
 
 // ------------------------------------------------------------------ collaboratori e zone (stessa struttura)
 
@@ -166,7 +170,7 @@ function sezioneScaglioni(query) {
 
     const aggiungi = h('button', { type: 'button', class: 'btn btn-secondario btn-sm', id: 'aggiungi-scaglione', onclick: () => {
       const ultimo = righe[righe.length - 1];
-      righe.push({ da: ultimo ? (ultimo.da ?? 0) + 1000000 : 0, pct: ultimo ? Math.min(100, (ultimo.pct ?? 0) + 5) : 30 });
+      righe.push({ da: ultimo ? (ultimo.da ?? 0) + 1000000 : 0, pct: ultimo ? Math.min(100, (ultimo.pct ?? 0) + 5) : SCAGLIONI_INIZIALI[0].percentuale });
       sporco.v = true; disegnaRighe();
     } }, icona('plus', { dimensione: 15 }), 'Aggiungi scaglione');
 
@@ -185,6 +189,24 @@ function sezioneScaglioni(query) {
     } }, icona('check', { dimensione: 16 }), 'Salva gli scaglioni');
 
     const extra = [];
+    if (!zona) {
+      extra.push(h('button', { type: 'button', class: 'btn btn-ghost btn-sm', id: 'ripristina-scaglioni', onclick: async () => {
+        const attuale = leggiTabellaScaglioni(app.archivio, null);
+        if (JSON.stringify(attuale) === JSON.stringify(SCAGLIONI_INIZIALI) && !sporco.v) { notificaOk('Gli scaglioni sono già quelli dell\'agenzia.'); return; }
+        const sì = await conferma({
+          titolo: 'Ripristinare gli scaglioni dell\'agenzia?', tipo: 'pericolo', etichettaConferma: 'Ripristina',
+          messaggio: `La tabella predefinita tornerà quella preimpostata: ${aParole(SCAGLIONI_INIZIALI)}.`,
+          dettagli: ['Le modifiche fatte a questa tabella andranno perse e le provvigioni verranno ricalcolate.', 'Le tabelle proprie delle singole zone non cambiano.'],
+        });
+        if (!sì) return;
+        try {
+          await salvaTabellaScaglioni(app.archivio, null, SCAGLIONI_INIZIALI);
+          sporco.v = false;
+          notificaOk('Scaglioni dell\'agenzia ripristinati. Le provvigioni sono state ricalcolate.');
+          disegna();
+        } catch (e) { segnalaErrore(e); }
+      } }, icona('rotate-ccw', { dimensione: 15 }), 'Ripristina gli scaglioni dell\'agenzia'));
+    }
     if (zona) {
       extra.push(h('button', { type: 'button', class: 'btn btn-ghost btn-sm', onclick: async () => {
         const sì = await conferma({ titolo: 'Tornare agli scaglioni predefiniti?', messaggio: `La zona “${zona.nome}” userà di nuovo la tabella predefinita; gli scaglioni propri verranno eliminati.`, etichettaConferma: 'Usa i predefiniti', tipo: 'pericolo' });
@@ -192,7 +214,9 @@ function sezioneScaglioni(query) {
         try { await salvaTabellaScaglioni(app.archivio, zona.id, []); await aggiornaZona(app.archivio, zona.id, { usaScaglioniPropri: false }); notificaOk('La zona usa di nuovo gli scaglioni predefiniti.'); location.hash = '#/impostazioni?sezione=scaglioni'; } catch (e) { segnalaErrore(e); }
       } }, 'Torna ai predefiniti'));
     }
-    monta(contenuto, box, h('div', { class: 'riga-azioni', style: { margin: '12px 0' } }, aggiungi, ...extra), errore,
+    monta(contenuto,
+      !zona && !iniziali.length ? h('div', { class: 'nota attenzione', id: 'scaglioni-vuoti', style: { marginBottom: '12px' } }, icona('triangle-alert', { dimensione: 18 }), h('span', null, 'Non ci sono scaglioni: le provvigioni risultano a zero. Scrivili a mano oppure ripristina quelli dell\'agenzia.')) : null,
+      box, h('div', { class: 'riga-azioni', style: { margin: '12px 0' } }, aggiungi, ...extra), errore,
       h('div', { class: 'griglia-2', style: { marginTop: '8px' } },
         h('div', null, h('div', { class: 'sottotesto forte', style: { marginBottom: '6px' } }, 'Come vengono lette le soglie'), anteprima),
         h('div', null, importoEsempio.el, h('div', { style: { marginTop: '8px' } }, esempio))),
@@ -200,7 +224,7 @@ function sezioneScaglioni(query) {
   }
   disegna();
   void m;
-  return scheda('Scaglioni e percentuali', 'Le soglie di fatturato mensile e la percentuale di provvigione che spetta a chi le raggiunge. Una soglia vale da quella cifra (inclusa) fino alla successiva: se il cumulo è esattamente 10.000,00 € si è già nello scaglione che parte da 10.000,00 €.',
+  return scheda('Scaglioni e percentuali', 'Le soglie di fatturato mensile e la percentuale di provvigione che spetta a chi le raggiunge. Una soglia vale da quella cifra (inclusa) fino alla successiva (esclusa). Per questo «5% fino a 2.600 €» si scrive con un secondo scaglione che parte da 2.600,01 €: con 2.600,00 € precisi si è ancora al 5%.',
     zone.length ? sel.el : null, h('div', { style: { marginTop: zone.length ? '16px' : 0 } }, contenuto));
 }
 
