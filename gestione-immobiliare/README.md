@@ -37,7 +37,7 @@ Per fare una copia a mano basta copiare la cartella `Gestione Immobiliare`. Per 
 2. Copia **solo** il file `Gestione-Immobiliare-1.0.0-Portatile.exe` sulla chiavetta, meglio in una cartella tutta sua (ad esempio `Gestione Immobiliare`). Pesa circa 115 MB.
 3. Aprilo **dalla chiavetta**. Alla prima apertura su un PC Windows può dire «Windows ha protetto il PC»: *Ulteriori informazioni → Esegui comunque*. Windows prepara il programma in una cartella temporanea del PC, quindi l'avvio richiede qualche secondo in più di un programma normale (sul computer di prova di GitHub meno di 10 secondi; con chiavette o PC lenti di più).
 4. I dati nascono nella cartella **`Gestione Immobiliare - Dati`**, accanto al file `.exe` sulla chiavetta (l'archivio in `Dati`, le copie di sicurezza in `Backup`). Portando via la chiavetta porti via anche i dati: non finisce nulla nella cartella Documenti del PC. La schermata *Backup e archivio storico* lo scrive chiaramente.
-5. Per finire: **chiudi il programma con la X prima di togliere la chiavetta** (meglio ancora con «Rimozione sicura dell'hardware»).
+5. Per finire: **chiudi il programma con la X prima di togliere la chiavetta** (in basso a sinistra deve esserci «Dati salvati», non «Salvataggio…»; meglio ancora usare «Rimozione sicura dell'hardware»). Se la togli per errore mentre il programma è aperto compare «Errore di salvataggio»: quello che era già salvato resta integro, ma l'ultima modifica potrebbe mancare. Chiudi il programma, rimetti la chiavetta e riaprilo.
 
 Da sapere:
 
