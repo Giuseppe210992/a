@@ -118,7 +118,7 @@ export const statistiche = {
     monta(contenitore,
       h('div', { class: 'pagina-testa' }, h('div', null, h('h1', null, 'Statistiche e grafici'), h('p', null, `Analisi ${gran === 'annuale' ? 'annuali' : 'mensili'} di attività e risultati economici · ${ctx.periodo.etichetta}`))),
       indicatoriEl,
-      h('div', { class: 'grafici-contenitore', style: { marginTop: '20px' } }, h('div', { class: 'grafici-griglia' }, gCompInc.el, gConcl.el, gVal.el, gMarg.el, gZone.el, gColl.el, gTipo.el)),
+      h('div', { class: 'grafici-contenitore', style: { marginTop: '20px' } }, h('h2', { class: 'solo-lettori' }, 'Grafici'), h('div', { class: 'grafici-griglia' }, gCompInc.el, gConcl.el, gVal.el, gMarg.el, gZone.el, gColl.el, gTipo.el)),
       tabella);
     return { distruggi() { schede.forEach((s) => s.distruggi()); } };
   },

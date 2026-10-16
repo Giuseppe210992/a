@@ -94,8 +94,8 @@
     --text-3: #a19f98;
     --grid: #2c2c2a;
     --axis: #383835;
-    --accent: #2a78d6;
-    --accent-hover: #3987e5;
+    --accent: #2872d0;       /* testo bianco sopra: 4,76:1 */
+    --accent-hover: #2468c0; /* al passaggio si scurisce: il testo bianco resta leggibile (5,5:1) */
     --accent-text: #6da7ec;
     --accent-soft: rgba(57, 135, 229, 0.16);
     --focus: #6da7ec;
@@ -145,8 +145,8 @@
   --text-3: #a19f98;
   --grid: #2c2c2a;
   --axis: #383835;
-  --accent: #2a78d6;
-  --accent-hover: #3987e5;
+  --accent: #2872d0;
+  --accent-hover: #2468c0;
   --accent-text: #6da7ec;
   --accent-soft: rgba(57, 135, 229, 0.16);
   --focus: #6da7ec;

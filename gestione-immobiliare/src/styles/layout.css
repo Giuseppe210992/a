@@ -112,7 +112,7 @@ body[data-sidebar="ridotta"] .sb-stato { justify-content: center; padding: 4px 0
   -webkit-backdrop-filter: saturate(1.3) blur(10px); backdrop-filter: saturate(1.3) blur(10px);
   border-bottom: 1px solid var(--border);
 }
-.btn-menu { display: none; }
+.topbar .btn-menu { display: none; } /* solo su telefono; la regola ha la precedenza su .btn { display: inline-flex } */
 .tb-titolo { display: flex; flex-direction: column; min-width: 0; margin-right: 4px; }
 .tb-titolo strong { font-size: 18px; line-height: 1.15; font-weight: 750; letter-spacing: -.005em; }
 .tb-titolo .tb-data { font-size: 12.5px; color: var(--text-2); }
@@ -169,7 +169,7 @@ body[data-sidebar="ridotta"] .sb-stato { justify-content: center; padding: 4px 0
   }
   body[data-menu="aperto"] .sidebar { transform: none; box-shadow: var(--ombra-2); visibility: visible; }
   body[data-menu="aperto"] .scrim { display: block; }
-  .btn-menu { display: inline-flex; }
+  .topbar .btn-menu { display: inline-flex; }
   .sb-riduci { display: none; }
   /* intestazione compatta: menu, titolo, campanella e tema in alto; ricerca e pulsante "+" sotto; scorre via con la pagina */
   .topbar { position: static; gap: 8px; padding-top: 8px; padding-bottom: 10px; }

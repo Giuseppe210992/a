@@ -108,6 +108,17 @@ export function apriModale({ titolo, descrizione = null, icona: nomeIcona = null
     piede.append(btn);
   }
 
+  // Il cursore resta dentro la finestra: dall'ultimo elemento Tab torna al primo, e viceversa con Maiusc+Tab.
+  dlg.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Tab') return;
+    const raggiungibili = [...dlg.querySelectorAll('a[href], button, input:not([type=hidden]), select, textarea, summary, [tabindex]')]
+      .filter((e) => !e.disabled && e.tabIndex >= 0 && e.offsetParent !== null);
+    if (!raggiungibili.length) return;
+    const primo = raggiungibili[0];
+    const ultimo = raggiungibili[raggiungibili.length - 1];
+    if (ev.shiftKey && (document.activeElement === primo || !dlg.contains(document.activeElement))) { ev.preventDefault(); ultimo.focus(); }
+    else if (!ev.shiftKey && (document.activeElement === ultimo || !dlg.contains(document.activeElement))) { ev.preventDefault(); primo.focus(); }
+  });
   dlg.addEventListener('cancel', (ev) => { ev.preventDefault(); if (chiudibile) chiudi(null); });
   dlg.addEventListener('click', (ev) => {
     if (chiudibile && ev.target === dlg) chiudi(null); // clic sullo sfondo

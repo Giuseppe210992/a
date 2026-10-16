@@ -73,7 +73,15 @@ export function costruisciShell(radice) {
   );
   const scrim = h('div', { class: 'scrim', onclick: () => { chiudiMenuMobile(); chiudiOverlay(); } });
 
-  function chiudiMenuMobile() { body.removeAttribute('data-menu'); }
+  // Menu a scorrimento del telefono: apertura, chiusura e stato per gli screen reader
+  function impostaMenuMobile(aperto, { focus = false } = {}) {
+    if (aperto) body.dataset.menu = 'aperto'; else body.removeAttribute('data-menu');
+    btnMenu.setAttribute('aria-expanded', String(aperto));
+    btnMenu.setAttribute('aria-label', aperto ? 'Chiudi il menu' : 'Apri il menu');
+    if (aperto) setTimeout(() => voci[0]?.a.focus(), 30); // la tastiera parte dalla prima voce
+    else if (focus) btnMenu.focus();
+  }
+  function chiudiMenuMobile() { if (body.dataset.menu) impostaMenuMobile(false); }
   function chiudiOverlay() { if (overlayAperto) { overlayAperto = false; applicaLayout(); } }
 
   function applicaLayout() {
@@ -99,8 +107,8 @@ export function costruisciShell(radice) {
   window.addEventListener('resize', applicaLayout);
 
   // ---------------------------------------------------------------- intestazione
-  const btnMenu = h('button', { type: 'button', class: 'btn btn-ghost btn-icona btn-menu', 'aria-label': 'Apri il menu', 'aria-controls': 'barra-laterale',
-    onclick: () => { body.dataset.menu = body.dataset.menu === 'aperto' ? '' : 'aperto'; if (!body.dataset.menu) body.removeAttribute('data-menu'); } }, icona('menu', { dimensione: 22 }));
+  const btnMenu = h('button', { type: 'button', class: 'btn btn-ghost btn-icona btn-menu', 'aria-label': 'Apri il menu', 'aria-controls': 'barra-laterale', 'aria-expanded': 'false',
+    onclick: () => impostaMenuMobile(body.dataset.menu !== 'aperto') }, icona('menu', { dimensione: 22 }));
   const elData = h('span', { class: 'tb-data' });
   const titolo = h('div', { class: 'tb-titolo' }, h('strong', null, 'Gestione Immobiliare'), elData);
   const chipPeriodoTesto = h('span', { class: 'chip-periodo-testo' });
@@ -138,7 +146,8 @@ export function costruisciShell(radice) {
   const principale = h('div', { class: 'principale' }, topbar, banner, barraFiltri.el, vista);
 
   radice.className = '';
-  radice.replaceChildren(h('div', { class: 'app' }, h('div', { class: 'sb-slot' }, sidebar), principale), scrim, tooltip);
+  const saltaAlContenuto = h('button', { type: 'button', class: 'salta-contenuto', onclick: () => vista.focus() }, 'Salta al contenuto');
+  radice.replaceChildren(saltaAlContenuto, h('div', { class: 'app' }, h('div', { class: 'sb-slot' }, sidebar), principale), scrim, tooltip);
 
   // ---------------------------------------------------------------- salvataggio
   function mostraStatoSalvataggio(st) {
@@ -229,6 +238,13 @@ export function costruisciShell(radice) {
     scriviPref('tema', t || 'auto');
     aggiornaBottoneTema();
   }
+
+  // Esc chiude il menu del telefono (o la barra aperta sopra il contenuto sui tablet) e riporta il cursore al pulsante
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Escape' || ev.defaultPrevented) return;
+    if (body.dataset.menu === 'aperto') { impostaMenuMobile(false, { focus: true }); }
+    else if (overlayAperto) { chiudiOverlay(); btnRiduci.focus(); }
+  });
 
   // scorciatoie da tastiera: "/" e Ctrl+K portano alla ricerca
   document.addEventListener('keydown', (ev) => {

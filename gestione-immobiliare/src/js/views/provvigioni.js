@@ -112,6 +112,7 @@ export const provvigioni = {
           h('div', { class: 'kpi' }, h('span', { class: 'kpi-etichetta' }, 'Provvigioni maturate'), h('div', { class: 'kpi-valore' }, eurInt(totale.mat))),
           h('div', { class: 'kpi' }, h('span', { class: 'kpi-etichetta' }, 'Già liquidate'), h('div', { class: 'kpi-valore' }, eurInt(totale.liq))),
           h('div', { class: 'kpi' }, h('span', { class: 'kpi-etichetta' }, 'Ancora da liquidare'), h('div', { class: 'kpi-valore' }, eurInt(totale.dal))))),
+        h('h2', { class: 'solo-lettori' }, 'Riepilogo per collaboratore'),
         h('div', { class: 'griglia-2' }, ...blocchi));
     }
 

@@ -9,14 +9,69 @@
   "scripts": {
     "build": "node build.mjs",
     "test": "node --test \"tests/unit/**/*.test.mjs\"",
-    "test:e2e": "node tests/e2e/run.mjs"
+    "test:e2e": "node build.mjs && node --test --test-concurrency=1 --test-timeout=600000 \"tests/e2e/*.e2e.mjs\"",
+    "test:tutto": "npm test && npm run test:e2e",
+    "programma": "node build.mjs && electron .",
+    "pacchetto": "node build.mjs && electron-builder --win --x64",
+    "pacchetto:cartella": "node build.mjs && electron-builder --dir",
+    "icona": "node tools/crea-icona.mjs"
   },
   "license": "UNLICENSED",
-  "dependencies": {
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "44.5.1",
+    "electron-builder": "26.16.1",
+    "esbuild": "^0.28.2",
+    "playwright-core": "^1.56.1",
     "sql.js": "^1.15.0"
   },
-  "devDependencies": {
-    "esbuild": "^0.28.2",
-    "playwright-core": "^1.56.1"
+  "author": "Gestione Immobiliare",
+  "homepage": "https://github.com/Giuseppe210992/a",
+  "build": {
+    "appId": "it.gestione-immobiliare.app",
+    "productName": "Gestione Immobiliare",
+    "copyright": "Gestione Immobiliare",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "dist/web/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Gestione Immobiliare",
+      "deleteAppDataOnUninstall": false,
+      "language": "1040",
+      "artifactName": "Gestione-Immobiliare-${version}-Installazione.${ext}"
+    },
+    "portable": {
+      "artifactName": "Gestione-Immobiliare-${version}-Portatile.exe"
+    }
   }
 }

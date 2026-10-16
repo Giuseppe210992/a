@@ -103,7 +103,7 @@
 .col-0 { background: var(--muto); }
 
 /* ---------------- tabelle ---------------- */
-.tabella-wrap { overflow-x: auto; }
+.tabella-wrap { overflow-x: auto; position: relative; }
 .tabella { width: 100%; font-size: 14px; }
 .tabella th {
   text-align: left; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;

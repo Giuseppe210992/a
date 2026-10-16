@@ -10,6 +10,7 @@ let contenitoreVista = null;
 let hashPrecedente = '#/';
 let ignoraProssimo = false;
 let alCambioRotta = null;
+let primoMontaggio = true;
 
 export function registraRotta(percorso, vista) {
   const nomi = [];
@@ -105,9 +106,11 @@ function monta() {
   }
   if (alCambioRotta) alCambioRotta(r.vista, r.parametri, r.query);
   window.scrollTo(0, 0);
-  // Il focus va alla schermata (per chi usa la tastiera o un lettore di schermo), a meno che la schermata
+  // Cambiando schermata il focus va al contenuto (per chi usa la tastiera o un lettore di schermo), a meno che la schermata
   // non abbia già messo il cursore in un suo campo, come fa il modulo di nuova pratica.
-  if (!contenitoreVista.contains(document.activeElement)) contenitoreVista.focus({ preventScroll: true });
+  // All'apertura del programma invece non si sposta nulla: con Tab si parte dall'inizio (salto al contenuto, menu, intestazione).
+  if (!primoMontaggio && !contenitoreVista.contains(document.activeElement)) contenitoreVista.focus({ preventScroll: true });
+  primoMontaggio = false;
 }
 
 /** Ridisegna la schermata corrente (dopo una modifica ai dati o ai filtri). */
