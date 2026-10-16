@@ -65,6 +65,7 @@ npm test                  # 85 prove su calcoli, date, formati, archivio, host f
 npm run test:e2e          # costruisce e prova ogni schermata nel browser (Chromium + Playwright), circa 4 minuti
 GI_RALLENTA=4 npm run test:e2e   # lo stesso con il browser 4 volte più lento
 GI_RITARDO=150 npm run test:e2e  # lo stesso con eventi e scritture su disco in ritardo di 150 ms (scova le letture troppo presto)
+npm run copertura        # quali righe del programma le prove nel browser eseguono (circa 5 minuti)
 npm run programma         # apre il programma Electron dai sorgenti
 npm run test:programma    # prova il programma Electron (su Linux: xvfb-run -a npm run test:programma)
 npm run pacchetto         # crea installatore e versione portatile (da farsi su Windows)
@@ -80,6 +81,8 @@ Le prove usano un orologio fisso (16/10/2026) e un profilo persistente per simul
 - Pulsanti nativi dentro `<dialog>`: il focus deve restare nella finestra (c'è una trappola Tab in `apriModale`).
 - Il browser cambia `Date` nei test: non confrontare date con l'orologio reale.
 - Su Windows un antivirus può tenere occupato per un attimo il file dei dati: la scrittura riprova da sola (`conRiprove`).
+- **Copertura (`npm run copertura`)**: V8 registra le righe eseguite solo finché la pagina non viene ricaricata o chiusa; il codice che gira soltanto *prima* di un `location.reload()` (la schermata di recupero, il banner di errore di salvataggio) risulta quindi «non eseguito» anche se le prove lo attraversano. Il rapporto va letto di conseguenza. Le righe davvero scoperte, fuori dai percorsi d'errore, sono state coperte con i file `13`–`16` delle prove nel browser.
+- **Difetti trovati con la copertura** (tutti corretti, con una prova che li rileva): aggiunta con Invio nelle Impostazioni che non aggiornava l'elenco; Invio nella ricerca rapida diverso da quanto promesso; richieste di aggiornamento degli avvisi perse (`if (inAggiornamento) return`); seconda barra mancante nel campo data; `select()` posticipato che ruba il cursore; opzioni delle righe di ripartizione non aggiornate. Lezione: ogni modulo con un campo di testo va provato anche **con Invio**, non solo col clic sul pulsante.
 - Non usare `pkill -f chromium` o simili: può chiudere anche la shell che lancia le prove.
 
 ## 6. Cosa NON è stato fatto o verificato

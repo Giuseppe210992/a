@@ -11,6 +11,14 @@ import { leggiRegistro } from '../data/repo/impostazioni.js';
 import { verificaIntegrita } from '../data/integrity.js';
 import { eseguiBackupRapido, eseguiImportazione, apriDialogoEsporta } from '../components/dialoghi.js';
 
+/** Apre in Esplora file la cartella dei dati o dei backup (solo nel programma per Windows). Se non ci riesce lo dice. */
+async function apriCartella(quale) {
+  try {
+    const r = await window.gestionaleHost.sistema.apriCartella(quale);
+    if (r && r.aperta === false) notificaErrore(`Non riesco ad aprire la cartella: ${r.errore || 'errore sconosciuto'}.`);
+  } catch (e) { segnalaErrore(e, 'Apertura della cartella'); }
+}
+
 const ETICHETTE_EVENTO = {
   archivio_creato: 'Archivio creato', pratica_eliminata: 'Pratica eliminata', incasso_eliminato: 'Incasso eliminato', liquidazione_eliminata: 'Liquidazione eliminata',
   collaboratore_eliminato: 'Collaboratore eliminato', zona_eliminata: 'Zona eliminata', ripristino: 'Ripristino di un backup', importazione: 'Importazione di un backup', azzeramento: 'Archivio azzerato',
@@ -76,8 +84,8 @@ export const backup = {
           h('dt', null, 'Contenuto'), h('dd', null, `${num(m.pratiche.length)} pratiche · ${num(m.incassi.length)} incassi · ${num(m.liquidazioni.length)} liquidazioni`),
           h('dt', null, 'Copie nell\'archivio storico'), h('dd', null, num(copie.length))),
         info.tipo === 'file' && window.gestionaleHost?.sistema?.apriCartella ? h('div', { class: 'riga-azioni', style: { marginTop: '12px' } },
-          h('button', { type: 'button', class: 'btn btn-secondario btn-sm', onclick: () => window.gestionaleHost.sistema.apriCartella('dati') }, icona('folder-open', { dimensione: 15 }), 'Apri la cartella dei dati'),
-          h('button', { type: 'button', class: 'btn btn-secondario btn-sm', onclick: () => window.gestionaleHost.sistema.apriCartella('backup') }, icona('folder-open', { dimensione: 15 }), 'Apri la cartella dei backup')) : null,
+          h('button', { type: 'button', class: 'btn btn-secondario btn-sm', onclick: () => apriCartella('dati') }, icona('folder-open', { dimensione: 15 }), 'Apri la cartella dei dati'),
+          h('button', { type: 'button', class: 'btn btn-secondario btn-sm', onclick: () => apriCartella('backup') }, icona('folder-open', { dimensione: 15 }), 'Apri la cartella dei backup')) : null,
         info.tipo !== 'file' ? h('div', { class: 'nota attenzione', style: { marginTop: '12px' } }, icona('triangle-alert', { dimensione: 18 }), h('span', null, 'Stai usando il programma nel browser: se cancelli i dati di navigazione di questo sito o cambi profilo, l\'archivio non sarà più qui. Esporta spesso un backup, oppure usa il programma Windows che salva su file nella cartella Documenti.')) : null);
 
       // ---------- azioni

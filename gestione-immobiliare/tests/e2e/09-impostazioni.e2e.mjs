@@ -2,7 +2,7 @@
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  avvia, vai, rimuoviSpazi, sql, valoreSql, idPratica, finestra, bottoneFinestra, attendiNotifica, testoSospetto, riquadri, scegliZona, azzeraFiltri,
+  avvia, vai, conNavigazione, rimuoviSpazi, sql, valoreSql, idPratica, finestra, bottoneFinestra, attendiNotifica, testoSospetto, riquadri, scegliZona, azzeraFiltri,
 } from './lib.mjs';
 import { inserisciDatiProva } from './dati-prova.mjs';
 
@@ -223,7 +223,8 @@ describe('Impostazioni', () => {
     await apri('scaglioni');
     await p.getByLabel('Tabella da modificare').selectOption({ label: 'Zona Collina — usa i predefiniti' });
     assert.match(rimuoviSpazi(await p.locator('.imp-corpo .nota').innerText()), /La zona “Collina” usa gli scaglioni predefiniti/);
-    await p.getByRole('button', { name: 'Usa scaglioni propri' }).click();
+    // il clic salva e poi porta all'indirizzo della tabella della zona: si aspetta la schermata nuova, non l'editor vecchio ancora a video
+    await conNavigazione(p, () => p.getByRole('button', { name: 'Usa scaglioni propri' }).click());
     await attendiNotifica(p, /Scaglioni propri attivati per la zona “Collina”/);
     await p.waitForFunction(() => /tabella=\d+/.test(location.hash));
     await p.waitForSelector('#tabella-editor-scaglioni');
@@ -406,6 +407,40 @@ describe('Impostazioni', () => {
     assert.match(t, /Versione dell'archivio Schema 1/);
     assert.match(t, /Connessione a Internet Non necessaria: tutto funziona offline/);
     assert.match(t, /scorciatoie da tastiera/i);
+  });
+
+  test('con il tasto Invio: collaboratore, zona e aliquota si aggiungono, la lista si aggiorna e il cursore resta nel campo', async () => {
+    const p = app.pagina;
+    // collaboratore
+    await apri('collaboratori');
+    await p.getByLabel(/^Nome del collaboratore/).fill('Sara Invio');
+    await p.keyboard.press('Enter');
+    await attendiNotifica(p, /Collaboratore “Sara Invio” aggiunto/);
+    await p.waitForFunction(() => [...document.querySelectorAll('.riga-elenco')].some((r) => r.dataset.nome === 'Sara Invio'));
+    assert.equal(await p.locator('#nuovo-collaboratore').inputValue(), '', 'il campo si svuota');
+    assert.equal(await p.evaluate(() => document.activeElement.id), 'nuovo-collaboratore', 'il cursore resta nel campo, per aggiungerne un altro');
+    // zona
+    await apri('zone');
+    await p.getByLabel(/^Nome della zona/).fill('Zona Invio');
+    await p.keyboard.press('Enter');
+    await attendiNotifica(p, /Zona “Zona Invio” aggiunta/);
+    await p.waitForFunction(() => [...document.querySelectorAll('.riga-elenco')].some((r) => r.dataset.nome === 'Zona Invio'));
+    assert.equal(await p.locator('#nuovo-zona').inputValue(), '');
+    assert.equal(await p.evaluate(() => document.activeElement.id), 'nuovo-zona');
+    // aliquota IVA
+    await apri('iva');
+    await p.getByLabel('Nuova aliquota').fill('7');
+    await p.keyboard.press('Enter');
+    await attendiNotifica(p, /Aliquota 7% aggiunta/);
+    await p.waitForFunction(() => [...document.querySelectorAll('.chip-col')].some((c) => c.textContent.trim() === '7%'));
+    assert.equal(await p.locator('#nuova-iva').inputValue(), '');
+    assert.equal(await p.evaluate(() => document.activeElement.id), 'nuova-iva');
+    // un nome già usato, sempre con Invio: l'errore compare nel campo e la lista non cambia
+    await apri('zone');
+    await p.getByLabel(/^Nome della zona/).fill('Zona Invio');
+    await p.keyboard.press('Enter');
+    await p.waitForFunction(() => document.querySelector('.imp-corpo .ha-errore, .imp-corpo .errore:not(:empty)'));
+    assert.equal(await p.locator('.riga-elenco', { hasText: 'Zona Invio' }).count(), 1);
   });
 
   test('nessun errore in console e nessun "null" nelle pagine', async () => {

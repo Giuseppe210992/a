@@ -47,6 +47,7 @@ export function creaRicerca() {
   let voci = [];
   let sel = -1;
   let testoCorrente = '';
+  let totaleTrovate = 0; // quante pratiche corrispondono (anche oltre le prime mostrate)
   let disegnaRitardato = { annulla() {} };
 
   const chiudi = () => { lista.hidden = true; input.setAttribute('aria-expanded', 'false'); sel = -1; };
@@ -81,6 +82,7 @@ export function creaRicerca() {
     testoCorrente = q;
     lista.replaceChildren();
     voci = [];
+    totaleTrovate = 0;
     let intestazione = null;
     let elenco;
     let totale;
@@ -97,6 +99,7 @@ export function creaRicerca() {
       termini = r.termini;
       intestazione = totale ? `${totale} ${totale === 1 ? 'pratica trovata' : 'pratiche trovate'}` : null;
     }
+    totaleTrovate = totale;
     if (!elenco.length) {
       lista.append(h('div', { class: 'ris-piede', style: { border: 0, margin: 0 } }, q ? `Nessun risultato per “${q}”. Prova con il codice, una via, il nome di un cliente o una zona.` : 'Non ci sono ancora pratiche. Premi “+ Nuova pratica” per inserire la prima.'));
       apri();
@@ -137,13 +140,13 @@ export function creaRicerca() {
       if (input.value.trim() !== testoCorrente) disegna();
       if (ev.shiftKey && input.value.trim()) { vaiArchivio(input.value.trim()); return; }
       if (sel >= 0 && voci[sel]) vaiAPratica(voci[sel].p);
-      else if (voci.length === 1 && input.value.trim()) vaiAPratica(voci[0].p);
+      // come promette il suggerimento sotto l'elenco: se tutti i risultati sono visibili Invio apre il primo, altrimenti li mostra tutti nell'archivio
+      else if (voci.length && input.value.trim() && totaleTrovate <= voci.length) vaiAPratica(voci[0].p);
       else if (input.value.trim()) vaiArchivio(input.value.trim());
     }
   });
   document.addEventListener('mousedown', (ev) => { if (!el.contains(ev.target)) chiudi(); });
 
   function metti(testo) { input.focus(); input.value = testo ?? ''; disegna(); }
-  function azzera() { input.value = ''; chiudi(); }
-  return { el, input, chiudi, metti, azzera, aggiorna: () => { if (!lista.hidden) disegna(); } };
+  return { el, input, chiudi, metti, aggiorna: () => { if (!lista.hidden) disegna(); } };
 }

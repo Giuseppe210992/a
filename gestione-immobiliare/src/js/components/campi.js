@@ -87,6 +87,10 @@ export function campoData({ etichetta, valore = '', obbligatorio = false, aiuto 
     if (/[^\d/\-. ]/.test(input.value)) { input.value = input.value.replace(/[^\d/\-. ]/g, ''); }
     if (!/[/\-. ]/.test(input.value) && cifre.length > 2) {
       input.value = cifre.length > 4 ? `${cifre.slice(0, 2)}/${cifre.slice(2, 4)}/${cifre.slice(4)}` : `${cifre.slice(0, 2)}/${cifre.slice(2)}`;
+    } else {
+      // scrivendo una cifra alla volta: dopo gg/mm compare anche la seconda barra
+      const m = /^(\d{2})\/(\d{2})(\d+)$/.exec(input.value);
+      if (m) input.value = `${m[1]}/${m[2]}/${m[3]}`;
     }
   });
   input.addEventListener('blur', () => { const iso = get(); if (iso) input.value = dataPerCampo(iso); });
@@ -110,7 +114,7 @@ export function campoImporto({ etichetta, centesimi = null, obbligatorio = false
     const c = leggiEuro(input.value);
     if (c !== null) input.value = numDec(c / 100);
   });
-  input.addEventListener('focus', () => { setTimeout(() => input.select(), 0); });
+  input.addEventListener('focus', () => { setTimeout(() => { if (document.activeElement === input) input.select(); }, 0); }); // select() ridarebbe il cursore al campo anche se nel frattempo l'utente è passato altrove
   if (onInput) input.addEventListener('input', () => onInput(leggiEuro(input.value)));
   return {
     el, input, errore, valido,
@@ -126,7 +130,7 @@ export function campoPercentuale({ etichetta, valore = null, aiuto = null, id = 
   const { el, errore } = costruisci({ etichetta, controllo: input, aiuto, obbligatorio, id, classe, accessorio: wrap });
   const valido = () => input.value.trim() === '' || leggiPercentuale(input.value) !== null;
   if (onInput) input.addEventListener('input', () => onInput(leggiPercentuale(input.value)));
-  input.addEventListener('focus', () => { setTimeout(() => input.select(), 0); });
+  input.addEventListener('focus', () => { setTimeout(() => { if (document.activeElement === input) input.select(); }, 0); }); // select() ridarebbe il cursore al campo anche se nel frattempo l'utente è passato altrove
   return {
     el, input, errore, valido,
     get: () => leggiPercentuale(input.value),

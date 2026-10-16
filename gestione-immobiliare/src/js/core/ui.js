@@ -53,9 +53,10 @@ export const avviso = (testo, extra = {}) => notifica({ tipo: 'avviso', testo, .
 /**
  * Apre una finestra modale (elemento <dialog> nativo: blocca lo sfondo, gestisce Esc e il focus).
  * azioni: [{ etichetta, tipo: 'primario'|'secondario'|'pericolo', onClick: async () => (false per non chiudere), id }]
+ * invioConferma: premendo Invio in un campo di testo si attiva l'azione principale (solo per moduli semplici, mai per operazioni con più righe).
  * Restituisce { chiudi, el, corpo, risultato: Promise<id dell'azione o null> }.
  */
-export function apriModale({ titolo, descrizione = null, icona: nomeIcona = null, tonoIcona = 'info', contenuto = null, azioni = [], larghezza = 560, chiudibile = true, alChiudere = null }) {
+export function apriModale({ titolo, descrizione = null, icona: nomeIcona = null, tonoIcona = 'info', contenuto = null, azioni = [], larghezza = 560, chiudibile = true, alChiudere = null, invioConferma = false }) {
   const precedente = document.activeElement;
   let risolvi;
   const risultato = new Promise((r) => { risolvi = r; });
@@ -119,6 +120,16 @@ export function apriModale({ titolo, descrizione = null, icona: nomeIcona = null
     if (ev.shiftKey && (document.activeElement === primo || !dlg.contains(document.activeElement))) { ev.preventDefault(); ultimo.focus(); }
     else if (!ev.shiftKey && (document.activeElement === ultimo || !dlg.contains(document.activeElement))) { ev.preventDefault(); primo.focus(); }
   });
+  // Invio in un campo di testo della finestra = azione principale (se attiva). Nei campi di più righe, nei menu e sui pulsanti l'Invio resta quello normale.
+  dlg.addEventListener('keydown', (ev) => {
+    if (!invioConferma || ev.key !== 'Enter' || ev.defaultPrevented || ev.isComposing || ev.shiftKey || ev.ctrlKey || ev.altKey || ev.metaKey) return;
+    const t = ev.target;
+    if (!(t instanceof HTMLInputElement) || ['checkbox', 'radio', 'button', 'submit', 'file', 'range', 'color'].includes(t.type)) return;
+    const principale = piede.querySelector('.btn-primario:not(:disabled), .btn-pericolo:not(:disabled)');
+    if (!principale) return;
+    ev.preventDefault();
+    principale.click();
+  });
   dlg.addEventListener('cancel', (ev) => { ev.preventDefault(); if (chiudibile) chiudi(null); });
   dlg.addEventListener('click', (ev) => {
     if (chiudibile && ev.target === dlg) chiudi(null); // clic sullo sfondo
@@ -151,6 +162,7 @@ export function conferma({ titolo, messaggio, dettagli = [], etichettaConferma =
     icona: nomeIcona ?? (tipo === 'pericolo' ? 'triangle-alert' : 'circle-help'),
     tonoIcona: tipo === 'pericolo' ? 'pericolo' : 'info',
     contenuto: corpo,
+    invioConferma: !!frase, // con la parola da scrivere, Invio conferma (a pulsante attivo); senza, l'Invio resta sul pulsante che ha il cursore
     azioni: [
       { id: 'annulla', etichetta: etichettaAnnulla, tipo: 'secondario' },
       { id: 'conferma', etichetta: etichettaConferma, tipo: tipo === 'pericolo' ? 'pericolo' : 'primario' },

@@ -28,7 +28,7 @@ function modificaLiquidazioneDialogo(l) {
   const metodo = campoSelezione({ etichetta: 'Metodo', valore: l.metodo ?? '', vuoto: 'Non indicato', opzioni: METODI_PAGAMENTO.map((x) => ({ valore: x, etichetta: x })) });
   const note = campoTesto({ etichetta: 'Note', valore: l.note ?? '', maxlength: 300 });
   return apriModale({
-    titolo: `Modifica la liquidazione a ${l.collaboratoreNome}`, descrizione: 'Gli importi per pratica non si modificano: per cambiarli elimina la liquidazione e registrala di nuovo.', icona: 'pencil', larghezza: 520,
+    titolo: `Modifica la liquidazione a ${l.collaboratoreNome}`, descrizione: 'Gli importi per pratica non si modificano: per cambiarli elimina la liquidazione e registrala di nuovo.', invioConferma: true, icona: 'pencil', larghezza: 520,
     contenuto: h('form', { onsubmit: (e) => e.preventDefault() }, h('div', { class: 'griglia-campi' }, h('div', { class: 'c-6' }, data.el), h('div', { class: 'c-6' }, metodo.el), h('div', { class: 'c-12' }, note.el))),
     azioni: [{ id: 'annulla', etichetta: 'Annulla', tipo: 'secondario' }, { id: 'salva', etichetta: 'Salva', tipo: 'primario', onClick: async () => {
       try { await modificaLiquidazione(app.archivio, l.id, { data: data.get(), metodo: metodo.get(), note: note.get() }); notificaOk('Liquidazione aggiornata.'); } catch (e) {

@@ -60,6 +60,8 @@ Il programma **non conosce i tuoi scaglioni**: non ne ho inventati. Vai in **Imp
 | 4.4 | I 6 riquadri della dashboard cambiano e coincidono con i tuoi conti | |
 | 4.5 | Dalla scheda: **Registra incasso** (importo precompilato) e **Registra liquidazione** funzionano e i numeri si aggiornano | |
 | 4.6 | **Cumulo mensile per zona** mostra lo scaglione raggiunto e la percentuale; coincide con il tuo conto | |
+| 4.7 | Nelle finestre semplici (Registra incasso, Nuova zona, modifiche) scrivi il valore e premi **Invio**: fa quello che fa il pulsante principale. Nella liquidazione a più righe Invio **non** registra il pagamento (serve il pulsante) | |
+| 4.8 | **Ricerca rapida** (in alto, oppure premi `/`): scrivi una parola, scorri con le frecce, Invio apre la pratica; Maiusc+Invio mostra tutte le corrispondenze nell'archivio | |
 
 ## 5. Chiudi e riapri (la prova più importante)
 
@@ -84,6 +86,7 @@ In **Backup e archivio storico**:
 | 6.4 | **Ripristina** una copia → prima chiede conferma, poi i dati tornano a quelli della copia; subito prima viene salvata una copia dei dati di adesso («Prima di un ripristino») | |
 | 6.5 | **Importa un backup** scegliendo un file che non è un archivio (ad esempio un documento qualsiasi rinominato in `.sqlite`) → viene rifiutato con un messaggio chiaro e i dati restano intatti | |
 | 6.6 | **Verifica l'integrità** → «nessun problema» | |
+| 6.7 | In *Backup e archivio storico* i pulsanti **Apri la cartella dei dati** e **Apri la cartella dei backup** aprono Esplora file sulla cartella giusta (nelle prove automatiche questo passaggio è solo simulato) | |
 
 ## 7. Schermo
 

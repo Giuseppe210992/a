@@ -70,7 +70,7 @@ export function apriDialogoIncasso({ praticaId = null } = {}) {
       h('div', { class: 'c-12' }, riepilogo),
       h('div', { class: 'c-12' }, note.el)));
   const dlg = apriModale({
-    titolo: 'Registra un incasso', descrizione: 'Il pagamento ricevuto dal cliente per i compensi di una pratica.', icona: 'banknote', tonoIcona: 'info', larghezza: 640,
+    titolo: 'Registra un incasso', descrizione: 'Il pagamento ricevuto dal cliente per i compensi di una pratica.', icona: 'banknote', tonoIcona: 'info', larghezza: 640, invioConferma: true,
     contenuto: form,
     azioni: [
       { id: 'annulla', etichetta: 'Annulla', tipo: 'secondario' },
@@ -175,6 +175,7 @@ export function apriDialogoLiquidazione({ collaboratoreId = null, praticaId = nu
     if (restante > 0) notifica({ tipo: 'avviso', testo: `${eur(restante)} non sono stati assegnati: superano il totale da liquidare.` });
   }
 
+  dist.input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); distribuisci(); } }); // Invio qui distribuisce, non registra la liquidazione
   selCollab.input.addEventListener('change', disegnaRighe);
   const selTutte = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', onclick: () => { for (const r of righe) { if (r.v.daLiquidareCent > 0) { r.check.checked = true; if (r.campo.get() === null) r.campo.set(r.v.daLiquidareCent); } } aggiornaTotale(); } }, 'Seleziona tutte');
   const selNessuna = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', onclick: () => { for (const r of righe) r.check.checked = false; aggiornaTotale(); } }, 'Nessuna');

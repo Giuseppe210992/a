@@ -101,6 +101,17 @@ describe('Programma Windows (Electron)', { skip: binarioElectron() ? false : 'El
     const csv = fs.readFileSync(path.join(datiPercorso, 'Esportazioni', esportati[0]));
     assert.deepEqual([...csv.subarray(0, 3)], [0xef, 0xbb, 0xbf], 'CSV con BOM per Excel');
     assert.match(csv.toString('utf8'), /Via del Programma 1/);
+    // "Backup e archivio storico": i due pulsanti per aprire le cartelle rispondono (in prova Esplora file non si apre davvero)
+    await p.evaluate(() => { location.hash = '#/backup'; });
+    await p.getByRole('button', { name: 'Apri la cartella dei dati' }).waitFor();
+    const cartellaDati = await p.evaluate(() => window.gestionaleHost.sistema.apriCartella('dati'));
+    const cartellaBackup = await p.evaluate(() => window.gestionaleHost.sistema.apriCartella('backup'));
+    assert.deepEqual([cartellaDati.aperta, cartellaDati.cartella], [true, path.join(datiPercorso, 'Dati')]);
+    assert.deepEqual([cartellaBackup.aperta, cartellaBackup.cartella], [true, path.join(datiPercorso, 'Backup')]);
+    await p.getByRole('button', { name: 'Apri la cartella dei dati' }).click();
+    await p.getByRole('button', { name: 'Apri la cartella dei backup' }).click();
+    await p.waitForTimeout(300);
+    assert.doesNotMatch(await p.locator('.toast-area').innerText(), /Non riesco ad aprire la cartella/);
     // archivio completo da importare più avanti
     fs.copyFileSync(path.join(datiPercorso, 'Dati', 'archivio.sqlite'), FILE_DA_IMPORTARE);
     assert.deepEqual(s1.errori, []);

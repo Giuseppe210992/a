@@ -122,9 +122,13 @@ export async function calcolaAvvisi() {
 }
 
 const nascosti = new Set();
+const ascoltatoriNascosti = new Set();
+const avvisaCambio = () => { for (const f of [...ascoltatoriNascosti]) f(); };
 export const avvisiNascosti = {
   ha: (a) => nascosti.has(`${a.id}|${a.testo}`),
-  nascondi: (a) => nascosti.add(`${a.id}|${a.testo}`),
-  ripristinaTutti: () => nascosti.clear(),
+  nascondi: (a) => { nascosti.add(`${a.id}|${a.testo}`); avvisaCambio(); },
+  ripristinaTutti: () => { nascosti.clear(); avvisaCambio(); },
   quanti: () => nascosti.size,
+  /** Chiama f ogni volta che un avviso viene nascosto o ripristinato (serve a tenere aggiornato il numero sulla campanella). */
+  alCambio: (f) => { ascoltatoriNascosti.add(f); return () => ascoltatoriNascosti.delete(f); },
 };

@@ -174,18 +174,31 @@ export function costruisciShell(radice) {
 
   // ---------------------------------------------------------------- avvisi (campanella e badge)
   let ultimiAvvisi = [];
-  let inAggiornamento = false;
-  async function aggiornaAvvisi() {
-    if (inAggiornamento) return;
-    inAggiornamento = true;
-    try {
-      ultimiAvvisi = await calcolaAvvisi();
-    } catch (e) {
-      console.error(e);
-      ultimiAvvisi = [];
-    } finally {
-      inAggiornamento = false;
-    }
+  let inCorso = null;          // il calcolo degli avvisi in corso (uno alla volta)
+  let richiestaNuova = false;  // durante il calcolo i dati sono cambiati di nuovo: se ne rifà uno subito dopo
+  /** Ricalcola gli avvisi e aggiorna campanella e segnalazioni del menu. Una richiesta arrivata durante un calcolo non si perde mai. */
+  function aggiornaAvvisi() {
+    if (inCorso) { richiestaNuova = true; return inCorso; }
+    inCorso = (async () => {
+      try {
+        do {
+          richiestaNuova = false;
+          try {
+            ultimiAvvisi = await calcolaAvvisi();
+          } catch (e) {
+            console.error(e);
+            ultimiAvvisi = [];
+          }
+        } while (richiestaNuova);
+      } finally {
+        inCorso = null;
+      }
+      mostraAvvisi();
+      return ultimiAvvisi;
+    })();
+    return inCorso;
+  }
+  function mostraAvvisi() {
     const visibili = ultimiAvvisi.filter((a) => !avvisiNascosti.ha(a));
     contaCampanella.hidden = visibili.length === 0;
     contaCampanella.textContent = String(visibili.length);
@@ -203,14 +216,14 @@ export function costruisciShell(radice) {
       v.badge.textContent = n ? String(n) : '';
       v.badge.title = '';
     }
-    return ultimiAvvisi;
   }
+  avvisiNascosti.alCambio(mostraAvvisi); // nascondere o rimostrare un avviso, da qualunque schermata, aggiorna subito il numero sulla campanella
   function apriCampanella() {
     const contenuto = h('div', { class: 'popover-avvisi' });
     const disegna = () => {
       contenuto.replaceChildren(
         h('div', { class: 'popover-testa' }, h('strong', null, 'Avvisi')),
-        disegnaAvvisi(ultimiAvvisi, { compatto: true, alNascondi: () => { disegna(); aggiornaAvvisi(); }, dopoAzione: () => { pop.chiudi(); aggiornaAvvisi(); } }),
+        disegnaAvvisi(ultimiAvvisi, { compatto: true, alNascondi: () => { disegna(); }, dopoAzione: () => { pop.chiudi(); aggiornaAvvisi(); } }),
       );
     };
     disegna();

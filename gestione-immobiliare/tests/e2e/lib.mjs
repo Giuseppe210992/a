@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import os from 'node:os';
+import crypto from 'node:crypto';
 
 const qui = path.dirname(fileURLToPath(import.meta.url));
 export const RADICE = path.resolve(qui, '..', '..');
@@ -104,7 +105,31 @@ export async function apriContesto({ profilo = null, viewport = { width: 1440, h
     ctx.on('page', rallentaPagina);
     for (const p of ctx.pages()) await rallentaPagina(p);
   }
-  return { ctx, browser, errori, seguiPagina, chiudi: async () => { await ctx.close(); if (browser) await browser.close(); } };
+  // GI_COPERTURA=/cartella raccoglie quali righe del programma le prove eseguono davvero (poi: node tools/rapporto-copertura.mjs /cartella).
+  const cartellaCopertura = process.env.GI_COPERTURA || null;
+  const conCopertura = new Set();
+  if (cartellaCopertura) {
+    fs.mkdirSync(cartellaCopertura, { recursive: true });
+    const avviaCopertura = async (p) => { try { await p.coverage.startJSCoverage({ resetOnNavigation: false }); conCopertura.add(p); } catch { /* pagina gia' chiusa */ } };
+    const nuovaPagina = ctx.newPage.bind(ctx);
+    ctx.newPage = async () => { const p = await nuovaPagina(); await avviaCopertura(p); return p; };
+    for (const p of ctx.pages()) await avviaCopertura(p);
+  }
+  const salvaCopertura = async () => {
+    for (const p of conCopertura) {
+      try {
+        const voci = (await p.coverage.stopJSCoverage()).filter((v) => /\/app\.js(\?|$)/.test(v.url) && v.source);
+        const compatte = voci.map((v) => {
+          const fonte = crypto.createHash('sha1').update(v.source).digest('hex').slice(0, 12);
+          const fileFonte = path.join(cartellaCopertura, `fonte-${fonte}.js`);
+          if (!fs.existsSync(fileFonte)) fs.writeFileSync(fileFonte, v.source);
+          return { fonte, functions: v.functions };
+        });
+        fs.writeFileSync(path.join(cartellaCopertura, `cop-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.json`), JSON.stringify(compatte));
+      } catch { /* pagina chiusa prima del termine */ }
+    }
+  };
+  return { ctx, browser, errori, seguiPagina, chiudi: async () => { await salvaCopertura(); await ctx.close(); if (browser) await browser.close(); } };
 }
 
 export async function apriApp(pagina, hash = '') {

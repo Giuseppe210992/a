@@ -66,8 +66,10 @@ function registraComandi() {
   comando('sistema:info', () => ({ ...host.info(), versione: app.getVersion(), piattaforma: process.platform }));
   comando('sistema:apriCartella', async (quale) => {
     const cartella = quale === 'backup' ? host.cartellaBackup : host.cartellaDati;
+    // Nelle prove automatiche (senza finestre) non si apre Esplora file: si risponde come se fosse aperta.
+    if (process.env.GESTIONE_IMMOBILIARE_SENZA_FINESTRE === '1') return { aperta: true, simulata: true, cartella };
     const errore = await shell.openPath(cartella);
-    return errore ? { aperta: false, errore } : { aperta: true };
+    return errore ? { aperta: false, errore } : { aperta: true, cartella };
   });
 
   // Salvataggio di un file scelto dall'utente (esportazioni CSV e archivio completo)

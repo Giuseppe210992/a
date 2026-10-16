@@ -267,8 +267,13 @@ describe('Persistenza dopo chiusura e riapertura', () => {
     assert.equal(await seconda.locator('.sidebar').count(), 0, 'la seconda finestra non lavora sui dati');
     // chiusa la prima finestra, la seconda può riprovare e aprirsi
     await p.close();
-    await seconda.getByRole('button', { name: 'Riprova' }).click();
-    await seconda.waitForSelector('.sidebar', { timeout: 15000 });
+    // il blocco passa alla seconda finestra appena la prima è davvero chiusa: chi usa il programma riprova finché si apre
+    let aperta = false;
+    for (let tentativo = 0; tentativo < 10 && !aperta; tentativo++) {
+      await seconda.getByRole('button', { name: 'Riprova' }).click();
+      aperta = await seconda.waitForSelector('.sidebar', { timeout: 2500 }).then(() => true, () => false);
+    }
+    assert.ok(aperta, 'dopo aver chiuso la prima finestra, la seconda si apre');
     await seconda.waitForFunction(() => window.__gi?.app?.archivio);
     assert.equal(await valoreSql(seconda, 'SELECT COUNT(*) FROM pratiche'), 1);
   });

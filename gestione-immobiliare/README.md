@@ -86,10 +86,10 @@ La differenza (500 €) è il motivo per cui il metodo va scelto con attenzione,
 | Componente | Stato | Come |
 |---|---|---|
 | Calcoli (scaglioni, cumulo, provvigioni, ripartizioni, date, formati) e archivio | ✅ Verificato | 85 prove automatiche; i numeri della dashboard sono confrontati con un calcolo fatto a mano, indipendente dal programma |
-| Tutte le schermate e ogni pulsante nel browser (Chromium) | ✅ Verificato | 168 prove nel browser su 15 pratiche di prova: 168 su 168 superate in locale (anche con il computer rallentato 4 volte) e **sul server di GitHub** (Chromium su Linux) |
+| Tutte le schermate e ogni pulsante nel browser (Chromium) | ✅ Verificato in locale | 218 prove nel browser su 15 pratiche di prova: 218 su 218 superate in locale, anche con il browser rallentato 4 volte e con ritardi simulati di 150 ms. Le prove eseguono circa il **90%** delle righe del programma (misurato: vedi sotto). Esito su GitHub per questa versione: ⏳ in verifica |
 | Dati salvati dopo chiusura e riapertura | ✅ Verificato | Browser (profilo persistente, 3 sessioni di fila, archivio danneggiato e recupero) e programma Electron su file vero |
 | Programma Electron con file reali | ✅ Verificato su **Linux** | 5 prove: si avvia usando il file su disco; inserimento di pratica, incasso, esportazione e backup; chiusura e riapertura con i dati ancora presenti; importazione e ripristino sul file vero; una seconda copia del programma non si apre |
-| Costruzione di installatore e portatile + avvio del programma impacchettato su **Windows** | ✅ Verificato su Windows Server (GitHub) | A ogni modifica GitHub costruisce i due file `.exe` e **avvia il programma impacchettato** su un Windows vero: 5 prove su 5 superate (dati su file, chiusura e riapertura, importazione e ripristino, seconda copia rifiutata). L'esecuzione di installatore e versione portatile *veri* è ⏳ in verifica nell'esecuzione successiva |
+| Programma per **Windows**: costruzione, installazione, avvio, disinstallazione | ✅ Verificato su Windows Server (GitHub) | A ogni modifica GitHub costruisce i due file `.exe`, **esegue l'installatore vero** in modalità silenziosa, **avvia il programma installato** e lo prova (5 prove su 5: dati su file, chiusura e riapertura, importazione e ripristino, seconda copia rifiutata), poi lo disinstalla. Lo stesso controllo è fatto anche sul programma non installato (cartella). La versione *portatile* è costruita ma **non è mai stata aperta** in automatico |
 | Aspetto e contrasto: 5 larghezze (390, 768, 1024, 1366, 1920 px), tema chiaro e scuro, uso da tastiera | ✅ Verificato in Chromium | Prove di layout, contrasto (≥ 4,5:1) e tastiera |
 | Funzionamento senza Internet | ✅ Verificato | Nessuna richiesta di rete; la pagina vieta per regola ogni connessione esterna |
 | Installazione su un **PC Windows vero** (SmartScreen, antivirus, scala dello schermo) | ❌ **Non verificato** | Serve la tua prova: [docs/PROVA-SU-WINDOWS.md](docs/PROVA-SU-WINDOWS.md) |
@@ -97,6 +97,20 @@ La differenza (500 €) è il motivo per cui il metodo va scelto con attenzione,
 | Telefono o tablet reali | ❌ Non verificato | Solo simulazione di schermo stretto |
 | Firefox e Safari | ❌ Non verificato | Provato solo con Chromium (Chrome/Edge) |
 | Firma digitale dell'installatore | ❌ Non presente | Per questo Windows mostra l'avviso |
+
+### Controllo pulsante per pulsante
+
+Per essere sicuro che ogni pulsante faccia davvero ciò che dice, ho **misurato quali righe del programma le prove eseguono** (`npm run copertura`): all'inizio l'87%, dopo aver scritto le prove mancanti il 90%. Fuori restano soprattutto i percorsi d'errore rarissimi (ad esempio un disco che non risponde), la schermata di recupero da un archivio danneggiato (provata a parte, ma non misurabile con questo metodo) e i due pulsanti che aprono le cartelle in Esplora file (provati fino alla chiamata, non fino alla finestra di Windows).
+
+Questo controllo ha fatto emergere **difetti reali, ora corretti**:
+
+1. Impostazioni: aggiungendo con il tasto Invio un collaboratore, una zona o un'aliquota IVA, la notifica diceva «aggiunto» ma l'elenco non si aggiornava finché non si cliccava altrove.
+2. Ricerca rapida: Invio non faceva ciò che il suggerimento sotto l'elenco promette («Invio apre la prima pratica»).
+3. Avvisi: se i dati cambiavano mentre gli avvisi si ricalcolavano, l'ultimo aggiornamento andava perso e il numero sulla campanella restava sbagliato; nascondere un avviso dalla dashboard non aggiornava la campanella.
+4. Campo data: scrivendo le cifre una alla volta compariva solo la prima barra (20/102026).
+5. Campi importo e percentuale: su un computer lento il testo selezionato poteva «rubare» il cursore a un altro campo appena scelto.
+6. Ripartizione tra collaboratori: liberando un collaboratore in una riga, le altre righe non lo offrivano.
+7. Finestre semplici (Registra incasso, Nuova zona, modifiche): Invio nel campo non confermava (ora conferma; nella liquidazione a più righe volutamente **no**).
 
 ## 7. Per chi sviluppa
 
@@ -107,6 +121,7 @@ npm test                          # prove sui calcoli e sull'archivio
 npm run test:e2e                  # prove nel browser (serve: npx playwright-core install chromium)
 GI_RALLENTA=4 npm run test:e2e    # idem con il browser 4 volte più lento
 GI_RITARDO=150 npm run test:e2e   # idem con eventi e scritture su disco in ritardo (scova le letture troppo presto)
+npm run copertura                 # quali righe del programma le prove eseguono (aggiungi -- --dettagli per l'elenco)
 npm run programma                 # apre il programma (Electron) dai sorgenti
 npm run test:programma            # prova il programma Electron
 npm run pacchetto                 # installatore + portatile (su Windows)

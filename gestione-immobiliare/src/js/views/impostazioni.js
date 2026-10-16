@@ -21,19 +21,24 @@ const SEZIONI = [
   ['preferenze', 'Preferenze', 'settings'], ['info', 'Informazioni', 'info'],
 ];
 
+// Ridisegna la sezione aperta (e rimette il cursore nel campo indicato). Serve dopo un'aggiunta fatta con il tasto Invio:
+// il cursore è ancora nel campo, quindi il ridisegno automatico (che non toglie il cursore da chi sta scrivendo) non scatterebbe.
+let ridisegnaSezione = () => {};
+
 const scheda = (titolo, descrizione, ...contenuto) => h('section', { class: 'card sezione-modulo' }, h('h2', null, titolo), descrizione ? h('p', { class: 'descrizione' }, descrizione) : null, ...contenuto);
 
 // ------------------------------------------------------------------ collaboratori e zone (stessa struttura)
 
 function elencoAnagrafica({ tipo, etichettaSing, etichettaPlur, genere }) {
   const e = tipo === 'collaboratore';
-  const nuovoNome = campoTesto({ etichetta: `Nome ${genere === 'f' ? 'della' : 'del'} ${etichettaSing.toLowerCase()}`, maxlength: 60, placeholder: e ? 'Es. Marco' : 'Es. Centro storico' });
+  const nuovoNome = campoTesto({ id: `nuovo-${tipo}`, etichetta: `Nome ${genere === 'f' ? 'della' : 'del'} ${etichettaSing.toLowerCase()}`, maxlength: 60, placeholder: e ? 'Es. Marco' : 'Es. Centro storico' });
   const form = h('form', { class: 'riga-azioni', style: { alignItems: 'flex-end', marginBottom: '8px' }, onsubmit: async (ev) => {
     ev.preventDefault();
     try {
       if (e) await creaCollaboratore(app.archivio, { nome: nuovoNome.get() }); else await creaZona(app.archivio, { nome: nuovoNome.get() });
       notificaOk(`${etichettaSing} “${nuovoNome.get()}” aggiunt${genere === 'f' ? 'a' : 'o'}.`);
       nuovoNome.set('');
+      ridisegnaSezione(`#nuovo-${tipo}`);
     } catch (err) { if (err.campi) nuovoNome.errore(err.campi.nome); else segnalaErrore(err); }
   } }, h('div', { style: { flex: '1 1 260px' } }, nuovoNome.el), h('button', { type: 'submit', class: 'btn btn-primario', id: `aggiungi-${tipo}` }, icona('plus', { dimensione: 16 }), `Aggiungi ${etichettaSing.toLowerCase()}`));
 
@@ -64,7 +69,7 @@ function modificaAnagrafica(tipo, r, etichettaSing) {
   const attivo = casella({ etichetta: e ? 'Collaboratore attivo' : 'Zona attiva', selezionata: !!(e ? r.attivo : r.attiva) });
   const propri = e ? null : casella({ etichetta: 'Usa scaglioni propri (diversi da quelli predefiniti)', selezionata: !!r.usa_scaglioni_propri });
   return apriModale({
-    titolo: `Modifica ${etichettaSing.toLowerCase()}`, icona: 'pencil', larghezza: 480,
+    titolo: `Modifica ${etichettaSing.toLowerCase()}`, icona: 'pencil', larghezza: 480, invioConferma: true,
     contenuto: h('form', { onsubmit: (ev) => ev.preventDefault() }, h('div', { style: { display: 'grid', gap: '14px' } }, nome.el, colore.el, attivo.el, propri ? propri.el : null)),
     azioni: [{ id: 'annulla', etichetta: 'Annulla', tipo: 'secondario' }, { id: 'salva', etichetta: 'Salva', tipo: 'primario', onClick: async () => {
       try {
@@ -250,7 +255,7 @@ function sezioneRipartizione() {
   function disegna() {
     box.replaceChildren(...righe.map((r, i) => {
       const usati = new Set(righe.filter((_, j) => j !== i).map((x) => x.id));
-      const sel = campoSelezione({ etichetta: i === 0 ? 'Collaboratore' : null, valore: r.id ?? '', vuoto: 'Scegli…', opzioni: attivi.filter((c) => !usati.has(c.id)).map((c) => ({ valore: c.id, etichetta: c.nome })), onChange: (v) => { r.id = v === '' ? null : +v; } });
+      const sel = campoSelezione({ etichetta: i === 0 ? 'Collaboratore' : null, valore: r.id ?? '', vuoto: 'Scegli…', opzioni: attivi.filter((c) => !usati.has(c.id)).map((c) => ({ valore: c.id, etichetta: c.nome })), onChange: (v) => { r.id = v === '' ? null : +v; disegna(); box.querySelector(`select[aria-label="Collaboratore ${i + 1}"]`)?.focus(); } }); // le altre righe devono vedere subito chi si è liberato
       sel.input.setAttribute('aria-label', `Collaboratore ${i + 1}`);
       const p = campoPercentuale({ etichetta: i === 0 ? 'Quota' : null, valore: r.pct ?? null, onInput: (v) => { r.pct = v ?? 0; aggTot(); } });
       p.input.setAttribute('aria-label', `Quota ${i + 1}`);
@@ -282,7 +287,7 @@ function sezioneRipartizione() {
 function sezioneIva() {
   const imp = impostazioni();
   const aliquote = [...(imp['iva.aliquote'] || [])].sort((a, b) => b - a);
-  const nuova = campoPercentuale({ etichetta: 'Nuova aliquota', placeholder: 'es. 5' });
+  const nuova = campoPercentuale({ id: 'nuova-iva', etichetta: 'Nuova aliquota', placeholder: 'es. 5' });
   const predef = campoSelezione({ etichetta: 'Aliquota proposta per le nuove pratiche', valore: String(imp['iva.predefinita']), opzioni: aliquote.map((a) => ({ valore: String(a), etichetta: `${String(a).replace('.', ',')}%` })), onChange: async (v) => {
     try { await scriviImpostazioni(app.archivio, { 'iva.predefinita': Number(v) }); notificaOk('Aliquota predefinita salvata.'); } catch (e) { segnalaErrore(e); }
   } });
@@ -297,7 +302,7 @@ function sezioneIva() {
       const v = nuova.get();
       if (v === null || v < 0 || v > 100) { nuova.errore('Scrivi un\'aliquota tra 0 e 100.'); return; }
       if (aliquote.includes(v)) { nuova.errore('Questa aliquota è già nell\'elenco.'); return; }
-      try { await scriviImpostazioni(app.archivio, { 'iva.aliquote': [...aliquote, v] }); notificaOk(`Aliquota ${String(v).replace('.', ',')}% aggiunta.`); } catch (e) { segnalaErrore(e); }
+      try { await scriviImpostazioni(app.archivio, { 'iva.aliquote': [...aliquote, v] }); notificaOk(`Aliquota ${String(v).replace('.', ',')}% aggiunta.`); nuova.set(null); ridisegnaSezione('#nuova-iva'); } catch (e) { segnalaErrore(e); }
     } }, nuova.el, h('button', { type: 'submit', class: 'btn btn-secondario btn-sm', style: { marginTop: '8px' }, id: 'aggiungi-iva' }, icona('plus', { dimensione: 15 }), 'Aggiungi'))), h('div', { class: 'c-6' }, predef.el)));
 }
 
@@ -367,8 +372,12 @@ export const impostazioniVista = {
       h('div', { class: 'pagina-testa' }, h('div', null, h('h1', null, 'Impostazioni'), h('p', null, 'Collaboratori, zone, scaglioni, ripartizioni, aliquote e preferenze del programma.'))),
       h('div', { class: 'layout-imp' }, menu, corpo));
     disegna();
+    ridisegnaSezione = (selettoreFocus = null) => { disegna(); if (selettoreFocus) corpo.querySelector(selettoreFocus)?.focus(); };
     // Le schermate con campi in modifica non si ridisegnano da sole mentre si scrive.
-    return { aggiorna() { if (!document.activeElement || !corpo.contains(document.activeElement) || document.activeElement.tagName === 'BUTTON') disegna(); } };
+    return {
+      aggiorna() { if (!document.activeElement || !corpo.contains(document.activeElement) || document.activeElement.tagName === 'BUTTON') disegna(); },
+      distruggi() { ridisegnaSezione = () => {}; },
+    };
   },
 };
 export { numDec, leggiEuro, leggiPercentuale };

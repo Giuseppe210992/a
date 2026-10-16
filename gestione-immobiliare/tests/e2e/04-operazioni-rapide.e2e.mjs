@@ -35,6 +35,7 @@ describe('Dashboard: operazioni rapide', () => {
     ]);
     assert.equal(await p.locator('.ops-griglia .op small').count(), 8);
     // archivio mai salvato: lo dice, senza inventare una data
+    await p.waitForFunction(() => /Nessun backup ancora/.test(document.querySelector('#op-backup small')?.textContent ?? '')); // la data dell'ultimo backup si legge dall'archivio
     assert.match(rimuoviSpazi(await p.locator('#op-backup small').innerText()), /Nessun backup ancora/);
   });
 

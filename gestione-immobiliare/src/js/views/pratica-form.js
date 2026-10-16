@@ -106,7 +106,7 @@ function montaForm(contenitore, { pratica = null }) {
       const sel = campoSelezione({
         etichetta: i === 0 ? 'Collaboratore' : null, valore: q.collaboratore_id ?? '', vuoto: 'Scegli…',
         opzioni: m.collaboratori.filter((c) => (c.attivo || c.id === q.collaboratore_id) && !usati.has(c.id)).map((c) => ({ valore: c.id, etichetta: c.nome })),
-        onChange: (v) => { q.collaboratore_id = v === '' ? null : +v; segnaSporco(); ricalcola(); },
+        onChange: (v) => { q.collaboratore_id = v === '' ? null : +v; segnaSporco(); disegnaQuote(); boxQuote.querySelector(`select[aria-label="Collaboratore ${i + 1}"]`)?.focus(); ricalcola(); }, // le altre righe devono vedere subito chi si è liberato
       });
       sel.input.setAttribute('aria-label', `Collaboratore ${i + 1}`);
       const p = campoPercentuale({ etichetta: i === 0 ? 'Quota' : null, valore: q.percentuale ?? null, onInput: (v) => { q.percentuale = v ?? 0; aggiornaTotaleQuote(); segnaSporco(); ricalcola(); } });
@@ -234,7 +234,7 @@ function montaForm(contenitore, { pratica = null }) {
   const btnZona = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', onclick: () => {
     const nome = campoTesto({ etichetta: 'Nome della zona', maxlength: 60, obbligatorio: true });
     apriModale({
-      titolo: 'Nuova zona', icona: 'map-pin', contenuto: h('form', { onsubmit: (e) => e.preventDefault() }, nome.el),
+      titolo: 'Nuova zona', icona: 'map-pin', invioConferma: true, contenuto: h('form', { onsubmit: (e) => e.preventDefault() }, nome.el),
       azioni: [{ id: 'annulla', etichetta: 'Annulla', tipo: 'secondario' }, { id: 'crea', etichetta: 'Crea zona', tipo: 'primario', onClick: async () => {
         try {
           const id = await creaZona(app.archivio, { nome: nome.get() });

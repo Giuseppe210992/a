@@ -21,7 +21,7 @@ function modificaIncassoDialogo(inc) {
   const metodo = campoSelezione({ etichetta: 'Metodo', valore: inc.metodo ?? '', vuoto: 'Non indicato', opzioni: METODI_PAGAMENTO.map((x) => ({ valore: x, etichetta: x })) });
   const note = campoTesto({ etichetta: 'Note', valore: inc.note ?? '', maxlength: 300 });
   return apriModale({
-    titolo: 'Modifica incasso', icona: 'pencil', larghezza: 560,
+    titolo: 'Modifica incasso', icona: 'pencil', larghezza: 560, invioConferma: true,
     contenuto: h('form', { onsubmit: (e) => e.preventDefault() }, h('div', { class: 'griglia-campi' },
       h('div', { class: 'c-6' }, data.el), h('div', { class: 'c-6' }, importo.el), h('div', { class: 'c-6' }, pagante.el), h('div', { class: 'c-6' }, metodo.el), h('div', { class: 'c-12' }, note.el))),
     azioni: [{ id: 'annulla', etichetta: 'Annulla', tipo: 'secondario' }, { id: 'salva', etichetta: 'Salva', tipo: 'primario', onClick: async () => {
