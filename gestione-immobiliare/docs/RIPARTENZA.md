@@ -62,7 +62,7 @@ Regole da non rompere:
 ```
 cd gestione-immobiliare
 npm ci
-npm test                  # 91 prove su calcoli, date, formati, archivio, host file, icone (circa 1 s)
+npm test                  # 97 prove su calcoli, scaglioni dell'agenzia, date, formati, archivio, host file, icone (circa 1 s)
 npm run test:e2e          # costruisce e prova ogni schermata nel browser (Chromium + Playwright), circa 4 minuti
 GI_RALLENTA=4 npm run test:e2e   # lo stesso con il browser 4 volte più lento
 GI_RITARDO=150 npm run test:e2e  # lo stesso con eventi e scritture su disco in ritardo di 150 ms (scova le letture troppo presto)
