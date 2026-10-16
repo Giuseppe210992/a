@@ -12,7 +12,7 @@ Gestionale **offline** per un'agenzia immobiliare: pratiche di compravendita, co
 2. In fondo, sezione **Artifacts**: scarica **Gestione-Immobiliare-per-Windows** (uno ZIP) ed estrailo.
 3. Due file:
    - `Gestione-Immobiliare-1.0.0-Installazione.exe`: installa il programma (icona sul desktop e nel menu Start);
-   - `Gestione-Immobiliare-1.0.0-Portatile.exe`: si apre senza installare (anche da chiavetta USB).
+   - `Gestione-Immobiliare-1.0.0-Portatile.exe`: si apre senza installare ed è quello da mettere su una chiavetta USB (istruzioni nel paragrafo «Uso su chiavetta USB» più sotto).
 4. Alla prima apertura Windows può dire **«Windows ha protetto il PC»**: il programma non ha la firma digitale a pagamento. Premi **Ulteriori informazioni → Esegui comunque**.
 
 Per le versioni con etichetta `v…` (ad esempio `v1.0.0`) i file compaiono anche nella pagina **Releases** del repository.
@@ -27,7 +27,28 @@ Per le versioni con etichetta `v…` (ad esempio `v1.0.0`) i file compaiono anch
 | Versione precedente (a ogni salvataggio) | `…\Dati\archivio.sqlite.bak` |
 | Copie di sicurezza | `Documenti\Gestione Immobiliare\Backup\` |
 
+Questo vale per il programma **installato**. La versione **portatile** tiene i dati sulla chiavetta, accanto a sé (vedi sotto).
+
 Per fare una copia a mano basta copiare la cartella `Gestione Immobiliare`. Per cambiare PC: installa il programma e metti la cartella nei Documenti del nuovo PC (oppure usa *Esporta* e *Importa*). Disinstallare il programma **non cancella i dati**. Se i Documenti sono sincronizzati con OneDrive va bene, ma non aprire lo stesso archivio da due PC nello stesso momento.
+
+### Uso su chiavetta USB (versione portatile)
+
+1. **Estrai lo ZIP** (tasto destro → *Estrai tutto*). Non aprire il programma direttamente da dentro lo ZIP: Windows lo farebbe girare da una cartella temporanea e i dati andrebbero persi (il programma se ne accorge e te lo dice prima di partire).
+2. Copia **solo** il file `Gestione-Immobiliare-1.0.0-Portatile.exe` sulla chiavetta, meglio in una cartella tutta sua (ad esempio `Gestione Immobiliare`). Pesa circa 115 MB.
+3. Aprilo **dalla chiavetta**. Alla prima apertura su un PC Windows può dire «Windows ha protetto il PC»: *Ulteriori informazioni → Esegui comunque*. Ogni volta Windows deve preparare il programma, quindi l'avvio richiede qualche secondo in più (di più con chiavette lente).
+4. I dati nascono nella cartella **`Gestione Immobiliare - Dati`**, accanto al file `.exe` sulla chiavetta (l'archivio in `Dati`, le copie di sicurezza in `Backup`). Portando via la chiavetta porti via anche i dati: non finisce nulla nella cartella Documenti del PC. La schermata *Backup e archivio storico* lo scrive chiaramente.
+5. Per finire: **chiudi il programma con la X prima di togliere la chiavetta** (meglio ancora con «Rimozione sicura dell'hardware»).
+
+Da sapere:
+
+- **Una chiavetta si perde o si rompe.** Ogni tanto fai una copia anche sul computer: *Backup e archivio storico → Esporta l'archivio completo*.
+- **Mai la stessa chiavetta su due PC nello stesso momento**, e non copiare la cartella dei dati mentre il programma è aperto.
+- La chiavetta non deve essere piena né protetta da scrittura (a volte c'è un interruttore sul bordo): in quel caso il programma lo dice e non parte.
+- Se hai già dati nella versione installata: lì *Esporta l'archivio completo*, poi nella versione portatile *Importa un backup*. Le due versioni non condividono i dati da sole.
+- Tema chiaro/scuro, barra ridotta e filtri della dashboard sono preferenze **del singolo PC**: su un altro computer ricompaiono quelli predefiniti. I dati veri (pratiche, incassi, impostazioni) viaggiano con la chiavetta.
+- Per prepararsi, Windows copia il programma in una cartella temporanea del PC (qualche centinaio di MB) e la lascia lì: si può cancellare a mano o la ripulisce Windows. I dati non sono lì.
+- Alcuni PC aziendali o di scuola bloccano i programmi che partono da una chiavetta: in quel caso serve l'amministratore.
+- La versione nel browser (`index.html`) **non** è adatta alla chiavetta: i dati resterebbero nel browser di quel PC.
 
 ## 3. Le otto sezioni
 

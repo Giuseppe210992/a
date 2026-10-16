@@ -127,6 +127,33 @@ jobs:
           if (Test-Path $exe) { throw "La disinstallazione non ha rimosso il programma" }
           Write-Host 'Installazione, prova e disinstallazione riuscite.'
 
+      # La versione portatile vera, come su una chiavetta: si copia da sola in una cartella, si avvia e i dati devono nascere accanto a lei (non in Documenti).
+      - name: Prova la versione portatile come se fosse su una chiavetta
+        shell: pwsh
+        run: |
+          $portatile = (Get-ChildItem release -Filter '*Portatile.exe' | Select-Object -First 1).FullName
+          $chiavetta = Join-Path $env:RUNNER_TEMP 'chiavetta'
+          New-Item -ItemType Directory -Path $chiavetta -Force | Out-Null
+          Copy-Item $portatile $chiavetta
+          $copia = Join-Path $chiavetta (Split-Path $portatile -Leaf)
+          $archivio = Join-Path $chiavetta 'Gestione Immobiliare - Dati\Dati\archivio.sqlite'
+          $documenti = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'Gestione Immobiliare'
+          $esisteva = Test-Path $documenti
+          Remove-Item Env:GESTIONE_IMMOBILIARE_DATI -ErrorAction SilentlyContinue
+          $env:GESTIONE_IMMOBILIARE_SENZA_FINESTRE = '1'
+          Write-Host "Avvio $copia"
+          $p = Start-Process -FilePath $copia -PassThru
+          for ($i = 0; $i -lt 180 -and -not (Test-Path $archivio); $i++) { Start-Sleep -Seconds 1 }
+          $trovato = Test-Path $archivio
+          & taskkill /PID $p.Id /T /F | Out-Null
+          Get-Process -Name 'Gestione Immobiliare' -ErrorAction SilentlyContinue | Stop-Process -Force
+          Start-Sleep -Seconds 2
+          Get-ChildItem $chiavetta -Recurse -File | Select-Object FullName, Length | Format-Table -AutoSize -Wrap
+          if (-not $trovato) { throw "La versione portatile non ha creato l'archivio accanto a se': $archivio" }
+          if ((Get-Item $archivio).Length -lt 4096) { throw "L'archivio creato dalla versione portatile e' troppo piccolo" }
+          if (-not $esisteva -and (Test-Path $documenti)) { throw "La versione portatile ha scritto dati anche in $documenti" }
+          Write-Host 'Versione portatile: i dati sono nati accanto al programma e nulla e'' finito in Documenti.'
+
   pubblica:
     name: Pubblica la versione
     if: startsWith(github.ref, 'refs/tags/v')

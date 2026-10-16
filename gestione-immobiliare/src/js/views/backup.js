@@ -86,6 +86,12 @@ export const backup = {
         info.tipo === 'file' && window.gestionaleHost?.sistema?.apriCartella ? h('div', { class: 'riga-azioni', style: { marginTop: '12px' } },
           h('button', { type: 'button', class: 'btn btn-secondario btn-sm', onclick: () => apriCartella('dati') }, icona('folder-open', { dimensione: 15 }), 'Apri la cartella dei dati'),
           h('button', { type: 'button', class: 'btn btn-secondario btn-sm', onclick: () => apriCartella('backup') }, icona('folder-open', { dimensione: 15 }), 'Apri la cartella dei backup')) : null,
+        info.portatile ? h('div', { class: 'nota', id: 'nota-portatile', style: { marginTop: '12px' } }, icona('usb', { dimensione: 18 }), h('div', null,
+          h('strong', null, 'Versione portatile (chiavetta). '),
+          'L\'archivio e i backup stanno accanto al programma, nella cartella «Gestione Immobiliare - Dati»: portando via la chiavetta porti via anche i dati. ',
+          'Chiudi sempre il programma prima di togliere la chiavetta, e ogni tanto salva una copia anche sul computer con «Esporta l\'archivio completo».')) : null,
+        info.portatile && info.portatileTemporaneo ? h('div', { class: 'nota attenzione', id: 'avviso-temporanea', style: { marginTop: '12px' } }, icona('triangle-alert', { dimensione: 18 }), h('span', null,
+          'Attenzione: il programma sembra aperto da una cartella temporanea (ad esempio direttamente da un file ZIP). I dati salvati qui possono andare persi: chiudilo, copia il file «Portatile» sulla chiavetta o in una cartella del computer e riaprilo da lì.')) : null,
         info.tipo !== 'file' ? h('div', { class: 'nota attenzione', style: { marginTop: '12px' } }, icona('triangle-alert', { dimensione: 18 }), h('span', null, 'Stai usando il programma nel browser: se cancelli i dati di navigazione di questo sito o cambi profilo, l\'archivio non sarà più qui. Esporta spesso un backup, oppure usa il programma Windows che salva su file nella cartella Documenti.')) : null);
 
       // ---------- azioni

@@ -5,7 +5,7 @@
 const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
-const { creaHost, comeBuffer } = require('./host-archivio.cjs');
+const { creaHost, cartellaBaseDati, cartellaTemporanea, comeBuffer } = require('./host-archivio.cjs');
 
 // Una sola copia del programma alla volta: due copie aperte si sovrascriverebbero i dati a vicenda.
 if (!app.requestSingleInstanceLock()) {
@@ -16,8 +16,11 @@ if (!app.requestSingleInstanceLock()) {
 app.setName('Gestione Immobiliare');
 if (process.platform === 'win32') app.setAppUserModelId('it.gestione-immobiliare.app');
 
-// Cartella dei dati: Documenti\Gestione Immobiliare. GESTIONE_IMMOBILIARE_DATI la sposta (prove automatiche, chiavetta USB).
-const cartellaBase = process.env.GESTIONE_IMMOBILIARE_DATI || path.join(app.getPath('documents'), 'Gestione Immobiliare');
+// Cartella dei dati: Documenti\Gestione Immobiliare; nella versione portatile (chiavetta) accanto al programma;
+// GESTIONE_IMMOBILIARE_DATI la sposta dove si vuole (prove automatiche).
+const { cartella: cartellaBase, portatile } = cartellaBaseDati({ env: process.env, documenti: () => app.getPath('documents') });
+// Versione portatile lanciata da una cartella temporanea (tipicamente aperta dentro lo ZIP scaricato): i dati rischiano di andare persi.
+const portatileTemporaneo = portatile && cartellaTemporanea(process.env.PORTABLE_EXECUTABLE_DIR);
 let host;
 let finestra = null;
 let ultimaCartellaFile = null;
@@ -63,7 +66,7 @@ function registraComandi() {
   comando('copie:crea', (bytes, tipo) => host.creaCopia(comeBuffer(bytes), tipo));
   comando('copie:leggi', (id) => host.leggiCopia(id));
   comando('copie:elimina', (id) => host.eliminaCopia(id));
-  comando('sistema:info', () => ({ ...host.info(), versione: app.getVersion(), piattaforma: process.platform }));
+  comando('sistema:info', () => ({ ...host.info(), versione: app.getVersion(), piattaforma: process.platform, portatile, portatileTemporaneo }));
   comando('sistema:apriCartella', async (quale) => {
     const cartella = quale === 'backup' ? host.cartellaBackup : host.cartellaDati;
     // Nelle prove automatiche (senza finestre) non si apre Esplora file: si risponde come se fosse aperta.
@@ -117,10 +120,20 @@ app.on('second-instance', () => {
 });
 
 app.whenReady().then(() => {
+  if (portatileTemporaneo && process.env.GESTIONE_IMMOBILIARE_SENZA_FINESTRE !== '1') {
+    const scelta = dialog.showMessageBoxSync({
+      type: 'warning', buttons: ['Chiudi', 'Continua lo stesso'], defaultId: 0, cancelId: 0, noLink: true,
+      title: 'Gestione Immobiliare', message: 'Il programma è aperto da una cartella temporanea.',
+      detail: 'Sembra che tu l\'abbia aperto direttamente da dentro un file ZIP: i dati salvati qui potrebbero andare persi quando Windows svuota la cartella temporanea.\n\n'
+        + 'Chiudi, copia il file «Portatile» sulla chiavetta (o in una cartella del computer) e aprilo da lì.',
+    });
+    if (scelta === 0) { app.quit(); return; }
+  }
   try {
     host = creaHost(cartellaBase);
   } catch (e) {
-    dialog.showErrorBox('Gestione Immobiliare', `Non riesco a usare la cartella dei dati:\n${cartellaBase}\n\n${e.message}`);
+    const consiglio = portatile ? '\n\nSe usi la chiavetta: controlla che non sia piena né protetta da scrittura (a volte c\'è un interruttore sul bordo), oppure copia il programma in una cartella del computer.' : '';
+    dialog.showErrorBox('Gestione Immobiliare', `Non riesco a usare la cartella dei dati:\n${cartellaBase}\n\n${e.message}${consiglio}`);
     app.quit();
     return;
   }

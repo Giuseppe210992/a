@@ -27,11 +27,11 @@ const profilo = path.join(base, 'profilo');
 fs.mkdirSync(profilo, { recursive: true });
 const FILE_DA_IMPORTARE = path.join(base, 'da-importare.sqlite');
 
-const argomenti = () => (ESEGUIBILE ? [`--user-data-dir=${profilo}`] : [RADICE, `--user-data-dir=${profilo}`, '--no-sandbox']);
+const argomenti = (cartellaProfilo = profilo) => (ESEGUIBILE ? [`--user-data-dir=${cartellaProfilo}`] : [RADICE, `--user-data-dir=${cartellaProfilo}`, '--no-sandbox']);
 const ambiente = (extra = {}) => ({ ...process.env, GESTIONE_IMMOBILIARE_DATI: datiPercorso, GESTIONE_IMMOBILIARE_SENZA_FINESTRE: '1', ELECTRON_ENABLE_LOGGING: '1', ...extra });
 
-async function avviaProgramma(extraAmbiente = {}) {
-  const app = await electron.launch({ executablePath: binarioElectron(), args: argomenti(), env: ambiente(extraAmbiente), timeout: 60000 });
+async function avviaProgramma(extraAmbiente = {}, cartellaProfilo = profilo) {
+  const app = await electron.launch({ executablePath: binarioElectron(), args: argomenti(cartellaProfilo), env: ambiente(extraAmbiente), timeout: 60000 });
   const finestra = await app.firstWindow({ timeout: 60000 });
   const errori = [];
   finestra.on('pageerror', (e) => errori.push(`pageerror: ${e.message}`));
@@ -162,5 +162,47 @@ describe('Programma Windows (Electron)', { skip: binarioElectron() ? false : 'El
     const codice = await new Promise((risolvi) => { secondo.on('exit', (c) => risolvi(c)); setTimeout(() => { secondo.kill(); risolvi('ancora aperto'); }, 30000); });
     assert.equal(codice, 0, 'la seconda copia si chiude subito');
     assert.equal(await valore(s2.finestra, 'SELECT COUNT(*) FROM pratiche'), 16, 'la prima copia continua a funzionare');
+  });
+
+  test('versione portatile (chiavetta): i dati nascono accanto al programma, non nei Documenti, e seguono la chiavetta', async () => {
+    const chiavetta = path.join(base, 'chiavetta');
+    const altroPc = path.join(base, 'chiavetta-spostata');
+    const casa = path.join(base, 'casa'); // finta cartella personale: qui non deve nascere nulla
+    for (const c of [chiavetta, casa]) fs.mkdirSync(c, { recursive: true });
+    const comePortatile = (cartella) => ({ GESTIONE_IMMOBILIARE_DATI: '', PORTABLE_EXECUTABLE_DIR: cartella, HOME: casa, USERPROFILE: casa });
+    const cartellaDati = path.join(chiavetta, 'Gestione Immobiliare - Dati');
+    let sp = null;
+    try {
+      sp = await avviaProgramma(comePortatile(chiavetta), path.join(base, 'profilo-chiavetta-1'));
+      const { finestra: p } = sp;
+      const info = await p.evaluate(() => window.gestionaleHost.sistema.info());
+      assert.equal(info.portatile, true);
+      assert.equal(info.portatileTemporaneo, true, 'la finta chiavetta sta nella cartella temporanea del sistema: il programma lo segnala');
+      assert.equal(info.percorsoDati, path.join(cartellaDati, 'Dati', 'archivio.sqlite'));
+      assert.ok(fs.existsSync(info.percorsoDati), 'l\'archivio nasce accanto al programma');
+      // la schermata lo dice chiaramente
+      await p.evaluate(() => { location.hash = '#/backup'; });
+      await p.waitForSelector('#nota-portatile');
+      assert.match(await p.locator('#nota-portatile').innerText(), /Versione portatile.*Gestione Immobiliare - Dati.*togliere la chiavetta/s);
+      assert.match(await p.locator('#avviso-temporanea').innerText(), /cartella temporanea.*ZIP.*possono andare persi/s);
+      // un dato e una copia di sicurezza, fatti dall'interfaccia
+      await p.evaluate(async () => { const { api, app } = window.__gi; await api.creaZona(app.archivio, { nome: 'Zona chiavetta' }); });
+      await p.click('#bk-crea');
+      await p.waitForFunction(() => /Backup creato/.test(document.querySelector('.toast-area')?.textContent ?? ''));
+      assert.equal(fs.readdirSync(path.join(cartellaDati, 'Backup')).length, 1, 'anche la copia sta sulla chiavetta');
+      assert.deepEqual(sp.errori, []);
+      await sp.app.close();
+      sp = null;
+      // nulla è finito nella cartella personale del computer
+      assert.deepEqual(fs.readdirSync(casa).filter((n) => /Documen|Gestione/i.test(n)), [], 'niente in Documenti');
+      // "si porta la chiavetta su un altro computer": cartella copiata, stesso programma, dati ritrovati
+      fs.cpSync(chiavetta, altroPc, { recursive: true });
+      sp = await avviaProgramma(comePortatile(altroPc), path.join(base, 'profilo-chiavetta-2'));
+      assert.equal(await valore(sp.finestra, "SELECT COUNT(*) FROM zone WHERE nome = 'Zona chiavetta'"), 1);
+      assert.equal(await valore(sp.finestra, 'PRAGMA integrity_check'), 'ok');
+      assert.deepEqual(sp.errori, []);
+    } finally {
+      try { await sp?.app.close(); } catch { /* già chiuso */ }
+    }
   });
 });

@@ -12,7 +12,7 @@ Ti serve: un PC con Windows 10 o 11 e un account GitHub con accesso al repositor
 2. In fondo alla pagina, sezione **Artifacts**, scarica **Gestione-Immobiliare-per-Windows** (è uno ZIP) ed estrailo (tasto destro → *Estrai tutto*).
 3. Dentro trovi due file:
    - `Gestione-Immobiliare-1.0.0-Installazione.exe` → installa il programma, con icona sul desktop e nel menu Start;
-   - `Gestione-Immobiliare-1.0.0-Portatile.exe` → si apre senza installare (utile su una chiavetta USB).
+   - `Gestione-Immobiliare-1.0.0-Portatile.exe` → si apre senza installare; è quello per la chiavetta USB (prova facoltativa al punto 8).
 4. Apri l'**Installazione**. Windows può mostrare **«Windows ha protetto il PC»**: succede perché il programma non ha la firma digitale a pagamento. Premi **Ulteriori informazioni** → **Esegui comunque**. Non è un virus: il codice è tutto nel repository.
 
 | # | Cosa controllare | Esito |
@@ -98,6 +98,22 @@ In **Backup e archivio storico**:
 
 ---
 
+## 8. Chiavetta USB (facoltativo)
+
+Solo se vuoi usare il programma da una chiavetta. **Prima** estrai lo ZIP (non aprire il programma da dentro lo ZIP) e copia sulla chiavetta solo il file `…Portatile.exe`.
+
+| # | Cosa controllare | Esito |
+|---|---|---|
+| 8.1 | Aprendo il `.exe` **dalla chiavetta** il programma parte (anche dopo l'avviso di Windows) e mostra l'archivio vuoto | |
+| 8.2 | Accanto al `.exe`, sulla chiavetta, è nata la cartella `Gestione Immobiliare - Dati` con dentro `Dati\archivio.sqlite` | |
+| 8.3 | In *Backup e archivio storico*, sotto «Dove sono i dati», c'è l'avviso azzurro «Versione portatile (chiavetta)» e **non** c'è l'avviso giallo sulla cartella temporanea | |
+| 8.4 | Inserisci una pratica di prova, chiudi con la **X**, riapri dalla chiavetta: la pratica c'è ancora | |
+| 8.5 | In `Documenti` **non** è comparsa la cartella `Gestione Immobiliare` (se prima non c'era) | |
+| 8.6 | Togli la chiavetta (dopo aver chiuso il programma), mettila in **un altro PC** e aprilo da lì: la pratica di prova c'è | |
+| 8.7 | Prova da non fare mai: apri il `.exe` direttamente dentro lo ZIP. Il programma deve avvisarti («aperto da una cartella temporanea») prima di partire | |
+
+---
+
 ## Se qualcosa non va
 
 Mandami:
@@ -110,4 +126,4 @@ Non servono altre informazioni: non scrivere mai nomi di clienti o importi reali
 
 ## Disinstallare
 
-Impostazioni di Windows → App → *Gestione Immobiliare* → Disinstalla. **I tuoi dati non vengono cancellati**: restano in `Documenti\Gestione Immobiliare`.
+Impostazioni di Windows → App → *Gestione Immobiliare* → Disinstalla. **I tuoi dati non vengono cancellati**: restano in `Documenti\Gestione Immobiliare`. (La versione portatile non si installa, quindi non si disinstalla: basta cancellare il file `.exe`; i suoi dati sono nella cartella `Gestione Immobiliare - Dati` accanto a lui.)

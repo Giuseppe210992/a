@@ -7,6 +7,7 @@
 //   <base>\Backup\copia_<tipo>_<data>.sqlite   le copie di sicurezza (archivio storico)
 
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const TIPI = ['manuale', 'automatico', 'pre-ripristino', 'pre-importazione', 'pre-azzeramento'];
@@ -51,6 +52,32 @@ function scriviAtomico(destinazione, bytes) {
     try { conRiprove(() => fs.copyFileSync(destinazione, `${destinazione}.bak`)); } catch { /* la versione precedente è un di più */ }
   }
   conRiprove(() => fs.renameSync(tmp, destinazione));
+}
+
+/** Nome della cartella dei dati che la versione portatile tiene accanto al programma (sulla chiavetta). */
+const CARTELLA_PORTATILE = 'Gestione Immobiliare - Dati';
+
+/**
+ * Dove stanno i dati:
+ *   1. GESTIONE_IMMOBILIARE_DATI, se indicata (scelta esplicita, prove automatiche);
+ *   2. versione portatile (electron-builder imposta PORTABLE_EXECUTABLE_DIR = cartella del file .exe): accanto al programma, cioè sulla chiavetta;
+ *   3. altrimenti Documenti\Gestione Immobiliare del computer.
+ * `documenti` è una funzione perché la cartella Documenti si chiede al sistema solo quando serve.
+ */
+function cartellaBaseDati({ env = process.env, documenti }) {
+  if (env.GESTIONE_IMMOBILIARE_DATI) return { cartella: env.GESTIONE_IMMOBILIARE_DATI, portatile: false };
+  if (env.PORTABLE_EXECUTABLE_DIR) return { cartella: path.join(env.PORTABLE_EXECUTABLE_DIR, CARTELLA_PORTATILE), portatile: true };
+  return { cartella: path.join(documenti(), 'Gestione Immobiliare'), portatile: false };
+}
+
+/**
+ * Il programma portatile aperto direttamente da dentro un file ZIP gira da una cartella temporanea di Windows
+ * (es. ...\\Temp\\Temp1_Nome.zip\\), che prima o poi viene svuotata: i dati salvati lì andrebbero persi.
+ */
+function cartellaTemporanea(cartella, tmp = os.tmpdir()) {
+  const norma = (p) => path.resolve(p).toLowerCase() + path.sep;
+  const c = norma(cartella);
+  return c.startsWith(norma(tmp)) || /\.zip[\\/]/.test(c);
 }
 
 function creaHost(cartellaBase) {
@@ -134,4 +161,4 @@ function creaHost(cartellaBase) {
   };
 }
 
-module.exports = { creaHost, scriviAtomico, comeBuffer, TIPI, RX_COPIA };
+module.exports = { creaHost, cartellaBaseDati, cartellaTemporanea, CARTELLA_PORTATILE, scriviAtomico, comeBuffer, TIPI, RX_COPIA };
