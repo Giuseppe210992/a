@@ -15,7 +15,7 @@ Dove: cartella `gestione-immobiliare/` del repository `Giuseppe210992/a`, ramo `
 | Tecnologia | HTML + JavaScript senza framework, un solo pacchetto (`dist/web`), database **SQLite** (sql.js, WebAssembly incorporato) | Funziona offline, niente server, un solo file di dati, nessuna risorsa esterna (la politica di sicurezza della pagina vieta ogni connessione) |
 | Programma Windows | **Electron** che mostra lo stesso pacchetto e salva su file | L'utente usa un PC Windows normale; si costruisce su Windows in automatico (GitHub Actions) |
 | Dove stanno i dati (Windows) | `Documenti\Gestione Immobiliare\Dati\archivio.sqlite` (+ `.bak`), copie in `…\Backup\` | Cartella che l'utente vede, copia e salva facilmente. Salvataggio atomico: mai un file a metà |
-| Dove stanno i dati (versione portatile / chiavetta) | `<cartella del file .exe>\Gestione Immobiliare - Dati\Dati\archivio.sqlite` (+ `.bak`), copie in `…\Backup\` | La chiavetta porta con sé i dati. electron-builder imposta `PORTABLE_EXECUTABLE_DIR` (cartella dell'`.exe`); `cartellaBaseDati()` in `electron/host-archivio.cjs` sceglie la cartella (`GESTIONE_IMMOBILIARE_DATI` > portatile > Documenti). Se la cartella è temporanea (tipico: `.exe` aperto dentro lo ZIP scaricato) all'avvio compare un avviso e nel pannello Backup una nota gialla, perché Windows la svuota. Il portatile decomprime il programma in `%TEMP%` (cartella con l'id della compilazione, riusata) |
+| Dove stanno i dati (versione portatile / chiavetta) | `<cartella del file .exe>\Gestione Immobiliare - Dati\Dati\archivio.sqlite` (+ `.bak`), copie in `…\Backup\` | La chiavetta porta con sé i dati. electron-builder imposta `PORTABLE_EXECUTABLE_DIR` (cartella dell'`.exe`); `cartellaBaseDati()` in `electron/host-archivio.cjs` sceglie la cartella (`GESTIONE_IMMOBILIARE_DATI` > portatile > Documenti). Se la cartella è temporanea (tipico: `.exe` aperto dentro lo ZIP scaricato) all'avvio compare un avviso e nel pannello Backup una nota gialla, perché Windows la svuota. Il portatile decomprime il programma in `%TEMP%` (di default cartella con l'id della compilazione, `portable.unpackDirName` di electron-builder) |
 | Dove stanno i dati (browser) | IndexedDB del browser | Solo per la versione browser; per questo c'è «Esporta l'archivio completo» |
 | Importi | Sempre **centesimi interi** | Nessun errore di arrotondamento; le ripartizioni usano il metodo del resto maggiore, quindi la somma torna sempre esatta |
 | Scaglioni | **Nessuno inventato**: l'archivio parte senza scaglioni e le provvigioni sono a zero finché non li inserisce lui. «Aggiungi scaglione» propone 0 € → 30%, 10.000 € → 35%, 20.000 € → 40% solo come valori di partenza | I numeri veri li conosce solo l'utente |
@@ -62,7 +62,7 @@ Regole da non rompere:
 ```
 cd gestione-immobiliare
 npm ci
-npm test                  # 85 prove su calcoli, date, formati, archivio, host file (circa 1 s)
+npm test                  # 91 prove su calcoli, date, formati, archivio, host file, icone (circa 1 s)
 npm run test:e2e          # costruisce e prova ogni schermata nel browser (Chromium + Playwright), circa 4 minuti
 GI_RALLENTA=4 npm run test:e2e   # lo stesso con il browser 4 volte più lento
 GI_RITARDO=150 npm run test:e2e  # lo stesso con eventi e scritture su disco in ritardo di 150 ms (scova le letture troppo presto)
