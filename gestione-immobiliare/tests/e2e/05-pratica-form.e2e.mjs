@@ -15,7 +15,8 @@ describe('Nuova pratica e modifica', () => {
   async function apriNuova() {
     const p = app.pagina;
     await p.evaluate(() => { location.hash = '#/pratiche'; });
-    await p.waitForTimeout(120);
+    // o compare la domanda "uscire senza salvare?" (modulo sporco) oppure si apre l'archivio
+    await p.waitForFunction(() => document.querySelector('dialog.modale[open]') || document.querySelector('#contenuto h1')?.textContent === 'Archivio pratiche');
     if (await finestra(p).count()) await bottoneFinestra(p, 'Esci senza salvare').click();
     await vai(p, '#/nuova');
     await p.waitForSelector('#form-pratica');

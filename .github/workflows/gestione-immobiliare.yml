@@ -104,6 +104,29 @@ jobs:
             gestione-immobiliare/release/*.exe
           if-no-files-found: error
 
+      # L'installatore vero: lo si esegue in silenzio, si avvia il programma installato (stessa prova di sopra) e lo si disinstalla.
+      # Dopo il salvataggio dei file, cosi' i file restano scaricabili anche se questo passaggio dovesse fallire.
+      - name: Installa con l'installatore, prova il programma installato e disinstalla
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem release -Filter '*Installazione.exe' | Select-Object -First 1).FullName
+          $dest = Join-Path $env:RUNNER_TEMP 'GI-installato'
+          Write-Host "Installo $setup in $dest"
+          Start-Process -FilePath $setup -ArgumentList '/S', "/D=$dest" -Wait
+          $exe = Join-Path $dest 'Gestione Immobiliare.exe'
+          for ($i = 0; $i -lt 60 -and -not (Test-Path $exe); $i++) { Start-Sleep -Seconds 1 }
+          if (-not (Test-Path $exe)) { throw "L'installatore non ha creato $exe" }
+          Get-ChildItem $dest | Select-Object Name | Format-Table -HideTableHeaders
+          $env:GI_EXE = $exe
+          node --test --test-timeout=300000 tests/electron/programma.e2e.mjs
+          if ($LASTEXITCODE -ne 0) { throw "La prova del programma installato e' fallita" }
+          $disinstalla = Join-Path $dest 'Uninstall Gestione Immobiliare.exe'
+          if (-not (Test-Path $disinstalla)) { throw "Manca il programma di disinstallazione: $disinstalla" }
+          Start-Process -FilePath $disinstalla -ArgumentList '/S' -Wait
+          for ($i = 0; $i -lt 60 -and (Test-Path $exe); $i++) { Start-Sleep -Seconds 1 }
+          if (Test-Path $exe) { throw "La disinstallazione non ha rimosso il programma" }
+          Write-Host 'Installazione, prova e disinstallazione riuscite.'
+
   pubblica:
     name: Pubblica la versione
     if: startsWith(github.ref, 'refs/tags/v')

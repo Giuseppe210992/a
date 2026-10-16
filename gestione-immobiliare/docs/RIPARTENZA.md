@@ -63,7 +63,8 @@ cd gestione-immobiliare
 npm ci
 npm test                  # 85 prove su calcoli, date, formati, archivio, host file (circa 1 s)
 npm run test:e2e          # costruisce e prova ogni schermata nel browser (Chromium + Playwright), circa 4 minuti
-GI_RALLENTA=4 npm run test:e2e   # lo stesso con il browser 4 volte più lento (scova le attese sbagliate)
+GI_RALLENTA=4 npm run test:e2e   # lo stesso con il browser 4 volte più lento
+GI_RITARDO=150 npm run test:e2e  # lo stesso con eventi e scritture su disco in ritardo di 150 ms (scova le letture troppo presto)
 npm run programma         # apre il programma Electron dai sorgenti
 npm run test:programma    # prova il programma Electron (su Linux: xvfb-run -a npm run test:programma)
 npm run pacchetto         # crea installatore e versione portatile (da farsi su Windows)
@@ -73,7 +74,8 @@ Le prove usano un orologio fisso (16/10/2026) e un profilo persistente per simul
 
 ## 5. Trappole già incontrate
 
-- Un test che legge lo schermo subito dopo un clic può vincere o perdere una gara con il ridisegno. Si usa `conNavigazione()` (aspetta il contatore `data-montaggi` che il router scrive su `#contenuto`) e `attendiNotifica()` (considera solo notifiche comparse dopo l'ultimo clic). I tre test falliti nella prima esecuzione su GitHub erano di questo tipo; si riproducono con `GI_RALLENTA`.
+- Un test che legge lo schermo subito dopo un clic può vincere o perdere una gara con il ridisegno. Si usano `vai()` e `conNavigazione()` (aspettano il contatore `data-montaggi` che il router scrive su `#contenuto`), `attendiQuiete()` (aspetta che la pagina smetta di cambiare) e `attendiNotifica()` (considera solo notifiche comparse dopo l'ultimo clic). Niente pause fisse, salvo nei controlli «non deve succedere nulla».
+- I tre test falliti nella prima esecuzione su GitHub (su 168; in locale passavano tutti) **non si riproducevano nemmeno rallentando la CPU** (`GI_RALLENTA=4`): la causa era l'ordine degli eventi, non la lentezza. Si riproducono invece con `GI_RITARDO=150`, che ritarda il cambio di schermata, i timer a zero e la conferma di scrittura su disco di 150 ms (per il terzo serve anche una notifica che resti visibile più a lungo): stessi messaggi di errore di GitHub. Dopo la correzione le prove passano anche così. Usare `GI_RITARDO` per verificare ogni nuova prova.
 - Con lo stesso indirizzo (`#/pratiche/5` → `#/pratiche/5`) la schermata non si ricostruisce: `vai()` nei test passa da un indirizzo sconosciuto; nel programma c'è `rimonta()` (usato da «Salva e inserisci un'altra»).
 - Pulsanti nativi dentro `<dialog>`: il focus deve restare nella finestra (c'è una trappola Tab in `apriModale`).
 - Il browser cambia `Date` nei test: non confrontare date con l'orologio reale.

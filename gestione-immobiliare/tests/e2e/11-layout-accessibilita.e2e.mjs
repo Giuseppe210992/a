@@ -103,7 +103,6 @@ describe('Adattamento agli schermi', () => {
         const problemi = [];
         for (const rotta of ROTTE(id)) {
           await vai(p, rotta);
-          await p.waitForTimeout(120);
           const r = await p.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
           if (r.sw > r.cw + 1) problemi.push(`${rotta}: scorrimento orizzontale (${r.sw} > ${r.cw})`);
           const fuori = await p.evaluate(SPORGENZE);
@@ -212,7 +211,6 @@ describe('Tema chiaro e scuro: contrasto dei testi', () => {
         const problemi = [];
         for (const rotta of ROTTE(id)) {
           await vai(p, rotta);
-          await p.waitForTimeout(200);
           const r = await p.evaluate(CONTRASTO);
           for (const x of r) problemi.push(`${rotta} → ${x}`);
         }

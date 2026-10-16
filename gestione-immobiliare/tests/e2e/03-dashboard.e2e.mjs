@@ -90,7 +90,7 @@ describe('Dashboard: riquadri, filtri e grafici', () => {
     await p.click('.periodo-btn');
     await p.click('.sel-periodo [role="tab"]:has-text("Intervallo")');
     const campi = p.locator('.sel-periodo .campo-data input.input');
-    await p.waitForTimeout(60);
+    await p.waitForFunction(() => /01\/10\/2026\s*–\s*16\/10\/2026/.test(document.querySelector('.tb-periodo')?.textContent ?? ''));
     const etichetta = async () => rimuoviSpazi(await p.textContent('.tb-periodo'));
     const iniziale = await etichetta(); // 01/10/2026 – 16/10/2026 (proposto: dall'inizio del mese a oggi)
     assert.match(iniziale, /01\/10\/2026 – 16\/10\/2026/);

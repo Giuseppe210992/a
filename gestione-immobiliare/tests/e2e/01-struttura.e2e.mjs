@@ -174,7 +174,6 @@ describe('Struttura e navigazione', () => {
     const p = app.pagina;
     for (const hash of ['#/', '#/nuova', '#/pratiche', '#/provvigioni', '#/cumulo', '#/statistiche', '#/backup', '#/impostazioni']) {
       await vai(p, hash);
-      await p.waitForTimeout(150);
       const corpo = await p.locator('#contenuto').innerText();
       assert.ok(!/\bnull\b|\bundefined\b|\bNaN\b/.test(corpo), `testo sospetto in ${hash}: ${corpo.match(/.{0,30}(null|undefined|NaN).{0,30}/)?.[0]}`);
     }

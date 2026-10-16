@@ -86,10 +86,10 @@ La differenza (500 €) è il motivo per cui il metodo va scelto con attenzione,
 | Componente | Stato | Come |
 |---|---|---|
 | Calcoli (scaglioni, cumulo, provvigioni, ripartizioni, date, formati) e archivio | ✅ Verificato | 85 prove automatiche; i numeri della dashboard sono confrontati con un calcolo fatto a mano, indipendente dal programma |
-| Tutte le schermate e ogni pulsante nel browser (Chromium) | ✅ Verificato | 168 prove nel browser su 15 pratiche di prova, anche con il computer rallentato 4 volte (168 su 168 superate in entrambi i modi) |
+| Tutte le schermate e ogni pulsante nel browser (Chromium) | ✅ Verificato | 168 prove nel browser su 15 pratiche di prova: 168 su 168 superate in locale (anche con il computer rallentato 4 volte) e **sul server di GitHub** (Chromium su Linux) |
 | Dati salvati dopo chiusura e riapertura | ✅ Verificato | Browser (profilo persistente, 3 sessioni di fila, archivio danneggiato e recupero) e programma Electron su file vero |
 | Programma Electron con file reali | ✅ Verificato su **Linux** | 5 prove: si avvia usando il file su disco; inserimento di pratica, incasso, esportazione e backup; chiusura e riapertura con i dati ancora presenti; importazione e ripristino sul file vero; una seconda copia del programma non si apre |
-| Costruzione di installatore e portatile + avvio del programma impacchettato su **Windows** | ⏳ **In verifica**: l'esecuzione automatica su GitHub non è ancora conclusa | Esecuzione automatica su GitHub (Windows Server) |
+| Costruzione di installatore e portatile + avvio del programma impacchettato su **Windows** | ✅ Verificato su Windows Server (GitHub) | A ogni modifica GitHub costruisce i due file `.exe` e **avvia il programma impacchettato** su un Windows vero: 5 prove su 5 superate (dati su file, chiusura e riapertura, importazione e ripristino, seconda copia rifiutata). L'esecuzione di installatore e versione portatile *veri* è ⏳ in verifica nell'esecuzione successiva |
 | Aspetto e contrasto: 5 larghezze (390, 768, 1024, 1366, 1920 px), tema chiaro e scuro, uso da tastiera | ✅ Verificato in Chromium | Prove di layout, contrasto (≥ 4,5:1) e tastiera |
 | Funzionamento senza Internet | ✅ Verificato | Nessuna richiesta di rete; la pagina vieta per regola ogni connessione esterna |
 | Installazione su un **PC Windows vero** (SmartScreen, antivirus, scala dello schermo) | ❌ **Non verificato** | Serve la tua prova: [docs/PROVA-SU-WINDOWS.md](docs/PROVA-SU-WINDOWS.md) |
@@ -106,6 +106,7 @@ npm ci
 npm test                          # prove sui calcoli e sull'archivio
 npm run test:e2e                  # prove nel browser (serve: npx playwright-core install chromium)
 GI_RALLENTA=4 npm run test:e2e    # idem con il browser 4 volte più lento
+GI_RITARDO=150 npm run test:e2e   # idem con eventi e scritture su disco in ritardo (scova le letture troppo presto)
 npm run programma                 # apre il programma (Electron) dai sorgenti
 npm run test:programma            # prova il programma Electron
 npm run pacchetto                 # installatore + portatile (su Windows)

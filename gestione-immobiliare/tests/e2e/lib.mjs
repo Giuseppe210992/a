@@ -33,6 +33,27 @@ function scriptOrologio(adesso) {
   })();`;
 }
 
+/**
+ * GI_RITARDO=150 simula un computer in cui tutto risponde con comodo: il cambio di schermata (evento "hashchange"), i timer a zero
+ * e la conferma di scrittura sul disco (IndexedDB) arrivano 150 ms piu' tardi. Il programma deve comportarsi allo stesso modo, solo piu' lentamente:
+ * una prova che fallisce solo cosi' sta leggendo lo schermo troppo presto.
+ */
+function scriptRitardo(ms) {
+  return `(() => {
+    const ms = ${ms};
+    const st = window.setTimeout;
+    const aggiungi = EventTarget.prototype.addEventListener;
+    EventTarget.prototype.addEventListener = function (tipo, fn, opz) {
+      if (tipo === 'hashchange' && typeof fn === 'function') { const orig = fn; fn = function (e) { st.call(window, () => orig.call(this, e), ms); }; }
+      return aggiungi.call(this, tipo, fn, opz);
+    };
+    window.setTimeout = function (fn, t, ...a) { return st.call(window, fn, (t === undefined || t <= 1) ? ms : t, ...a); };
+    const d = Object.getOwnPropertyDescriptor(IDBTransaction.prototype, 'oncomplete');
+    if (d && d.set) Object.defineProperty(IDBTransaction.prototype, 'oncomplete', { configurable: true, get: d.get,
+      set(fn) { d.set.call(this, typeof fn === 'function' ? function (e) { st.call(window, () => fn.call(this, e), ms); } : fn); } });
+  })();`;
+}
+
 // Nei test non si apre mai il selettore di file del sistema: si usa il download classico.
 const SCRIPT_INIZIALE = `
   try { delete window.showSaveFilePicker; } catch (e) {}
@@ -68,6 +89,8 @@ export async function apriContesto({ profilo = null, viewport = { width: 1440, h
   }
   if (adesso) await ctx.addInitScript(scriptOrologio(adesso));
   await ctx.addInitScript(SCRIPT_INIZIALE);
+  const ritardo = Number(process.env.GI_RITARDO || 0);
+  if (ritardo > 0) await ctx.addInitScript(scriptRitardo(ritardo));
   const errori = [];
   const seguiPagina = (p) => {
     p.on('console', (m) => { if (m.type() === 'error') errori.push(`console: ${m.text()}`); });
@@ -102,6 +125,21 @@ export function cartellaTemp(prefisso = 'gi-test-') {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefisso));
 }
 
+/**
+ * Attende che la pagina smetta di cambiare: nessuna modifica al contenuto per `ms` millisecondi (con un tetto di sicurezza).
+ * Serve al posto delle pause fisse dopo un cambio di schermata o di filtro.
+ */
+export async function attendiQuiete(pagina, ms = 100, massimo = 5000) {
+  await pagina.evaluate(([quiete, tetto]) => new Promise((fatto) => {
+    let timer = null;
+    const osservatore = new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(fine, quiete); });
+    const limite = setTimeout(fine, tetto);
+    function fine() { osservatore.disconnect(); clearTimeout(timer); clearTimeout(limite); fatto(); }
+    osservatore.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
+    timer = setTimeout(fine, quiete);
+  }), [ms, massimo]);
+}
+
 /** Quante volte il programma ha disegnato una schermata (lo scrive il router su #contenuto). */
 export const montaggi = (pagina) => pagina.evaluate(() => Number(document.querySelector('#contenuto')?.dataset.montaggi ?? 0));
 
@@ -120,10 +158,10 @@ export async function vai(pagina, hash) {
     await conNavigazione(pagina, () => pagina.evaluate(() => { location.hash = '#/indirizzo-per-ricaricare'; }));
     await pagina.waitForFunction(() => location.hash === '#/');
     // l'indirizzo sconosciuto porta alla dashboard appena disegnata: se la destinazione era quella, siamo gia' arrivati
-    if (hash === '#/') { await pagina.waitForTimeout(60); return; }
+    if (hash === '#/') { await attendiQuiete(pagina, 80); return; }
   }
   await conNavigazione(pagina, () => pagina.evaluate((h) => { location.hash = h; }, hash));
-  await pagina.waitForTimeout(60);
+  await attendiQuiete(pagina, 80);
 }
 
 /** Importo scritto in italiano ("1.234,56 €" o "1.235 €") -> centesimi. */
@@ -154,23 +192,23 @@ export async function scegliPeriodo(pagina, scorciatoia) {
   await pagina.click(`.sel-periodo .sel-scorciatoie button:has-text("${scorciatoia}")`);
   await pagina.keyboard.press('Escape');
   await pagina.waitForSelector('.sel-periodo', { state: 'detached' });
-  await pagina.waitForTimeout(80);
+  await attendiQuiete(pagina, 80);
 }
 
 export async function scegliZona(pagina, nome) {
   await pagina.selectOption('#filtro-zona', nome === null ? '' : { label: nome });
-  await pagina.waitForTimeout(80);
+  await attendiQuiete(pagina, 80);
 }
 
 export async function scegliCollaboratore(pagina, nome) {
   await pagina.selectOption('#filtro-collab', nome === null ? '' : { label: nome });
-  await pagina.waitForTimeout(80);
+  await attendiQuiete(pagina, 80);
 }
 
 export async function azzeraFiltri(pagina) {
   const bottone = pagina.locator('.striscia-filtri button:has-text("Azzera filtri")');
   if (await bottone.isVisible()) await bottone.click();
-  await pagina.waitForTimeout(80);
+  await attendiQuiete(pagina, 80);
 }
 
 /** Valori numerici dei sei riquadri come centesimi (o numero intero per i conteggi). */

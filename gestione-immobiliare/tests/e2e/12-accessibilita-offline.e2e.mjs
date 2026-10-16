@@ -57,7 +57,6 @@ describe('Accessibilità', () => {
     const problemi = [];
     for (const rotta of ROTTE(id)) {
       await vai(p, rotta);
-      await p.waitForTimeout(100);
       const r = await p.evaluate(() => {
         const ids = [...document.querySelectorAll('[id]')].map((e) => e.id);
         const doppi = ids.filter((x, i) => ids.indexOf(x) !== i);
@@ -83,7 +82,6 @@ describe('Accessibilità', () => {
     const problemi = [];
     for (const rotta of ROTTE(id)) {
       await vai(p, rotta);
-      await p.waitForTimeout(100);
       for (const x of await p.evaluate(SENZA_NOME)) problemi.push(`${rotta}: ${x}`);
     }
     assert.deepEqual(problemi, []);
@@ -187,7 +185,7 @@ describe('Senza connessione a Internet', () => {
       await apriApp(pagina);
       await inserisciDatiProva(pagina);
       const id = await idPratica(pagina, '2026/011');
-      for (const rotta of ROTTE(id)) { await vai(pagina, rotta); await pagina.waitForTimeout(80); }
+      for (const rotta of ROTTE(id)) await vai(pagina, rotta);
       // esportazione e backup funzionano offline
       await vai(pagina, '#/');
       await pagina.click('#op-backup');
