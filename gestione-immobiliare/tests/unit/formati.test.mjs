@@ -10,7 +10,10 @@ const n = (s) => s.replace(/ /g, ' ');
 test('importi in formato italiano', () => {
   assert.equal(n(eur(123456)), '1.234,56 €');
   assert.equal(n(eur(0)), '0,00 €');
-  assert.equal(n(eur(-50)), '-0,50 €');
+  assert.equal(n(eur(-50)), '−0,50 €'); // segno meno tipografico, come eurSegno
+  assert.equal(n(eur(-0)), '0,00 €');
+  assert.equal(n(eurInt(-123456)), '−1.235 €');
+  assert.equal(n(eurInt(-20)), '0 €');
   assert.equal(n(eur(100000000)), '1.000.000,00 €');
   assert.equal(n(eurInt(123456)), '1.235 €');
   assert.equal(eur(null), '—');

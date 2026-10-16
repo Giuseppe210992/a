@@ -8,13 +8,14 @@ import path from 'node:path';
 const radice = path.dirname(fileURLToPath(import.meta.url));
 const uscita = path.join(radice, 'dist', 'web');
 const osserva = process.argv.includes('--watch');
+const leggibile = process.argv.includes('--leggibile'); // senza minificazione: utile per leggere gli errori
 const pkg = JSON.parse(await readFile(path.join(radice, 'package.json'), 'utf8'));
 
 const opzioniComuni = {
   absWorkingDir: radice,
   bundle: true,
   logLevel: 'info',
-  minify: !osserva,
+  minify: !osserva && !leggibile,
   legalComments: 'none',
 };
 

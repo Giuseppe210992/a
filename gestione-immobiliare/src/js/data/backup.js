@@ -86,7 +86,7 @@ export async function backupAutomatico(app) {
 export async function ripristinaBackup(app, id) {
   const bytes = await app.driver.leggiCopia(id);
   const esito = ispezionaBytes(app.SQL, bytes);
-  if (!esito.valido) throw new Error(`La copia non puo' essere ripristinata: ${esito.motivo}`);
+  if (!esito.valido) throw new Error(`La copia non può essere ripristinata: ${esito.motivo}`);
   const sicurezza = await creaBackup(app, 'pre-ripristino');
   await app.archivio.sostituisciCon(bytes);
   await app.archivio.transazione(() => {

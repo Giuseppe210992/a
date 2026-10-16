@@ -132,7 +132,7 @@ export function migra(db) {
   const partenza = versioneDatabase(db);
   if (partenza > VERSIONE_SCHEMA) {
     throw new Error(
-      `Questo archivio e' stato creato da una versione piu' recente del programma (schema ${partenza}, questa versione conosce lo schema ${VERSIONE_SCHEMA}). Aggiorna il programma.`,
+      `Questo archivio è stato creato da una versione più recente del programma (schema ${partenza}, questa versione conosce lo schema ${VERSIONE_SCHEMA}). Aggiorna il programma.`,
     );
   }
   for (const m of MIGRAZIONI) {

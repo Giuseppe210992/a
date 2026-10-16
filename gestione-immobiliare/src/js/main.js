@@ -38,9 +38,44 @@ function schermataErrore(radice, titolo, messaggio) {
     h('h1', { style: { fontSize: '22px', marginBottom: '8px' } }, titolo), h('p', null, messaggio))));
 }
 
+const NOME_BLOCCO = 'gestione-immobiliare-archivio';
+
+/**
+ * Nel browser l'archivio sta in un solo posto: due finestre aperte insieme si sovrascriverebbero a vicenda
+ * (vince l'ultima che salva). Una sola finestra alla volta ottiene il blocco; le altre aspettano.
+ * Restituisce false se un'altra finestra sta già usando l'archivio.
+ */
+let bloccoPreso = false;
+async function assicuraBloccoArchivio() {
+  if (!bloccoPreso) bloccoPreso = await prendiBloccoArchivio();
+  return bloccoPreso;
+}
+
+function prendiBloccoArchivio() {
+  if (!navigator.locks || !navigator.locks.request) return Promise.resolve(true); // browser vecchio: nessuna protezione possibile
+  return new Promise((risolvi) => {
+    navigator.locks.request(NOME_BLOCCO, { ifAvailable: true }, (blocco) => {
+      if (!blocco) { risolvi(false); return undefined; }
+      risolvi(true);
+      return new Promise(() => {}); // il blocco resta finché la finestra è aperta
+    }).catch(() => risolvi(true));
+  });
+}
+
+function schermataGiaAperto(radice) {
+  radice.className = '';
+  radice.replaceChildren(h('div', { class: 'avvio' }, h('div', { class: 'avvio-box', style: { maxWidth: '540px', padding: '24px' } },
+    h('h1', { style: { fontSize: '22px', marginBottom: '8px' } }, 'Gestione Immobiliare è già aperto in un\'altra finestra'),
+    h('p', null, 'I dati si possono usare da una sola finestra alla volta: due finestre insieme potrebbero cancellarsi a vicenda le modifiche.'),
+    h('p', { style: { marginTop: '8px' } }, 'Chiudi l\'altra finestra (o scheda) e premi “Riprova”.'),
+    h('div', { class: 'riga-azioni', style: { marginTop: '16px' } },
+      h('button', { type: 'button', class: 'btn btn-primario', onclick: async () => { if (await assicuraBloccoArchivio()) avviaConGestioneErrori(); } }, 'Riprova')))));
+}
+
 async function avvia() {
   const radice = document.getElementById('app');
   applicaTemaIniziale();
+  if (!hostDisponibile() && !(await assicuraBloccoArchivio())) { schermataGiaAperto(radice); return; }
 
   let SQL;
   try {
@@ -113,8 +148,11 @@ async function avvia() {
   window.__gi = { app, modello, impostazioni, shell, api: { ...anagrafiche, ...pratiche, ...impostazioniRepo, backup } };
 }
 
-avvia().catch((e) => {
-  console.error(e);
-  const radice = document.getElementById('app');
-  if (radice) schermataErrore(radice, 'Si è verificato un errore', e.message);
-});
+function avviaConGestioneErrori() {
+  avvia().catch((e) => {
+    console.error(e);
+    const radice = document.getElementById('app');
+    if (radice) schermataErrore(radice, 'Si è verificato un errore', e.message);
+  });
+}
+avviaConGestioneErrori();

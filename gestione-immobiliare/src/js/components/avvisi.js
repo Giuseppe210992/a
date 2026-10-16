@@ -17,7 +17,7 @@ export function integritaCorrente() {
 }
 
 function giorniDa(iso) {
-  return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)); // mai negativo, anche se l'orologio del computer è stato spostato
 }
 
 /** Restituisce l'elenco degli avvisi, dal piu' urgente. */

@@ -24,14 +24,15 @@ export async function schermataRecupero(radice, { app, SQL, driver, motivo, riav
   const righe = copie.map((c) => h('div', { class: 'riga-elenco' },
     h('div', { class: 'nome' }, icona('database-backup', { dimensione: 20 }), h('div', null, `Copia del ${dataOra(c.creatoIl)}`, h('br'), h('small', null, `${TIPI_COPIA[c.tipo] ?? c.tipo} · ${dimensioneFile(c.dimensione)}`))),
     h('button', { type: 'button', class: 'btn btn-primario btn-sm', onclick: async (ev) => {
-      ev.currentTarget.disabled = true;
+      const bottone = ev.currentTarget; // dopo un'attesa currentTarget non è più disponibile
+      bottone.disabled = true;
       try {
         const bytes = await driver.leggiCopia(c.id);
         const esito = ispezionaBytes(SQL, bytes);
-        if (!esito.valido) { errore(`Questa copia non è utilizzabile: ${esito.motivo}`); ev.currentTarget.disabled = false; return; }
+        if (!esito.valido) { errore(`Questa copia non è utilizzabile: ${esito.motivo}`); bottone.disabled = false; return; }
         const sì = await conferma({ titolo: 'Ripartire da questa copia?', messaggio: `La copia contiene ${esito.riepilogo.pratiche} pratiche. Il file illeggibile viene conservato.`, tipo: 'primario', etichettaConferma: 'Ripristina' });
-        if (sì) await sostituisciArchivio(bytes); else ev.currentTarget.disabled = false;
-      } catch (e) { errore(e.message); ev.currentTarget.disabled = false; }
+        if (sì) await sostituisciArchivio(bytes); else bottone.disabled = false;
+      } catch (e) { errore(e.message); bottone.disabled = false; }
     } }, 'Ripristina'),
   ));
   radice.replaceChildren(h('div', { class: 'avvio' }, h('div', { class: 'card card-corpo', style: { maxWidth: '640px', width: '92vw' } },
@@ -53,11 +54,14 @@ export async function schermataRecupero(radice, { app, SQL, driver, motivo, riav
       h('button', { type: 'button', class: 'btn btn-pericolo-ghost', onclick: async () => {
         const sì = await conferma({ titolo: 'Ripartire da un archivio vuoto?', messaggio: 'Il file illeggibile viene conservato tra le copie di sicurezza, ma il programma ripartirà senza dati.', etichettaConferma: 'Archivio vuoto', frase: 'VUOTO' });
         if (!sì) return;
-        const db = new SQL.Database();
-        const { migra } = await import('../data/schema.js');
-        migra(db);
-        const bytes = db.export();
-        db.close();
+        // Un archivio nuovo, uguale a quello del primo avvio (con Luca e Giuseppe), preparato in memoria.
+        const { Archivio } = await import('../data/db.js');
+        const { DriverMemoria } = await import('../data/drivers/memoria.js');
+        const { seedPrimoAvvio } = await import('../data/inizializza.js');
+        const nuovo = await new Archivio(SQL, new DriverMemoria()).apri();
+        await seedPrimoAvvio(nuovo);
+        const bytes = nuovo.esporta();
+        nuovo.chiudi();
         await sostituisciArchivio(bytes);
       } }, 'Riparti da un archivio vuoto…'),
     ))));

@@ -16,7 +16,7 @@ const ETICHETTE_EVENTO = {
   collaboratore_eliminato: 'Collaboratore eliminato', zona_eliminata: 'Zona eliminata', ripristino: 'Ripristino di un backup', importazione: 'Importazione di un backup', azzeramento: 'Archivio azzerato',
 };
 
-function giorniDa(iso) { return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000); }
+function giorniDa(iso) { return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)); }
 
 async function ripristinaConferma(copia) {
   let bytes;

@@ -140,7 +140,7 @@ export const dashboard = {
         nota: r.maturateCent > 0 ? `Liquidate ${eurInt(r.liquidateCent)} su ${eurInt(r.maturateCent)} maturate` : 'Nessuna provvigione maturata nel periodo', href: '#/provvigioni?tab=dettaglio&solo=da-liquidare',
       }),
       riquadro({
-        etichetta: 'Valore immobili venduti', nomeIcona: 'building-2', valore: eurInt(r.valoreVendutoCent), titolo: eur(r.valoreVendutoCent),
+        etichetta: 'Valore complessivo immobili venduti', nomeIcona: 'building-2', valore: eurInt(r.valoreVendutoCent), titolo: eur(r.valoreVendutoCent),
         delta: deltaTesto(r.valoreVendutoCent, rp?.valoreVendutoCent, prec), spark: sparkline(sValore.valori, { etichetta: 'Valore venduto, ultimi 12 mesi', formato: eur, etichette: sValore.etichette }),
         nota: r.concluse ? `Prezzo medio ${eurInt(Math.round(r.valoreVendutoCent / r.concluse))}` : 'Somma dei prezzi di vendita', href: queryArchivio(ctx, { stato: 'conclusa' }),
       }),
@@ -275,8 +275,8 @@ export const dashboard = {
     gPrezzi.aggiorna({
       spec,
       cifre: cp.totale ? [{ etichetta: 'Variazione media', valore: pctSegno(cp.mediaDeltaPct) }, { etichetta: 'Pratiche confrontate', valore: `${num(cp.totale)}${cp.totale > cp.righe.length ? ` (ultime ${cp.righe.length})` : ''}` }] : null,
-      nota: cp.mancanti > 0 && cp.totale ? `${cp.mancanti} ${cp.mancanti === 1 ? 'pratica conclusa non ha' : 'pratiche concluse non hanno'} il prezzo di acquisto e non compare${cp.mancanti === 1 ? '' : 'ono'} nel confronto.` : null,
-      vuoto: cp.totale ? null : (cp.mancanti ? `Nessuna delle ${cp.mancanti} pratiche concluse nel periodo ha il prezzo di acquisto. Inseriscilo nella scheda della pratica per vedere il confronto.` : 'Nessuna pratica con prezzo di acquisto e di vendita nel periodo.'),
+      nota: cp.mancanti > 0 && cp.totale ? `${cp.mancanti} ${cp.mancanti === 1 ? 'pratica conclusa non ha' : 'pratiche concluse non hanno'} entrambi i prezzi (acquisto e vendita) e non compare${cp.mancanti === 1 ? '' : 'ono'} nel confronto.` : null,
+      vuoto: cp.totale ? null : (cp.mancanti ? `Nessuna delle ${cp.mancanti} pratiche concluse nel periodo ha sia il prezzo di acquisto sia quello di vendita. Inseriscili nella scheda della pratica per vedere il confronto.` : 'Nessuna pratica con prezzo di acquisto e di vendita nel periodo.'),
       tabella: () => h('div', { class: 'tabella-wrap' }, h('table', { class: 'tabella tabella-compatta' },
         h('caption', { class: 'solo-lettori' }, 'Prezzo di acquisto e di vendita'),
         h('thead', null, h('tr', null, h('th', null, 'Pratica'), h('th', { class: 'num' }, 'Acquisto'), h('th', { class: 'num' }, 'Vendita'), h('th', { class: 'num' }, 'Differenza'))),

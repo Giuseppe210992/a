@@ -2,7 +2,7 @@
 import { h, monta, ritarda } from '../core/dom.js';
 import { icona } from '../core/icone.js';
 import { app, modello, impostazioni } from '../core/app.js';
-import { naviga } from '../core/router.js';
+import { naviga, rimonta } from '../core/router.js';
 import { oggi } from '../core/dates.js';
 import { eur, eurInt, pct, num, meseAnno, leggiPercentuale, numDec } from '../core/format.js';
 import { apriModale, conferma, ok as notificaOk, segnalaErrore, errore as notificaErrore } from '../core/ui.js';
@@ -294,9 +294,7 @@ function montaForm(contenitore, { pratica = null }) {
       sporco = false;
       notificaOk(`Pratica ${b.codice} ${modifica ? 'aggiornata' : 'salvata'}.`);
       if (dopo === 'nuova') {
-        naviga('#/nuova');
-        // se si era già in /nuova il router ridisegna
-        if (location.hash === '#/nuova') location.reload();
+        rimonta(); // modulo vuoto, pronto per la pratica successiva
       } else {
         naviga(`#/pratiche/${id}`);
       }

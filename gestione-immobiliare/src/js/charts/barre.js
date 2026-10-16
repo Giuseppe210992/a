@@ -89,6 +89,8 @@ function disegna(host, spec, W, stato, ridisegna) {
     const c = stato.attivo < 0 ? 0 : stato.attivo;
     if (ev.key === 'ArrowDown') { ev.preventDefault(); attiva(Math.min(n - 1, c + 1)); }
     else if (ev.key === 'ArrowUp') { ev.preventDefault(); attiva(Math.max(0, c - 1)); }
+    else if (ev.key === 'Home') { ev.preventDefault(); attiva(0); }
+    else if (ev.key === 'End') { ev.preventDefault(); attiva(n - 1); }
     else if (ev.key === 'Escape') attiva(-1);
   });
 

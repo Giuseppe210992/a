@@ -78,14 +78,14 @@ export function creaTooltip(host) {
   host.append(el);
   return {
     mostra(x, y, intestazione, righe, nota = null) {
-      el.replaceChildren(
+      el.replaceChildren(...[
         h('div', { class: 'g-tt-testa' }, intestazione),
         ...righe.map((r) => h('div', { class: 'g-tt-riga' },
           r.colore !== undefined ? h('span', { class: `g-tt-chiave g-serie-${r.colore}${r.linea ? ' linea' : ''}`, 'aria-hidden': 'true' }) : null,
           h('span', { class: 'g-tt-nome' }, r.nome),
           h('strong', { class: 'g-tt-valore' }, r.valore))),
         nota ? h('div', { class: 'g-tt-nota' }, nota) : null,
-      );
+      ].filter(Boolean)); // replaceChildren scriverebbe "null" come testo
       el.hidden = false;
       const w = el.offsetWidth, hh = el.offsetHeight;
       const maxX = host.clientWidth - w - 4;

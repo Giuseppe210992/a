@@ -50,14 +50,26 @@ export function apriSelettorePeriodo(ancora) {
     } else if (p.tipo === 'intervallo') {
       const da = campoData({ etichetta: 'Dal', valore: p.da || inizioMese(chiaveMese(t)) });
       const a = campoData({ etichetta: 'Al', valore: p.a || t });
-      const applica = () => {
-        if (da.get() && a.get()) { impostaFiltri({ periodo: { tipo: 'intervallo', da: da.get(), a: a.get() } }); aggiornaEtichette(); }
+      // Il periodo cambia solo con due date valide e nell'ordine giusto; altrimenti si spiega cosa non va.
+      const applica = (conMessaggi) => {
+        const d = da.get();
+        const f = a.get();
+        if (conMessaggi) {
+          da.errore(da.input.value.trim() && !d ? 'Data non valida: scrivila come gg/mm/aaaa.' : null);
+          a.errore(a.input.value.trim() && !f ? 'Data non valida: scrivila come gg/mm/aaaa.' : null);
+        }
+        if (!d || !f) { pop?.riposiziona(); return; }
+        if (d > f) { a.errore('La data finale è precedente a quella iniziale.'); pop?.riposiziona(); return; }
+        a.errore(null);
+        impostaFiltri({ periodo: { tipo: 'intervallo', da: d, a: f } });
       };
-      da.input.addEventListener('input', applica);
-      a.input.addEventListener('input', applica);
-      da.input.addEventListener('change', applica);
-      a.input.addEventListener('change', applica);
-      if (!p.da || !p.a) setTimeout(applica, 0);
+      da.input.addEventListener('input', () => applica(false));
+      a.input.addEventListener('input', () => applica(false));
+      da.input.addEventListener('blur', () => applica(true));
+      a.input.addEventListener('blur', () => applica(true));
+      da.input.addEventListener('change', () => applica(true));
+      a.input.addEventListener('change', () => applica(true));
+      if (!p.da || !p.a) setTimeout(() => applica(false), 0);
       pannello = h('div', { class: 'sel-riga' }, da.el, a.el);
     } else {
       const lim = modello().limiti;

@@ -105,7 +105,9 @@ function monta() {
   }
   if (alCambioRotta) alCambioRotta(r.vista, r.parametri, r.query);
   window.scrollTo(0, 0);
-  contenitoreVista.focus({ preventScroll: true });
+  // Il focus va alla schermata (per chi usa la tastiera o un lettore di schermo), a meno che la schermata
+  // non abbia già messo il cursore in un suo campo, come fa il modulo di nuova pratica.
+  if (!contenitoreVista.contains(document.activeElement)) contenitoreVista.focus({ preventScroll: true });
 }
 
 /** Ridisegna la schermata corrente (dopo una modifica ai dati o ai filtri). */
@@ -126,6 +128,23 @@ export function ridisegna() {
     contenitoreVista.textContent = `Si è verificato un errore nel mostrare questa schermata: ${e.message}`;
   }
   window.scrollTo(0, y);
+}
+
+/** Ricostruisce da zero la schermata corrente (ad esempio per svuotare un modulo dopo averlo salvato). */
+export function rimonta() {
+  if (!corrente) return;
+  const { vista, parametri, query } = corrente;
+  smonta();
+  contenitoreVista.replaceChildren();
+  corrente = { vista, parametri, query };
+  try {
+    corrente.istanza = vista.monta(contenitoreVista, parametri, query) || {};
+  } catch (e) {
+    console.error(e);
+    corrente.istanza = {};
+    contenitoreVista.textContent = `Si è verificato un errore nel mostrare questa schermata: ${e.message}`;
+  }
+  window.scrollTo(0, 0);
 }
 
 export function rottaCorrente() {

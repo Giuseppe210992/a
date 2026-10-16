@@ -15,7 +15,7 @@ describe('Primo avvio', () => {
     assert.equal(rimuoviSpazi(await kpi(p, 'Totale compensi registrati')), '0 €');
     assert.equal(rimuoviSpazi(await kpi(p, 'Provvigioni maturate')), '0 €');
     assert.equal(rimuoviSpazi(await kpi(p, 'Provvigioni ancora da liquidare')), '0 €');
-    assert.equal(rimuoviSpazi(await kpi(p, 'Valore immobili venduti')), '0 €');
+    assert.equal(rimuoviSpazi(await kpi(p, 'Valore complessivo immobili venduti')), '0 €');
     assert.equal(await kpi(p, 'Pratiche in corso'), '0');
     const stato = await p.evaluate(() => {
       const a = window.__gi.app.archivio;

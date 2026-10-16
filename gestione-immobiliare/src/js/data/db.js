@@ -31,14 +31,14 @@ function aperturaSicura(SQL, bytes) {
 /** Controlla che i byte siano un archivio di Gestione Immobiliare leggibile. */
 export function ispezionaBytes(SQL, bytes) {
   const esito = { valido: false, motivo: null, versione: null, integrita: null, riepilogo: null };
-  if (!bytes || bytes.length < 100) { esito.motivo = 'Il file e\' vuoto o troppo piccolo per essere un archivio.'; return esito; }
+  if (!bytes || bytes.length < 100) { esito.motivo = 'Il file è vuoto o troppo piccolo per essere un archivio.'; return esito; }
   const intestazione = String.fromCharCode(...bytes.slice(0, 15));
-  if (intestazione !== 'SQLite format 3') { esito.motivo = 'Il file non e\' un archivio di Gestione Immobiliare (non e\' un database SQLite).'; return esito; }
+  if (intestazione !== 'SQLite format 3') { esito.motivo = 'Il file non è un archivio di Gestione Immobiliare (non è un database SQLite).'; return esito; }
   let db;
   try {
     db = new SQL.Database(bytes);
   } catch (e) {
-    esito.motivo = 'Il file e\' danneggiato e non puo\' essere aperto.';
+    esito.motivo = 'Il file è danneggiato e non può essere aperto.';
     return esito;
   }
   try {
@@ -46,13 +46,13 @@ export function ispezionaBytes(SQL, bytes) {
     if (app !== ID_APPLICAZIONE) { esito.motivo = 'Questo database non appartiene a Gestione Immobiliare.'; return esito; }
     esito.versione = versioneDatabase(db);
     if (esito.versione > VERSIONE_SCHEMA) {
-      esito.motivo = 'L\'archivio e\' stato creato da una versione piu\' recente del programma.';
+      esito.motivo = 'L\'archivio è stato creato da una versione più recente del programma.';
       return esito;
     }
     const ic = db.exec('PRAGMA integrity_check');
     const risposta = ic.length ? ic[0].values.map((r) => r[0]) : ['ok'];
     esito.integrita = risposta.length === 1 && risposta[0] === 'ok' ? 'ok' : risposta.slice(0, 5).join('; ');
-    if (esito.integrita !== 'ok') { esito.motivo = `Il file e' danneggiato: ${esito.integrita}`; return esito; }
+    if (esito.integrita !== 'ok') { esito.motivo = `Il file è danneggiato: ${esito.integrita}`; return esito; }
     const conta = (tab) => db.exec(`SELECT COUNT(*) FROM ${tab}`)[0].values[0][0];
     const date = db.exec('SELECT MIN(COALESCE(data_rogito, data_pratica)), MAX(COALESCE(data_rogito, data_pratica)) FROM pratiche')[0].values[0];
     esito.riepilogo = {

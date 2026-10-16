@@ -13,16 +13,20 @@ const fmtPct = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 2 });
 const fmtPctVar = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 1 });
 const fmtCompatto = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 1 });
 
+// Segno meno tipografico (−) per i valori negativi, uguale a quello di eurSegno e pctSegno; mai "-0,00 €".
+const conMeno = (testo) => testo.replace('-', '−');
+
 /** 123456 -> "1.234,56 €" */
 export function eur(cent) {
   if (cent === null || cent === undefined || Number.isNaN(cent)) return '—';
-  return fmtEuro.format(cent / 100);
+  return conMeno(fmtEuro.format(cent === 0 ? 0 : cent / 100));
 }
 
 /** 123456 -> "1.235 €" (senza decimali, per riquadri e assi) */
 export function eurInt(cent) {
   if (cent === null || cent === undefined || Number.isNaN(cent)) return '—';
-  return fmtEuroInt.format(cent / 100);
+  const v = Math.round(cent / 100);
+  return conMeno(fmtEuroInt.format(v === 0 ? 0 : cent / 100));
 }
 
 /** Importo con segno esplicito: +1.234,56 € / -1.234,56 € */

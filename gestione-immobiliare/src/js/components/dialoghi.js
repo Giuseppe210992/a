@@ -1,6 +1,6 @@
 // Finestre di dialogo condivise: registra incasso, registra liquidazione, esporta dati,
 // crea backup, importa backup. Usate dalla dashboard, dalle operazioni rapide e dalle schede.
-import { h } from '../core/dom.js';
+import { h, monta } from '../core/dom.js';
 import { icona } from '../core/icone.js';
 import { app, modello, contesto } from '../core/app.js';
 import { naviga } from '../core/router.js';
@@ -49,7 +49,7 @@ export function apriDialogoIncasso({ praticaId = null } = {}) {
     riepilogo.hidden = false;
     const nuovo = importo.get() || 0;
     const residuoDopo = p.totaleLordoCent - p.incassatoCent - nuovo;
-    riepilogo.replaceChildren(
+    monta(riepilogo,
       h('div', { class: 'riga' }, h('span', null, 'Totale dovuto (compensi + IVA)'), h('span', { class: 'valore' }, eur(p.totaleLordoCent))),
       h('div', { class: 'riga' }, h('span', null, 'Già incassato'), h('span', { class: 'valore' }, eur(p.incassatoCent))),
       h('div', { class: 'riga totale' }, h('span', null, nuovo > 0 ? 'Residuo dopo questo incasso' : 'Ancora da incassare'), h('span', { class: `valore ${residuoDopo < 0 ? 'negativo' : ''}` }, eur(nuovo > 0 ? residuoDopo : p.daIncassareCent))),

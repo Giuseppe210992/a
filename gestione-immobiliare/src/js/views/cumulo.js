@@ -99,11 +99,13 @@ export const cumulo = {
     const selAnno = h('select', { class: 'select', 'aria-label': 'Anno', style: { width: '100px', height: '38px' }, onchange: () => imposta(`${selAnno.value}-${selMese.value}`) });
     const vai = (delta) => imposta(aggiungiMesi(mese, delta));
     function imposta(k) { mese = k; scriviPref('cumuloMese', k); history.replaceState(null, '', `#/cumulo?mese=${k}`); disegna(); }
+    const btnOggi = h('button', { type: 'button', class: 'btn btn-secondario', onclick: () => imposta(oggiMese) }, 'Mese corrente');
 
     function disegna() {
       const m = modello();
       const ctx = contesto();
       etichetta.textContent = maiuscola(meseAnno(mese));
+      btnOggi.disabled = mese === oggiMese;
       const annoOggi = +oggiMese.slice(0, 4);
       const anniMenu = [];
       for (let a = annoOggi + 1; a >= Math.min(annoOggi - 6, +mese.slice(0, 4)); a--) anniMenu.push(a);
@@ -146,7 +148,7 @@ export const cumulo = {
             selMese, selAnno,
             h('button', { type: 'button', class: 'btn btn-secondario btn-icona', 'aria-label': 'Mese successivo', id: 'mese-succ', onclick: () => vai(1) }, icona('chevron-right', { dimensione: 18 })),
             h('span', { class: 'solo-lettori', 'aria-live': 'polite' }, etichetta)),
-          h('button', { type: 'button', class: 'btn btn-secondario', onclick: () => imposta(oggiMese), disabled: mese === oggiMese ? true : null }, 'Mese corrente'))),
+          btnOggi)),
       corpo);
     disegna();
     return { aggiorna: disegna };

@@ -13,7 +13,7 @@ function aprilIdb() {
     };
     rq.onsuccess = () => risolvi(rq.result);
     rq.onerror = () => rifiuta(rq.error || new Error('Impossibile aprire l\'archivio del browser.'));
-    rq.onblocked = () => rifiuta(new Error('L\'archivio del browser e\' bloccato da un\'altra scheda aperta.'));
+    rq.onblocked = () => rifiuta(new Error('L\'archivio del browser è bloccato da un\'altra scheda aperta.'));
   });
 }
 
@@ -77,7 +77,7 @@ export class DriverIndexedDb {
   async leggiCopia(id) {
     const idb = await this._apri();
     const bytes = await transazione(idb, ['copie_dati'], 'readonly', (tx) => richiesta(tx.objectStore('copie_dati').get(Number(id))));
-    if (!bytes) throw new Error('La copia di sicurezza non esiste piu\'.');
+    if (!bytes) throw new Error('La copia di sicurezza non esiste più.');
     return bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   }
 
