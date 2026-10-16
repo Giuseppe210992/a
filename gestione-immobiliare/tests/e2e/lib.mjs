@@ -37,6 +37,11 @@ function scriptOrologio(adesso) {
 const SCRIPT_INIZIALE = `
   try { delete window.showSaveFilePicker; } catch (e) {}
   try { window.showSaveFilePicker = undefined; } catch (e) {}
+  // Le notifiche restano a lungo sullo schermo: a ogni clic o Invio quelle gia' presenti si segnano come "vecchie",
+  // cosi' un test che aspetta l'esito di un'operazione non scambia per sua la notifica di un'operazione precedente.
+  const segnaVecchie = () => { for (const t of document.querySelectorAll('.toast-area .toast')) t.dataset.vecchia = '1'; };
+  window.addEventListener('pointerdown', segnaVecchie, true);
+  window.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') segnaVecchie(); }, true);
   // intercetta chi aggiunge a un nodo "null"/"undefined"/"false" come testo (errore tipico di un'interfaccia costruita a mano)
   window.__testoSospetto = [];
   for (const nome of ['append', 'prepend', 'replaceChildren']) {
@@ -69,6 +74,13 @@ export async function apriContesto({ profilo = null, viewport = { width: 1440, h
     p.on('pageerror', (e) => errori.push(`pageerror: ${e.message}`));
   };
   ctx.on('page', seguiPagina);
+  // GI_RALLENTA=4 fa girare il browser 4 volte piu' lento: serve a scovare le prove (e le schermate) che funzionano solo su un computer veloce.
+  const rallenta = Number(process.env.GI_RALLENTA || 0);
+  if (rallenta > 1) {
+    const rallentaPagina = async (p) => { try { const cdp = await ctx.newCDPSession(p); await cdp.send('Emulation.setCPUThrottlingRate', { rate: rallenta }); } catch { /* pagina gia' chiusa */ } };
+    ctx.on('page', rallentaPagina);
+    for (const p of ctx.pages()) await rallentaPagina(p);
+  }
   return { ctx, browser, errori, seguiPagina, chiudi: async () => { await ctx.close(); if (browser) await browser.close(); } };
 }
 
@@ -90,16 +102,27 @@ export function cartellaTemp(prefisso = 'gi-test-') {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefisso));
 }
 
+/** Quante volte il programma ha disegnato una schermata (lo scrive il router su #contenuto). */
+export const montaggi = (pagina) => pagina.evaluate(() => Number(document.querySelector('#contenuto')?.dataset.montaggi ?? 0));
+
+/** Esegue un'azione che cambia schermata (un clic su un collegamento, ad esempio) e attende che la nuova schermata sia disegnata. */
+export async function conNavigazione(pagina, azione) {
+  const prima = await montaggi(pagina);
+  await azione();
+  await pagina.waitForFunction((n) => Number(document.querySelector('#contenuto')?.dataset.montaggi ?? 0) > n, prima, { timeout: 15000 });
+  await pagina.waitForSelector('#contenuto h1, #contenuto .vuoto', { timeout: 15000 });
+}
+
 /** Naviga a un indirizzo interno (#/...) e attende che la schermata sia disegnata. */
 export async function vai(pagina, hash) {
-  // con lo stesso indirizzo la schermata non si ricostruisce: si passa prima dalla dashboard per averla sempre pulita
+  // con lo stesso indirizzo la schermata non si ricostruisce: si passa prima da un indirizzo sconosciuto (che riporta alla dashboard)
   if (await pagina.evaluate(() => location.hash) === hash) {
-    await pagina.evaluate(() => { location.hash = '#/indirizzo-per-ricaricare'; });
+    await conNavigazione(pagina, () => pagina.evaluate(() => { location.hash = '#/indirizzo-per-ricaricare'; }));
     await pagina.waitForFunction(() => location.hash === '#/');
+    // l'indirizzo sconosciuto porta alla dashboard appena disegnata: se la destinazione era quella, siamo gia' arrivati
+    if (hash === '#/') { await pagina.waitForTimeout(60); return; }
   }
-  await pagina.evaluate((h) => { location.hash = h; }, hash);
-  await pagina.waitForFunction((h) => location.hash === h || location.hash === h.replace(/\?.*/, '') || true, hash);
-  await pagina.waitForSelector('#contenuto h1, #contenuto .vuoto', { timeout: 10000 });
+  await conNavigazione(pagina, () => pagina.evaluate((h) => { location.hash = h; }, hash));
   await pagina.waitForTimeout(60);
 }
 
@@ -228,9 +251,12 @@ export async function testoNotifiche(pagina) {
   return rimuoviSpazi(await pagina.locator('.toast-area').innerText());
 }
 
-/** Attende che compaia una notifica con quel testo (espressione regolare). */
+/** Attende che compaia una NUOVA notifica (comparsa dopo l'ultimo clic o Invio) con quel testo (espressione regolare). */
 export async function attendiNotifica(pagina, re) {
-  await pagina.waitForFunction(([src, flags]) => new RegExp(src, flags).test(document.querySelector('.toast-area')?.textContent.replace(/\u00a0/g, ' ') ?? ''), [re.source, re.flags]);
+  await pagina.waitForFunction(([src, flags]) => {
+    const rx = new RegExp(src, flags);
+    return [...document.querySelectorAll('.toast-area .toast:not([data-vecchia])')].some((t) => rx.test(t.textContent.replace(/\u00a0/g, ' ')));
+  }, [re.source, re.flags]);
 }
 
 /** Pulsante di una finestra di dialogo, per nome. */

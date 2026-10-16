@@ -5,7 +5,7 @@
 // per collaboratore e zona) e dalle liquidazioni inserite. I valori sono in euro.
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { avvia, vai, riquadri, scegliPeriodo, scegliZona, scegliCollaboratore, azzeraFiltri, centesimi, rimuoviSpazi, testoSospetto } from './lib.mjs';
+import { avvia, vai, conNavigazione, riquadri, scegliPeriodo, scegliZona, scegliCollaboratore, azzeraFiltri, centesimi, rimuoviSpazi, testoSospetto } from './lib.mjs';
 import { inserisciDatiProva } from './dati-prova.mjs';
 
 const E = 100;
@@ -35,8 +35,7 @@ describe('Dashboard: riquadri, filtri e grafici', () => {
     const p = app.pagina;
     const prova = async (etichetta, controlla) => {
       await vai(p, '#/');
-      await p.locator('a.kpi', { has: p.locator('.kpi-etichetta', { hasText: new RegExp(`^${etichetta}$`) }) }).click();
-      await p.waitForSelector('#contenuto h1');
+      await conNavigazione(p, () => p.locator('a.kpi', { has: p.locator('.kpi-etichetta', { hasText: new RegExp(`^${etichetta}$`) }) }).click());
       await controlla();
     };
     await prova('Compravendite concluse', async () => {

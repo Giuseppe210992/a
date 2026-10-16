@@ -58,7 +58,7 @@ export function apriDialogoIncasso({ praticaId = null } = {}) {
   }
   selPratica.input.addEventListener('change', aggiornaRiepilogo);
   importo.input.addEventListener('input', aggiornaRiepilogo);
-  if (praticaId) setTimeout(aggiornaRiepilogo, 0); else riepilogo.hidden = true;
+  if (praticaId) aggiornaRiepilogo(); else riepilogo.hidden = true;
 
   const campi = { praticaId: selPratica, data, importoCent: importo };
   const form = h('form', { onsubmit: (e) => e.preventDefault() },

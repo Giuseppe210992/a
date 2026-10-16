@@ -388,6 +388,7 @@ describe('Scheda della pratica', () => {
     const f = finestra(p);
     await f.waitFor();
     assert.match(await f.locator('select').first().locator('option:checked').innerText(), /^2026\/007 — Via Appia 100/);
+    await f.locator('.riepilogo-calcolo').waitFor();
     assert.match(rimuoviSpazi(await f.locator('.riepilogo-calcolo').innerText()), /Totale dovuto \(compensi \+ IVA\) 8\.540,00 €/);
     await f.getByLabel('Importo incassato (IVA inclusa)').fill('2.000');
     await f.getByLabel('Pagato da').selectOption({ label: 'Venditore' });

@@ -11,6 +11,13 @@ let hashPrecedente = '#/';
 let ignoraProssimo = false;
 let alCambioRotta = null;
 let primoMontaggio = true;
+let montaggi = 0;
+
+/** Scrive sul contenuto quale schermata è mostrata e quante volte è stata disegnata: ai test serve per sapere quando una navigazione è davvero finita. */
+function segna(vista) {
+  contenitoreVista.dataset.vista = vista.id ?? '';
+  contenitoreVista.dataset.montaggi = String(++montaggi);
+}
 
 export function registraRotta(percorso, vista) {
   const nomi = [];
@@ -91,6 +98,7 @@ function monta() {
     hashPrecedente = '#/';
     corrente = { vista: v, parametri: {}, query: {} };
     corrente.istanza = v.monta(contenitoreVista, {}, {}) || {};
+    segna(v);
     if (alCambioRotta) alCambioRotta(v, {}, {});
     window.scrollTo(0, 0);
     return;
@@ -104,6 +112,7 @@ function monta() {
     corrente.istanza = {};
     contenitoreVista.textContent = `Si è verificato un errore nel mostrare questa schermata: ${e.message}`;
   }
+  segna(r.vista);
   if (alCambioRotta) alCambioRotta(r.vista, r.parametri, r.query);
   window.scrollTo(0, 0);
   // Cambiando schermata il focus va al contenuto (per chi usa la tastiera o un lettore di schermo), a meno che la schermata
@@ -130,6 +139,7 @@ export function ridisegna() {
     corrente.istanza = {};
     contenitoreVista.textContent = `Si è verificato un errore nel mostrare questa schermata: ${e.message}`;
   }
+  segna(vista);
   window.scrollTo(0, y);
 }
 
@@ -147,6 +157,7 @@ export function rimonta() {
     corrente.istanza = {};
     contenitoreVista.textContent = `Si è verificato un errore nel mostrare questa schermata: ${e.message}`;
   }
+  segna(vista);
   window.scrollTo(0, 0);
 }
 

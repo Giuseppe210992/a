@@ -12,6 +12,7 @@
     "test:e2e": "node build.mjs && node --test --test-concurrency=1 --test-timeout=600000 \"tests/e2e/*.e2e.mjs\"",
     "test:tutto": "npm test && npm run test:e2e",
     "programma": "node build.mjs && electron .",
+    "test:programma": "node build.mjs && node --test --test-timeout=300000 tests/electron/programma.e2e.mjs",
     "pacchetto": "node build.mjs && electron-builder --win --x64",
     "pacchetto:cartella": "node build.mjs && electron-builder --dir",
     "icona": "node tools/crea-icona.mjs"
