@@ -200,6 +200,12 @@ export class Archivio {
     return lavoro;
   }
 
+  /** Riprova a scrivere sul supporto l'ultimo stato (dopo un errore di salvataggio). */
+  async riprovaSalvataggio() {
+    await this._scrivi();
+    this._notifica();
+  }
+
   /** Byte del database (sql.js chiude e riapre la connessione: si riattivano i vincoli). */
   esporta() {
     const bytes = this.db.export();

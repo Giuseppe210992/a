@@ -1,0 +1,183 @@
+/* Token di design. Tema chiaro di base, scuro con :root[data-theme="dark"] oppure
+   automatico (sistema operativo) quando non e' forzato il tema chiaro. */
+:root {
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-num: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 18px;
+
+  --sb-larga: 276px;
+  --sb-stretta: 68px;
+  --topbar-h: 68px;
+
+  color-scheme: light;
+
+  /* superfici e testo */
+  --bg: #f6f6f3;
+  --surface: #fcfcfb;
+  --surface-2: #f3f3ef;
+  --surface-3: #e9e8e2;
+  --border: rgba(11, 11, 11, 0.10);
+  --border-strong: rgba(11, 11, 11, 0.22);
+  --text: #0b0b0b;
+  --text-2: #52514e;
+  --text-3: #6b6963;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+
+  /* accento */
+  --accent: #256abf;
+  --accent-hover: #1c5cab;
+  --accent-text: #1c5cab;
+  --accent-contrast: #ffffff;
+  --accent-soft: rgba(37, 106, 191, 0.10);
+  --focus: #3987e5;
+
+  /* barra laterale */
+  --sb-bg: #12233b;
+  --sb-text: #c5d0e3;
+  --sb-text-forte: #ffffff;
+  --sb-hover: rgba(255, 255, 255, 0.07);
+  --sb-attivo: rgba(255, 255, 255, 0.13);
+  --sb-evidenza: #6da7ec;
+  --sb-bordo: rgba(255, 255, 255, 0.09);
+
+  /* stato (fissi: sempre abbinati a icona + testo) */
+  --ok: #0ca30c;
+  --warn: #fab219;
+  --serious: #ec835a;
+  --crit: #d03b3b;
+  --ok-text: #006300;
+  --warn-text: #7a5300;
+  --serious-text: #9a3f10;
+  --crit-text: #a62a2a;
+  --ok-bg: rgba(12, 163, 12, 0.10);
+  --warn-bg: rgba(250, 178, 25, 0.17);
+  --serious-bg: rgba(236, 131, 90, 0.15);
+  --crit-bg: rgba(208, 59, 59, 0.10);
+  --info-bg: rgba(37, 106, 191, 0.09);
+
+  /* categorie dei grafici (ordine fisso) */
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+  --s4: #eda100;
+  --s5: #e87ba4;
+  --s6: #008300;
+  --s7: #6250d6;
+  --s8: #e34948;
+  /* scala ordinale a due passi (liquidate / da liquidare) */
+  --ord-1: #256abf;
+  --ord-2: #86b6ef;
+  --on-ord-1: #ffffff;
+  --on-ord-2: #0b0b0b;
+  --muto: #b9b8b0; /* barre fuori dal periodo, "Altri" */
+  --grafico-area: rgba(42, 120, 214, 0.10);
+
+  --ombra-1: 0 1px 2px rgba(11, 11, 11, 0.06), 0 1px 1px rgba(11, 11, 11, 0.04);
+  --ombra-2: 0 10px 30px rgba(11, 11, 11, 0.16), 0 2px 6px rgba(11, 11, 11, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --bg: #0d0d0d;
+    --surface: #1a1a19;
+    --surface-2: #222221;
+    --surface-3: #2c2c2a;
+    --border: rgba(255, 255, 255, 0.10);
+    --border-strong: rgba(255, 255, 255, 0.24);
+    --text: #f0efec;
+    --text-2: #c3c2b7;
+    --text-3: #a19f98;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --accent: #2a78d6;
+    --accent-hover: #3987e5;
+    --accent-text: #6da7ec;
+    --accent-soft: rgba(57, 135, 229, 0.16);
+    --focus: #6da7ec;
+    --sb-bg: #0f1826;
+    --sb-text: #aeb9cc;
+    --sb-hover: rgba(255, 255, 255, 0.06);
+    --sb-attivo: rgba(255, 255, 255, 0.11);
+    --sb-bordo: rgba(255, 255, 255, 0.07);
+    --ok-text: #3fcf3f;
+    --warn-text: #fab219;
+    --serious-text: #f2a07c;
+    --crit-text: #ef7b7b;
+    --ok-bg: rgba(12, 163, 12, 0.16);
+    --warn-bg: rgba(250, 178, 25, 0.16);
+    --serious-bg: rgba(236, 131, 90, 0.16);
+    --crit-bg: rgba(208, 59, 59, 0.20);
+    --info-bg: rgba(57, 135, 229, 0.16);
+    --s1: #3987e5;
+    --s2: #d95926;
+    --s3: #199e70;
+    --s4: #c98500;
+    --s5: #d55181;
+    --s6: #008300;
+    --s7: #9085e9;
+    --s8: #e66767;
+    --ord-1: #3987e5;
+    --ord-2: #184f95;
+    --on-ord-1: #0b0b0b;
+    --on-ord-2: #ffffff;
+    --muto: #4a4a46;
+    --grafico-area: rgba(57, 135, 229, 0.12);
+    --ombra-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --ombra-2: 0 10px 30px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #222221;
+  --surface-3: #2c2c2a;
+  --border: rgba(255, 255, 255, 0.10);
+  --border-strong: rgba(255, 255, 255, 0.24);
+  --text: #f0efec;
+  --text-2: #c3c2b7;
+  --text-3: #a19f98;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --accent: #2a78d6;
+  --accent-hover: #3987e5;
+  --accent-text: #6da7ec;
+  --accent-soft: rgba(57, 135, 229, 0.16);
+  --focus: #6da7ec;
+  --sb-bg: #0f1826;
+  --sb-text: #aeb9cc;
+  --sb-hover: rgba(255, 255, 255, 0.06);
+  --sb-attivo: rgba(255, 255, 255, 0.11);
+  --sb-bordo: rgba(255, 255, 255, 0.07);
+  --ok-text: #3fcf3f;
+  --warn-text: #fab219;
+  --serious-text: #f2a07c;
+  --crit-text: #ef7b7b;
+  --ok-bg: rgba(12, 163, 12, 0.16);
+  --warn-bg: rgba(250, 178, 25, 0.16);
+  --serious-bg: rgba(236, 131, 90, 0.16);
+  --crit-bg: rgba(208, 59, 59, 0.20);
+  --info-bg: rgba(57, 135, 229, 0.16);
+  --s1: #3987e5;
+  --s2: #d95926;
+  --s3: #199e70;
+  --s4: #c98500;
+  --s5: #d55181;
+  --s6: #008300;
+  --s7: #9085e9;
+  --s8: #e66767;
+  --ord-1: #3987e5;
+  --ord-2: #184f95;
+  --on-ord-1: #0b0b0b;
+  --on-ord-2: #ffffff;
+  --muto: #4a4a46;
+  --grafico-area: rgba(57, 135, 229, 0.12);
+  --ombra-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --ombra-2: 0 10px 30px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.4);
+}

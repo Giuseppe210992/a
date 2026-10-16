@@ -10,6 +10,7 @@ const fmtEuroInt = new Intl.NumberFormat('it-IT', {
 const fmtNum = new Intl.NumberFormat('it-IT', { useGrouping: 'always', maximumFractionDigits: 2 });
 const fmtNumDec = new Intl.NumberFormat('it-IT', { useGrouping: 'always', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtPct = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 2 });
+const fmtPctVar = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 1 });
 const fmtCompatto = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 1 });
 
 /** 123456 -> "1.234,56 €" */
@@ -59,7 +60,7 @@ export function pct(p) {
 /** Variazione percentuale con segno: +12,5% */
 export function pctSegno(p) {
   if (p === null || p === undefined || !Number.isFinite(p)) return '—';
-  return (p > 0 ? '+' : p < 0 ? '−' : '') + fmtPct.format(Math.abs(p)) + '%';
+  return (p > 0 ? '+' : p < 0 ? '−' : '') + fmtPctVar.format(Math.abs(p)) + '%';
 }
 
 /**
