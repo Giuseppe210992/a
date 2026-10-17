@@ -103,7 +103,7 @@ test('con il vero archivio: i dati restano dopo la chiusura e la riapertura del 
   assert.equal(archivio.valore('SELECT COUNT(*) FROM pratiche'), 1);
   assert.equal(archivio.valore('SELECT immobile_indirizzo FROM pratiche'), 'Via del File 1');
   assert.equal(archivio.valore('SELECT SUM(importo_cent) FROM incassi'), 200000);
-  assert.equal(archivio.valore('SELECT COUNT(*) FROM collaboratori'), 2);
+  assert.equal(archivio.valore('SELECT COUNT(*) FROM collaboratori'), 4, 'Luca, Giuseppe, il capo e la segretaria');
   assert.equal(archivio.valore('PRAGMA integrity_check'), 'ok');
   assert.equal(fs.statSync(path.join(base, 'Dati', 'archivio.sqlite')).size > 4096, true);
   archivio.chiudi();

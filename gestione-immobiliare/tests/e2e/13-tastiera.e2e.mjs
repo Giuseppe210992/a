@@ -76,6 +76,8 @@ describe('Tastiera: Invio nei moduli e nelle finestre', () => {
     const n0 = await valoreSql(p, 'SELECT COUNT(*) FROM pratiche');
     await vai(p, '#/nuova');
     await p.locator('#form-pratica').getByLabel(/^Zona\*?$/).selectOption({ label: 'Centro' });
+    await p.locator('#form-pratica').getByLabel('Nominativo del venditore').fill('Mario Rossi');
+    await p.locator('#form-pratica').getByLabel('Nominativo dell\'acquirente').fill('Anna Bianchi');
     const contanti = p.locator('#pagamenti-venditore').getByLabel('Contanti');
     await contanti.fill('1.000');
     await conNavigazione(p, () => contanti.press('Enter'));
@@ -134,7 +136,7 @@ describe('Tastiera: Invio nei moduli e nelle finestre', () => {
     await campo.press('Enter');
     await attendiNotifica(p, /Archivio azzerato/);
     assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM pratiche'), 0);
-    assert.deepEqual((await sql(p, 'SELECT nome FROM collaboratori ORDER BY id')).map((r) => r.nome), ['Luca', 'Giuseppe']);
+    assert.deepEqual((await sql(p, 'SELECT nome FROM collaboratori ORDER BY id')).map((r) => r.nome), ['Luca', 'Giuseppe', 'Capo', 'Segretaria']);
   });
 
   test('nessun errore in console e nessun "null" nelle pagine', async () => {

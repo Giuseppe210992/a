@@ -29,27 +29,48 @@ function controllaNome(db, tabella, nome, idEscluso = null) {
   return pulito;
 }
 
-export function creaCollaboratore(db, { nome, note = null }) {
+/**
+ * Percentuale fissa sul totale delle provvigioni (il capo, la segretaria): vuota = collaboratore normale, che lavora
+ * a scaglioni sulle sue pratiche. Restituisce null oppure un numero maggiore di 0 e al massimo 100.
+ */
+function controllaPercentualeFissa(valore) {
+  if (valore === null || valore === undefined || valore === '') return null;
+  const n = Number(valore);
+  if (!Number.isFinite(n) || n <= 0 || n > 100) throw new ErroreValidazione({ percentualeFissa: 'La percentuale deve essere maggiore di 0 e al massimo 100.' });
+  if (Math.round(n * 100) / 100 !== n) throw new ErroreValidazione({ percentualeFissa: 'Usa al massimo due decimali.' });
+  return n;
+}
+
+export function creaCollaboratore(db, { nome, note = null, percentualeFissa = null }) {
   return db.transazione(() => {
     const pulito = controllaNome(db, 'collaboratori', nome);
+    const fissa = controllaPercentualeFissa(percentualeFissa);
     const colore = prossimoColore(db.tutti('SELECT colore FROM collaboratori'));
     const t = adesso();
     db.esegui(
-      'INSERT INTO collaboratori (nome, attivo, colore, note, creato_il, aggiornato_il) VALUES (?, 1, ?, ?, ?, ?)',
-      [pulito, colore, note, t, t],
+      'INSERT INTO collaboratori (nome, attivo, colore, note, creato_il, aggiornato_il, percentuale_fissa) VALUES (?, 1, ?, ?, ?, ?, ?)',
+      [pulito, colore, note, t, t, fissa],
     );
     return db.ultimoId();
   });
 }
 
-export function aggiornaCollaboratore(db, id, { nome, attivo, colore, note }) {
+export function aggiornaCollaboratore(db, id, { nome, attivo, colore, note, percentualeFissa }) {
   return db.transazione(() => {
     const att = db.uno('SELECT * FROM collaboratori WHERE id = ?', [id]);
     if (!att) throw new ErroreOperazione('Collaboratore non trovato.');
     const pulito = nome === undefined ? att.nome : controllaNome(db, 'collaboratori', nome, id);
+    const fissa = percentualeFissa === undefined ? att.percentuale_fissa : controllaPercentualeFissa(percentualeFissa);
+    if (fissa !== null && att.percentuale_fissa === null) {
+      // chi prende una percentuale fissa non partecipa alle quote delle pratiche né alle ripartizioni delle zone
+      const usi = usiCollaboratore(db, id);
+      if (usi.pratiche || usi.zone) {
+        throw new ErroreValidazione({ percentualeFissa: `${att.nome} ha già pratiche${usi.zone ? ' e zone' : ''} in cui lavora a scaglioni: per dargli una percentuale fissa crea un nuovo collaboratore.` });
+      }
+    }
     db.esegui(
-      'UPDATE collaboratori SET nome = ?, attivo = ?, colore = ?, note = ?, aggiornato_il = ? WHERE id = ?',
-      [pulito, (attivo ?? att.attivo) ? 1 : 0, colore ?? att.colore, note === undefined ? att.note : note, adesso(), id],
+      'UPDATE collaboratori SET nome = ?, attivo = ?, colore = ?, note = ?, percentuale_fissa = ?, aggiornato_il = ? WHERE id = ?',
+      [pulito, (attivo ?? att.attivo) ? 1 : 0, colore ?? att.colore, note === undefined ? att.note : note, fissa, adesso(), id],
     );
   });
 }
@@ -178,7 +199,9 @@ export function problemaRipartizione(db, quote) {
   const visti = new Set();
   let sommaBp = 0;
   for (const q of quote) {
-    if (!db.uno('SELECT id FROM collaboratori WHERE id = ?', [q.collaboratore_id])) return 'Un collaboratore della ripartizione non esiste più.';
+    const c = db.uno('SELECT id, nome, percentuale_fissa FROM collaboratori WHERE id = ?', [q.collaboratore_id]);
+    if (!c) return 'Un collaboratore della ripartizione non esiste più.';
+    if (c.percentuale_fissa !== null) return `${c.nome} prende una percentuale fissa sul totale delle provvigioni: non entra nella ripartizione.`;
     if (visti.has(q.collaboratore_id)) return 'Lo stesso collaboratore è presente due volte nella ripartizione.';
     visti.add(q.collaboratore_id);
     if (!Number.isFinite(q.percentuale) || q.percentuale <= 0 || q.percentuale > 100) return 'Ogni quota deve essere maggiore di 0 e al massimo 100%.';
@@ -218,7 +241,8 @@ export function ripartizioneAutomatica(db, zonaId, impostazioni = null) {
     if (quote.length) return { origine: 'zona', quote };
   }
   const imp = impostazioni || leggiImpostazioni(db);
-  const attivi = db.tutti('SELECT id FROM collaboratori WHERE attivo = 1 ORDER BY colore, nome COLLATE NOCASE').map((c) => c.id);
+  // chi prende una percentuale fissa (capo, segretaria) non lavora a scaglioni: non entra nelle ripartizioni
+  const attivi = db.tutti('SELECT id FROM collaboratori WHERE attivo = 1 AND percentuale_fissa IS NULL ORDER BY colore, nome COLLATE NOCASE').map((c) => c.id);
   const predefinita = (imp['ripartizione.predefinita'] || []).filter((x) => attivi.includes(x.collaboratoreId));
   if (predefinita.length && predefinita.reduce((somma, x) => somma + Math.round(x.percentuale * 100), 0) === 10000) {
     return { origine: 'predefinita', quote: predefinita.map((x) => ({ collaboratore_id: x.collaboratoreId, percentuale: x.percentuale })) };

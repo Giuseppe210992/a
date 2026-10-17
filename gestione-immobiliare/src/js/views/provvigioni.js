@@ -142,7 +142,7 @@ export const provvigioni = {
         h('caption', { class: 'solo-lettori' }, 'Provvigioni per pratica e collaboratore'),
         h('thead', null, h('tr', null, h('th', null, 'Pratica'), h('th', null, 'Collaboratore'), h('th', { class: 'num' }, 'Quota'), h('th', { class: 'num' }, 'Fatturato'), h('th', null, 'Scaglione'), h('th', { class: 'num' }, 'Provvigione'), h('th', { class: 'num' }, 'Liquidata'), h('th', { class: 'num' }, 'Da liquidare'), h('th', null, 'Stato'))),
         h('tbody', null, voci.map(({ p, v }) => h('tr', { class: 'cliccabile', onclick: (ev) => { if (!ev.target.closest('a')) naviga(`#/pratiche/${p.id}`); } },
-          h('td', null, h('a', { href: `#/pratiche/${p.id}`, class: 'forte', style: { color: 'var(--text)' } }, p.codice), h('span', { class: 'sottotesto' }, `${p.descrizione} · ${dataIt(p.dataRif)}`)),
+          h('td', null, h('a', { href: `#/pratiche/${p.id}`, class: 'forte', style: { color: 'var(--text)' } }, p.codice), h('span', { class: 'sottotesto' }, `${p.descrizione} · ${p.dataEtichetta}`)),
           h('td', null, h('span', { class: 'chip-col' }, h('span', { class: `punto-col col-${nomi.get(v.collaboratoreId)?.colore ?? 0}` }), nomi.get(v.collaboratoreId)?.nome ?? '?')),
           h('td', { class: 'num' }, pct(v.quotaPct)), h('td', { class: 'num' }, eur(v.fatturatoCent)),
           h('td', null, v.scaglioneIdx >= 0 && p.conclusa ? h('span', { class: 'badge badge-info' }, `${v.scaglioneIdx + 1}° · ${pct(Math.round(v.percentualeApplicata * 100) / 100)}`) : h('span', { class: 'sottotesto' }, '—')),

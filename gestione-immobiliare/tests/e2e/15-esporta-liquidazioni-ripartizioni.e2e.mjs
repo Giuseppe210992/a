@@ -225,6 +225,8 @@ describe('Ripartizione predefinita, zone e quote nel modulo della pratica', () =
     // si salva in una zona senza ripartizione propria: la pratica prende la predefinita 70/30
     await zona.selectOption({ label: 'Zona libera' });
     await p.locator('#pagamenti-acquirente').getByLabel('Contanti').fill('2.000');
+    await p.locator('#form-pratica').getByLabel('Nominativo del venditore').fill('Mario Rossi');
+    await p.locator('#form-pratica').getByLabel('Nominativo dell\'acquirente').fill('Anna Bianchi');
     await conSalvataggio(p);
     assert.deepEqual((await sql(p, "SELECT c.nome, q.percentuale FROM quote q JOIN collaboratori c ON c.id = q.collaboratore_id JOIN pratiche pr ON pr.id = q.pratica_id JOIN zone z ON z.id = pr.zona_id WHERE z.nome = 'Zona libera' ORDER BY c.id")).map((r) => [r.nome, r.percentuale]), [['Luca', 70], ['Giuseppe', 30]]);
     // la ripartizione predefinita non serve più alle prove seguenti

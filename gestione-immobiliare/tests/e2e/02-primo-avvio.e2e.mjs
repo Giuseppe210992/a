@@ -5,7 +5,7 @@ import { avvia, vai, kpi, rimuoviSpazi } from './lib.mjs';
 
 describe('Primo avvio', () => {
   let app;
-  before(async () => { app = await avvia(); });
+  before(async () => { app = await avvia({ conPercentualiFisse: true }); }); // come al primo avvio vero: con il capo e la segretaria
   after(async () => { await app.chiudi(); });
 
   test('la dashboard parte vuota: zeri, nessun dato di esempio', async () => {
@@ -20,7 +20,7 @@ describe('Primo avvio', () => {
       const a = window.__gi.app.archivio;
       return { pratiche: a.valore('SELECT COUNT(*) FROM pratiche'), zone: a.valore('SELECT COUNT(*) FROM zone'), incassi: a.valore('SELECT COUNT(*) FROM incassi'), nomi: a.tutti('SELECT nome FROM collaboratori ORDER BY id').map((r) => r.nome) };
     });
-    assert.deepEqual(stato, { pratiche: 0, zone: 0, incassi: 0, nomi: ['Luca', 'Giuseppe'] });
+    assert.deepEqual(stato, { pratiche: 0, zone: 0, incassi: 0, nomi: ['Luca', 'Giuseppe', 'Capo', 'Segretaria'] });
     // un solo grafico, con messaggio di stato vuoto e nessuna barra inventata
     assert.equal(await p.locator('.grafico-card').count(), 1);
     assert.equal(await p.locator('.g-barra').count(), 0);

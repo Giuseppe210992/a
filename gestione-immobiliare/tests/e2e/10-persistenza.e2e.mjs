@@ -54,6 +54,8 @@ describe('Persistenza dopo chiusura e riapertura', () => {
     const F = (e, o = {}) => p.locator('#form-pratica').getByLabel(e, o);
     await F(/^Zona\*?$/).selectOption({ label: 'Centro' });
     await F('Prezzo di vendita').fill('200.000');
+    await F('Nominativo del venditore').fill('Mario Rossi');
+    await F('Nominativo dell\'acquirente').fill('Anna Bianchi');
     // 3.660 con bonifico = 3.000 + 660 di IVA (22%) da ciascuna parte: 6.000 € di compenso senza IVA
     await p.locator('#pagamenti-venditore').getByLabel('Bonifico').fill('3.660');
     await p.locator('#pagamenti-acquirente').getByLabel('Bonifico').fill('3.660');
@@ -212,7 +214,7 @@ describe('Persistenza dopo chiusura e riapertura', () => {
     await conferma.click();
     await p.waitForSelector('.sidebar', { timeout: 20000 });
     assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM pratiche'), 0);
-    assert.deepEqual((await sql(p, 'SELECT nome FROM collaboratori ORDER BY id')).map((r) => r.nome), ['Luca', 'Giuseppe']);
+    assert.deepEqual((await sql(p, 'SELECT nome FROM collaboratori ORDER BY id')).map((r) => r.nome), ['Luca', 'Giuseppe', 'Capo', 'Segretaria']);
     // le copie di sicurezza ci sono ancora: si torna ai dati con "Ripristina"
     await vai(p, '#/backup');
     const manuale = p.locator('#tabella-storico tbody tr', { hasText: 'Manuale' }).first();

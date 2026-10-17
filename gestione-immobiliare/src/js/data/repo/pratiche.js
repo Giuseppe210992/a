@@ -91,6 +91,9 @@ export function normalizzaPratica(input) {
     venditore: testo(input.venditore),
     acquirente: testo(input.acquirente),
     compensi_da_pagamenti: aPagamenti ? 1 : 0,
+    // mese della proposta (YYYY-MM): da qui si decide in quale cumulo mensile entra la pratica. Per una pratica nuova
+    // inserita dal modulo, se non indicato, è il mese di oggi; per le vecchie resta vuoto (contano dal rogito).
+    mese_proposta: input.mese_proposta === undefined ? (aPagamenti && data_pratica ? data_pratica.slice(0, 7) : null) : testo(input.mese_proposta),
     compenso_venditore_cent: cent(input.compenso_venditore_cent) ?? 0,
     compenso_acquirente_cent: cent(input.compenso_acquirente_cent) ?? 0,
     aliquota_iva: input.aliquota_iva === '' || input.aliquota_iva === undefined || input.aliquota_iva === null ? 22 : Number(input.aliquota_iva),
@@ -122,6 +125,7 @@ export function controllaPratica(db, d, quote) {
   if (!STATI.some((s) => s.valore === d.stato)) errori.stato = 'Scegli lo stato della pratica.';
   if (!d.data_pratica) errori.data_pratica = 'Indica la data di apertura della pratica.';
   else if (!dataValida(d.data_pratica)) errori.data_pratica = 'La data di apertura non è valida.';
+  if (d.mese_proposta !== null && !/^\d{4}-(0[1-9]|1[0-2])$/.test(d.mese_proposta)) errori.mese_proposta = 'Scegli il mese della proposta.';
   if (d.data_rogito) {
     if (!dataValida(d.data_rogito)) errori.data_rogito = 'La data del rogito non è valida.';
     else if (d.data_pratica && dataValida(d.data_pratica) && d.data_rogito < d.data_pratica) {
@@ -151,7 +155,9 @@ export function controllaPratica(db, d, quote) {
   const visti = new Set();
   let somma = 0;
   for (const q of quote) {
-    if (!db.uno('SELECT id FROM collaboratori WHERE id = ?', [q.collaboratore_id])) { errori.quote = 'Un collaboratore della ripartizione non esiste più.'; break; }
+    const coll = db.uno('SELECT nome, percentuale_fissa FROM collaboratori WHERE id = ?', [q.collaboratore_id]);
+    if (!coll) { errori.quote = 'Un collaboratore della ripartizione non esiste più.'; break; }
+    if (coll.percentuale_fissa !== null) { errori.quote = `${coll.nome} prende una percentuale fissa sul totale delle provvigioni: non va tra le quote della pratica.`; break; }
     if (visti.has(q.collaboratore_id)) { errori.quote = 'Lo stesso collaboratore è presente due volte nella ripartizione.'; break; }
     visti.add(q.collaboratore_id);
     if (!Number.isFinite(q.percentuale) || q.percentuale <= 0 || q.percentuale > 100) { errori.quote = 'Ogni quota deve essere maggiore di 0 e al massimo 100%.'; break; }
@@ -175,7 +181,7 @@ export function salvaPratica(db, input, quote = []) {
       const conLiquidazioni = db.tutti(
         `SELECT DISTINCT l.collaboratore_id AS id, c.nome FROM liquidazioni_righe r
            JOIN liquidazioni l ON l.id = r.liquidazione_id JOIN collaboratori c ON c.id = l.collaboratore_id
-          WHERE r.pratica_id = ?`, [id]);
+          WHERE r.pratica_id = ? AND c.percentuale_fissa IS NULL`, [id]);
       for (const c of conLiquidazioni) {
         if (!q.some((x) => x.collaboratore_id === c.id)) {
           throw new ErroreOperazione(`${c.nome} ha liquidazioni registrate su questa pratica: non puoi toglierlo dalla ripartizione. Elimina prima quelle liquidazioni.`);
@@ -183,11 +189,11 @@ export function salvaPratica(db, input, quote = []) {
       }
       db.esegui(
         `UPDATE pratiche SET codice=?, stato=?, data_pratica=?, data_rogito=?, zona_id=?, immobile_indirizzo=?, immobile_comune=?,
-           immobile_tipo=?, prezzo_vendita_cent=?, prezzo_acquisto_cent=?, venditore=?, acquirente=?, compensi_da_pagamenti=?,
+           immobile_tipo=?, prezzo_vendita_cent=?, prezzo_acquisto_cent=?, venditore=?, acquirente=?, compensi_da_pagamenti=?, mese_proposta=?,
            ${CAMPI_PAGAMENTO.map((c) => `${c}=?`).join(', ')}, compenso_venditore_cent=?,
            compenso_acquirente_cent=?, aliquota_iva=?, note=?, aggiornato_il=? WHERE id=?`,
         [d.codice, d.stato, d.data_pratica, d.data_rogito, d.zona_id, d.immobile_indirizzo, d.immobile_comune, d.immobile_tipo,
-          d.prezzo_vendita_cent, d.prezzo_acquisto_cent, d.venditore, d.acquirente, d.compensi_da_pagamenti,
+          d.prezzo_vendita_cent, d.prezzo_acquisto_cent, d.venditore, d.acquirente, d.compensi_da_pagamenti, d.mese_proposta,
           ...CAMPI_PAGAMENTO.map((c) => d[c]), d.compenso_venditore_cent,
           d.compenso_acquirente_cent, d.aliquota_iva, d.note, t, id],
       );
@@ -195,11 +201,11 @@ export function salvaPratica(db, input, quote = []) {
     } else {
       db.esegui(
         `INSERT INTO pratiche (codice, stato, data_pratica, data_rogito, zona_id, immobile_indirizzo, immobile_comune, immobile_tipo,
-           prezzo_vendita_cent, prezzo_acquisto_cent, venditore, acquirente, compensi_da_pagamenti, ${CAMPI_PAGAMENTO.join(', ')},
+           prezzo_vendita_cent, prezzo_acquisto_cent, venditore, acquirente, compensi_da_pagamenti, mese_proposta, ${CAMPI_PAGAMENTO.join(', ')},
            compenso_venditore_cent, compenso_acquirente_cent,
-           aliquota_iva, note, creato_il, aggiornato_il) VALUES (${new Array(12 + 1 + CAMPI_PAGAMENTO.length + 2 + 4).fill('?').join(',')})`,
+           aliquota_iva, note, creato_il, aggiornato_il) VALUES (${new Array(12 + 1 + 1 + CAMPI_PAGAMENTO.length + 2 + 4).fill('?').join(',')})`,
         [d.codice, d.stato, d.data_pratica, d.data_rogito, d.zona_id, d.immobile_indirizzo, d.immobile_comune, d.immobile_tipo,
-          d.prezzo_vendita_cent, d.prezzo_acquisto_cent, d.venditore, d.acquirente, d.compensi_da_pagamenti,
+          d.prezzo_vendita_cent, d.prezzo_acquisto_cent, d.venditore, d.acquirente, d.compensi_da_pagamenti, d.mese_proposta,
           ...CAMPI_PAGAMENTO.map((c) => d[c]), d.compenso_venditore_cent,
           d.compenso_acquirente_cent, d.aliquota_iva, d.note, t, t],
       );
@@ -287,14 +293,19 @@ export function registraLiquidazione(db, { collaboratoreId, data, metodo = null,
     if (!db.uno('SELECT id FROM collaboratori WHERE id = ?', [collaboratoreId])) errori.collaboratoreId = 'Scegli il collaboratore.';
     if (!data || !dataValida(data)) errori.data = 'Indica una data valida.';
     if (!righe.length) errori.righe = 'Seleziona almeno una pratica da liquidare.';
+    const fissa = db.uno('SELECT percentuale_fissa FROM collaboratori WHERE id = ?', [collaboratoreId])?.percentuale_fissa != null;
     const viste = new Set();
     for (const r of righe) {
       if (viste.has(r.praticaId)) { errori.righe = 'La stessa pratica compare due volte.'; break; }
       viste.add(r.praticaId);
       if (!Number.isInteger(r.importoCent) || r.importoCent <= 0) { errori.righe = 'Ogni importo deve essere maggiore di zero.'; break; }
       if (r.importoCent > MASSIMO_CENT) { errori.righe = 'Un importo è troppo grande, controlla le cifre.'; break; }
-      if (!db.uno('SELECT 1 FROM quote WHERE pratica_id = ? AND collaboratore_id = ?', [r.praticaId, collaboratoreId])) {
-        errori.righe = 'Una delle pratiche scelte non ha questo collaboratore nella ripartizione.';
+      // chi prende una percentuale fissa non è nelle quote: gli spetta una parte delle provvigioni di ogni pratica che ne ha
+      const ammessa = fissa
+        ? db.uno('SELECT 1 FROM quote WHERE pratica_id = ?', [r.praticaId])
+        : db.uno('SELECT 1 FROM quote WHERE pratica_id = ? AND collaboratore_id = ?', [r.praticaId, collaboratoreId]);
+      if (!ammessa) {
+        errori.righe = fissa ? 'Una delle pratiche scelte non ha provvigioni da cui calcolare la percentuale.' : 'Una delle pratiche scelte non ha questo collaboratore nella ripartizione.';
         break;
       }
     }

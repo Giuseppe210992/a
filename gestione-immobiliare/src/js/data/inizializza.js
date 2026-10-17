@@ -1,9 +1,14 @@
 // Contenuto iniziale di un archivio vuoto. Nessun dato dimostrativo: i due collaboratori indicati nella
-// specifica (Luca e Giuseppe), modificabili o eliminabili da Impostazioni, e la tabella degli scaglioni dell'agenzia.
+// specifica (Luca e Giuseppe), il capo e la segretaria con le loro percentuali fisse, modificabili o eliminabili da
+// Impostazioni, e la tabella degli scaglioni dell'agenzia.
 import { creaCollaboratore, salvaTabellaScaglioni } from './repo/anagrafiche.js';
 import { registra } from './repo/impostazioni.js';
 
 export const COLLABORATORI_INIZIALI = ['Luca', 'Giuseppe'];
+
+// Chi prende una percentuale fissa del totale delle provvigioni di ogni pratica, in qualsiasi zona
+// (in aggiunta a quanto spetta ai collaboratori): il capo il 15%, la segretaria il 4%.
+export const PERCENTUALI_FISSE_INIZIALI = [{ nome: 'Capo', percentuale: 15 }, { nome: 'Segretaria', percentuale: 4 }];
 
 // Scaglioni indicati dall'agenzia, uguali per Luca e Giuseppe e per tutte le zone (percentuale sul cumulo mensile):
 //   5% fino a 2.600 €, 8% fino a 5.200 €, 11% fino a 7.800 €, 15% fino a 13.000 €, 20% oltre 13.000 €.
@@ -20,6 +25,7 @@ export const SCAGLIONI_INIZIALI = [
 export async function seedPrimoAvvio(archivio) {
   await archivio.transazione(() => {
     for (const nome of COLLABORATORI_INIZIALI) creaCollaboratore(archivio, { nome });
+    for (const { nome, percentuale } of PERCENTUALI_FISSE_INIZIALI) creaCollaboratore(archivio, { nome, percentualeFissa: percentuale });
     salvaTabellaScaglioni(archivio, null, SCAGLIONI_INIZIALI);
     registra(archivio, 'archivio_creato', 'Archivio creato al primo avvio');
   }, { silenzioso: true });

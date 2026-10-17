@@ -330,7 +330,7 @@ test('azzeramento: copia di sicurezza, archivio vuoto, collaboratori iniziali', 
   assert.ok(r.sicurezza.id);
   assert.equal(app.archivio.valore('SELECT COUNT(*) FROM pratiche'), 0);
   assert.equal(app.archivio.valore('SELECT COUNT(*) FROM zone'), 0);
-  assert.deepEqual(elencoCollaboratori(app.archivio).map((c) => c.nome), ['Luca', 'Giuseppe']);
+  assert.deepEqual(elencoCollaboratori(app.archivio).map((c) => [c.nome, c.percentuale_fissa]), [['Luca', null], ['Giuseppe', null], ['Capo', 15], ['Segretaria', 4]]);
   assert.deepEqual(leggiTabellaScaglioni(app.archivio, null), SCAGLIONI_AGENZIA, 'gli scaglioni modificati tornano quelli dell\'agenzia');
   const sic = (await elencoBackup(app)).find((c) => c.tipo === 'pre-azzeramento');
   await ripristinaBackup(app, sic.id); // si puo' tornare indietro
@@ -402,7 +402,7 @@ test('CSV per Excel italiano', async () => {
   const m = modelloDi(archivio);
   const csv = csvPratiche(m);
   assert.ok(csv.startsWith('﻿Codice;Stato;'));
-  assert.ok(csv.includes('2026/001;Conclusa;01/09/2026;05/10/2026;Centro;Via Roma 1;Roccaverde;Appartamento;150000,00;'));
+  assert.ok(csv.includes('2026/001;Conclusa;01/09/2026;05/10/2026;;Centro;Via Roma 1;Roccaverde;Appartamento;150000,00;'));
   assert.ok(csv.includes('Luca 100%'));
   assert.ok(csvIncassi(m).includes('"ha detto ""ok""; poi"'));
   assert.ok(csvLiquidazioni(m).startsWith('﻿Data;Collaboratore;'));

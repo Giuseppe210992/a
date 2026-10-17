@@ -77,7 +77,7 @@ export function editorRipartizione({ collaboratori, quote = [], onCambio = null 
 /** Finestra per cambiare la ripartizione di una zona. `dopo` viene chiamata a salvataggio avvenuto. */
 export function apriDialogoRipartizione(zona, { dopo = null } = {}) {
   const quote = leggiRipartizioneZona(app.archivio, zona.id);
-  const collaboratori = modello().collaboratori.filter((c) => c.attivo || quote.some((q) => q.collaboratore_id === c.id));
+  const collaboratori = modello().collaboratori.filter((c) => !c.percentualeFissa && (c.attivo || quote.some((q) => q.collaboratore_id === c.id)));
   const editor = editorRipartizione({ collaboratori, quote });
   const m = apriModale({
     titolo: `Ripartizione della zona ${zona.nome}`, icona: 'handshake', larghezza: 560, invioConferma: true,

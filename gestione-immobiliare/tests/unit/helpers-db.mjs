@@ -14,10 +14,18 @@ const wasm = readFileSync(require.resolve('sql.js/dist/sql-wasm.wasm'));
 
 export const motore = () => caricaMotore(initSqlJs, wasm);
 
-export async function nuovaApp(driver = new DriverMemoria()) {
+/**
+ * Archivio nuovo come al primo avvio. Di norma senza il capo e la segretaria (percentuali fisse sul totale delle
+ * provvigioni), così i numeri delle prove sui soli collaboratori restano quelli calcolati a mano; con
+ * { conPercentualiFisse: true } si tengono.
+ */
+export async function nuovaApp(driver = new DriverMemoria(), { conPercentualiFisse = false } = {}) {
   const SQL = await motore();
   const archivio = await new Archivio(SQL, driver).apri();
-  if (archivio.primoAvvio) await seedPrimoAvvio(archivio);
+  if (archivio.primoAvvio) {
+    await seedPrimoAvvio(archivio);
+    if (!conPercentualiFisse) await archivio.transazione(() => { archivio.esegui('DELETE FROM collaboratori WHERE percentuale_fissa IS NOT NULL'); }, { silenzioso: true });
+  }
   return { SQL, driver, archivio };
 }
 

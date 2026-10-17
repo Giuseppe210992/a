@@ -4,7 +4,7 @@
 // anche prima di aprirlo e non si puo' importare per errore un database di un altro programma.
 
 export const ID_APPLICAZIONE = 0x47494d4d; // "GIMM"
-export const VERSIONE_SCHEMA = 2;
+export const VERSIONE_SCHEMA = 3;
 
 const MIGRAZIONI = [
   {
@@ -181,6 +181,29 @@ const MIGRAZIONI = [
         PRIMARY KEY (zona_id, collaboratore_id)
       ) WITHOUT ROWID;
       CREATE INDEX ix_zone_quote_collaboratore ON zone_quote (collaboratore_id);
+    `,
+  },
+  {
+    versione: 3,
+    sql: `
+      -- 1) mese della proposta: da qui si decide in quale cumulo mensile entra la pratica (YYYY-MM).
+      --    Vuoto per le pratiche vecchie, che continuano a contare dal giorno del rogito.
+      ALTER TABLE pratiche ADD COLUMN mese_proposta TEXT
+        CHECK (mese_proposta IS NULL OR mese_proposta GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]');
+
+      -- 2) collaboratori a percentuale fissa (il capo, la segretaria): prendono una percentuale del totale
+      --    delle provvigioni di ogni pratica, in qualsiasi zona. Vuoto per chi lavora a scaglioni.
+      ALTER TABLE collaboratori ADD COLUMN percentuale_fissa REAL
+        CHECK (percentuale_fissa IS NULL OR (percentuale_fissa > 0 AND percentuale_fissa <= 100));
+
+      -- 3) negli archivi che hanno gia' dei collaboratori si aggiungono il capo (15%) e la segretaria (4%);
+      --    un archivio nuovo e' ancora vuoto qui: li crea il primo avvio insieme agli altri.
+      INSERT INTO collaboratori (nome, attivo, colore, note, creato_il, aggiornato_il, percentuale_fissa)
+        SELECT 'Capo', 1, 3, NULL, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 15
+        WHERE EXISTS (SELECT 1 FROM collaboratori) AND NOT EXISTS (SELECT 1 FROM collaboratori WHERE nome = 'Capo' COLLATE NOCASE);
+      INSERT INTO collaboratori (nome, attivo, colore, note, creato_il, aggiornato_il, percentuale_fissa)
+        SELECT 'Segretaria', 1, 4, NULL, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 4
+        WHERE EXISTS (SELECT 1 FROM collaboratori) AND NOT EXISTS (SELECT 1 FROM collaboratori WHERE nome = 'Segretaria' COLLATE NOCASE);
     `,
   },
 ];

@@ -132,17 +132,30 @@ export async function apriContesto({ profilo = null, viewport = { width: 1440, h
   return { ctx, browser, errori, seguiPagina, chiudi: async () => { await salvaCopertura(); await ctx.close(); if (browser) await browser.close(); } };
 }
 
-export async function apriApp(pagina, hash = '') {
+/**
+ * Apre l'applicazione. Di norma si tolgono il capo e la segretaria (percentuali fisse sul totale delle provvigioni) che il
+ * primo avvio crea: così i numeri delle prove sui soli collaboratori restano quelli calcolati a mano. Con
+ * { conPercentualiFisse: true } restano.
+ */
+export async function apriApp(pagina, hash = '', { conPercentualiFisse = false } = {}) {
   await pagina.goto(URL_APP + hash);
   await pagina.waitForSelector('.sidebar', { state: 'attached', timeout: 15000 });
   await pagina.waitForFunction(() => window.__gi && window.__gi.app && window.__gi.app.archivio, null, { timeout: 15000 });
+  if (!conPercentualiFisse) {
+    await pagina.evaluate(async () => {
+      const a = window.__gi.app.archivio;
+      if (a.valore('SELECT COUNT(*) FROM collaboratori WHERE percentuale_fissa IS NOT NULL')) {
+        await a.transazione(() => { a.esegui('DELETE FROM collaboratori WHERE percentuale_fissa IS NOT NULL'); });
+      }
+    });
+  }
 }
 
 /** Apre una finestra pulita con l'applicazione gia' avviata (archivio vuoto). */
 export async function avvia(opzioni = {}) {
   const c = await apriContesto(opzioni);
   const pagina = await c.ctx.newPage();
-  await apriApp(pagina, opzioni.hash || '');
+  await apriApp(pagina, opzioni.hash || '', opzioni);
   return { ...c, pagina };
 }
 

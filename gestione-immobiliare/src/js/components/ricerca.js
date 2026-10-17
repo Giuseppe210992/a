@@ -107,7 +107,7 @@ export function creaRicerca() {
     }
     if (intestazione) lista.append(h('div', { class: 'ris-piede', style: { border: 0, margin: '0 0 2px', padding: '6px 10px' } }, intestazione));
     elenco.forEach(({ p, trovato }) => {
-      const sotto = [p.immobile_comune, p.zonaNome, ETICHETTA_STATO[p.stato], dataIt(p.dataRif)].filter(Boolean).join(' · ');
+      const sotto = [p.immobile_comune, p.zonaNome, ETICHETTA_STATO[p.stato], p.dataEtichetta].filter(Boolean).join(' · ');
       const b = h('button', { type: 'button', class: 'ris-voce', role: 'option', 'aria-selected': 'false', onclick: () => vaiAPratica(p) },
         icona('file-plus', { dimensione: 18 }),
         h('span', { class: 'ris-testo' },

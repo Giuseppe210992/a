@@ -62,7 +62,7 @@ describe('Programma Windows (Electron)', { skip: binarioElectron() ? false : 'El
     assert.equal(info.percorsoDati, path.join(datiPercorso, 'Dati', 'archivio.sqlite'));
     assert.ok(fs.existsSync(info.percorsoDati), 'il file dei dati è stato creato al primo avvio');
     await p.screenshot({ path: path.join(base, 'dashboard-vuota.png') });
-    assert.deepEqual((await sql(p, 'SELECT nome FROM collaboratori ORDER BY id')).map((r) => r.nome), ['Luca', 'Giuseppe']);
+    assert.deepEqual((await sql(p, 'SELECT nome, percentuale_fissa FROM collaboratori ORDER BY id')).map((r) => [r.nome, r.percentuale_fissa]), [['Luca', null], ['Giuseppe', null], ['Capo', 15], ['Segretaria', 4]]);
   });
 
   test('si inseriscono dati dall\'interfaccia: pratica, incasso, esportazione, backup', async () => {
@@ -74,6 +74,8 @@ describe('Programma Windows (Electron)', { skip: binarioElectron() ? false : 'El
     const F = (e, o = {}) => p.locator('#form-pratica').getByLabel(e, o);
     await F(/^Zona\*?$/).selectOption({ label: 'Centro' });
     await F('Prezzo di vendita').fill('150.000');
+    await F('Nominativo del venditore').fill('Mario Rossi');
+    await F('Nominativo dell\'acquirente').fill('Anna Bianchi');
     await p.locator('#pagamenti-venditore').getByLabel('Bonifico').fill('1.220'); // 1.000 + IVA al 22%
     await p.waitForSelector('#ripartizione-automatica'); // la ripartizione arriva da sola dalla zona
     await p.click('#salva-pratica');

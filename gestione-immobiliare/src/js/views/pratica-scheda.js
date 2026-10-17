@@ -47,6 +47,13 @@ async function eliminaIncassoConferma(inc, p) {
 }
 
 function passaggiCalcolo(m, p, v, nome) {
+  if (v.fissa) {
+    // chi prende una percentuale fissa: una percentuale del totale delle provvigioni dei collaboratori della pratica
+    return [
+      `Totale delle provvigioni dei collaboratori su questa pratica: ${eur(v.baseCent)}.`,
+      `${nome} prende il ${pct(v.percentualeFissa)} di quel totale, in qualsiasi zona: ${eur(v.baseCent)} × ${pct(v.percentualeFissa)} = ${eur(v.provvigioneCent)} (arrotondato al centesimo).`,
+    ];
+  }
   const cu = m.cumuli.find((c) => c.chiave === v.cumuloChiave);
   const metodo = m.opzioni.metodo;
   const passi = [];
@@ -123,12 +130,14 @@ export const scheda = {
         variaz !== null ? h('dd', { class: `num ${variaz >= 0 ? 'positivo' : 'negativo'}` }, `${eurSegno(variaz)} (${pctSegno((variaz / p.prezzo_acquisto_cent) * 100)})`) : null,
         h('dt', null, 'Venditore'), h('dd', null, p.venditore ?? '—'),
         h('dt', null, 'Acquirente'), h('dd', null, p.acquirente ?? '—'),
-        ...(stessaData
+        ...(p.meseProposta
+          ? [h('dt', null, 'Mese della proposta'), h('dd', null, meseAnno(p.meseProposta)), h('dt', null, 'Inserita il'), h('dd', null, dataIt(p.data_pratica))]
+          : stessaData
           ? [h('dt', null, 'Data'), h('dd', null, dataIt(p.data_rogito))]
           : [h('dt', null, 'Apertura'), h('dd', null, dataIt(p.data_pratica)),
             h('dt', null, 'Rogito'), h('dd', null, p.data_rogito ? dataIt(p.data_rogito) : '—')]),
-        !stessaData && p.data_rogito && p.data_pratica && p.data_rogito >= p.data_pratica ? h('dt', null, 'Tempo di lavorazione') : null,
-        !stessaData && p.data_rogito && p.data_pratica && p.data_rogito >= p.data_pratica ? h('dd', null, `${num(giorniTra(p.data_pratica, p.data_rogito))} giorni`) : null,
+        !p.meseProposta && !stessaData && p.data_rogito && p.data_pratica && p.data_rogito >= p.data_pratica ? h('dt', null, 'Tempo di lavorazione') : null,
+        !p.meseProposta && !stessaData && p.data_rogito && p.data_pratica && p.data_rogito >= p.data_pratica ? h('dd', null, `${num(giorniTra(p.data_pratica, p.data_rogito))} giorni`) : null,
       ),
       p.note ? h('div', { style: { marginTop: '14px' } }, h('div', { class: 'sottotesto forte' }, 'Note'), h('p', { style: { marginTop: '4px', whiteSpace: 'pre-wrap' } }, p.note)) : null);
 
@@ -182,8 +191,8 @@ export const scheda = {
           const c = m.collaboratori.find((x) => x.id === v.collaboratoreId);
           return h('tr', null,
             h('td', { class: 'forte' }, c ? h('span', { class: 'chip-col' }, h('span', { class: `punto-col col-${c.colore}` }), c.nome) : h('span', { class: 'badge badge-warn' }, 'Non assegnata')),
-            h('td', { class: 'num' }, pct(v.quotaPct)), h('td', { class: 'num' }, eur(v.fatturatoCent)),
-            h('td', null, v.scaglioneIdx >= 0 ? h('span', { class: 'badge badge-info' }, `${v.scaglioneIdx + 1}° · ${pct(Math.round(v.percentualeApplicata * 100) / 100)}`) : h('span', { class: 'sottotesto' }, p.conclusa ? 'non configurato' : '—')),
+            h('td', { class: 'num' }, v.fissa ? '—' : pct(v.quotaPct)), h('td', { class: 'num' }, v.fissa ? '—' : eur(v.fatturatoCent)),
+            h('td', null, v.fissa ? h('span', { class: 'badge badge-info' }, `${pct(v.percentualeFissa)} del totale`) : v.scaglioneIdx >= 0 ? h('span', { class: 'badge badge-info' }, `${v.scaglioneIdx + 1}° · ${pct(Math.round(v.percentualeApplicata * 100) / 100)}`) : h('span', { class: 'sottotesto' }, p.conclusa ? 'non configurato' : '—')),
             h('td', { class: 'num' }, eur(v.provvigioneCent)), h('td', { class: 'num' }, eur(v.maturataCent)), h('td', { class: 'num' }, eur(v.liquidataCent)),
             h('td', { class: `num forte ${v.daLiquidareCent < 0 ? 'negativo' : ''}` }, eur(v.daLiquidareCent)));
         }))))

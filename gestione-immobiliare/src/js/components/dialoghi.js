@@ -140,7 +140,7 @@ export function apriDialogoLiquidazione({ collaboratoreId = null, praticaId = nu
       righe.push({ v, p, check, campo });
       return h('tr', null,
         h('td', { class: 'centro' }, check),
-        h('td', null, h('span', { class: 'forte' }, p.codice), h('span', { class: 'sottotesto' }, `${p.descrizione} · ${dataIt(p.dataRif)}`)),
+        h('td', null, h('span', { class: 'forte' }, p.codice), h('span', { class: 'sottotesto' }, `${p.descrizione} · ${p.dataEtichetta}`)),
         h('td', { class: 'num' }, eur(v.maturataCent)),
         h('td', { class: 'num' }, eur(v.liquidataCent)),
         h('td', { class: 'num forte' }, anticipo ? h('span', { class: 'badge badge-corso' }, 'In corso') : eur(v.daLiquidareCent)),

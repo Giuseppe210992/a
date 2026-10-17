@@ -65,13 +65,13 @@ describe('Impostazioni', () => {
     await f.getByLabel('Collaboratore attivo').uncheck();
     await bottoneFinestra(p, 'Salva').click();
     await attendiNotifica(p, /Modifiche salvate/);
-    assert.deepEqual(await sql(p, "SELECT nome, colore, attivo FROM collaboratori WHERE id = 3"), [{ nome: 'Marco R.', colore: 5, attivo: 0 }]);
+    assert.deepEqual(await sql(p, "SELECT nome, colore, attivo FROM collaboratori WHERE nome = 'Marco R.'"), [{ nome: 'Marco R.', colore: 5, attivo: 0 }]);
     assert.match(rimuoviSpazi(await riga('Marco R.').innerText()), /Non attivo/);
     // un collaboratore non attivo non viene più proposto nel modulo della pratica, ma resta nei filtri come "(non attivo)"
     assert.match((await p.locator('#filtro-collab option').allInnerTexts()).join('|'), /Marco R\. \(non attivo\)/);
     await riga('Marco R.').getByRole('button', { name: 'Attiva' }).click();
     await attendiNotifica(p, /Marco R\.: attivato/);
-    assert.equal(await valoreSql(p, "SELECT attivo FROM collaboratori WHERE id = 3"), 1);
+    assert.equal(await valoreSql(p, "SELECT attivo FROM collaboratori WHERE nome = 'Marco R.'"), 1);
     await riga('Marco R.').getByRole('button', { name: 'Disattiva' }).waitFor();
   });
 
@@ -430,7 +430,7 @@ describe('Impostazioni', () => {
     assert.match(t, /Programma Gestione Immobiliare 1\.0\.0/);
     assert.match(t, /Modalità Browser \(dati nella memoria del browser\)/);
     assert.match(t, /Dove sono i dati IndexedDB del browser/);
-    assert.match(t, /Versione dell'archivio Schema 2/);
+    assert.match(t, /Versione dell'archivio Schema 3/);
     assert.match(t, /Connessione a Internet Non necessaria: tutto funziona offline/);
     assert.match(t, /scorciatoie da tastiera/i);
   });

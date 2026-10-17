@@ -1,5 +1,5 @@
 // Esportazione in CSV (apribile con Excel italiano: separatore ";", virgola decimale, UTF-8 con BOM).
-import { csvCampo, csvEuro, dataIt } from '../core/format.js';
+import { csvCampo, csvEuro, dataIt, meseAnno } from '../core/format.js';
 import { ETICHETTA_STATO } from './repo/pratiche.js';
 import { PARTI, MODALITA } from './calc/compensi.js';
 
@@ -14,7 +14,7 @@ function creaCsv(intestazioni, righe) {
 export function csvPratiche(modello, pratiche = modello.pratiche) {
   const nomeCollab = new Map(modello.collaboratori.map((c) => [c.id, c.nome]));
   const intestazioni = [
-    'Codice', 'Stato', 'Data apertura', 'Data rogito', 'Zona', 'Indirizzo', 'Comune', 'Tipo immobile',
+    'Codice', 'Stato', 'Data apertura', 'Data rogito', 'Mese della proposta', 'Zona', 'Indirizzo', 'Comune', 'Tipo immobile',
     'Prezzo di vendita', 'Prezzo di acquisto', 'Venditore', 'Acquirente',
     'Venditore: contanti (IVA compresa)', 'Venditore: bonifico (IVA compresa)', 'Venditore: assegno (IVA compresa)',
     'Acquirente: contanti (IVA compresa)', 'Acquirente: bonifico (IVA compresa)', 'Acquirente: assegno (IVA compresa)',
@@ -23,14 +23,14 @@ export function csvPratiche(modello, pratiche = modello.pratiche) {
     'Provvigioni liquidate', 'Provvigioni da liquidare', 'Dati mancanti', 'Note',
   ];
   const righe = pratiche.map((p) => [
-    p.codice, ETICHETTA_STATO[p.stato] ?? p.stato, dataIt(p.data_pratica), p.data_rogito ? dataIt(p.data_rogito) : '',
+    p.codice, ETICHETTA_STATO[p.stato] ?? p.stato, dataIt(p.data_pratica), p.data_rogito ? dataIt(p.data_rogito) : '', p.meseProposta ? meseAnno(p.meseProposta) : '',
     p.zonaNome ?? '', p.immobile_indirizzo ?? '', p.immobile_comune ?? '', p.immobile_tipo ?? '',
     csvEuro(p.prezzo_vendita_cent), csvEuro(p.prezzo_acquisto_cent), p.venditore ?? '', p.acquirente ?? '',
     ...PARTI.flatMap((parte) => MODALITA.map((modo) => (p.compensi.daPagamenti ? csvEuro(p.compensi[parte.id][`${modo.id}Cent`]) : ''))),
     csvEuro(p.compenso_venditore_cent), csvEuro(p.compenso_acquirente_cent), csvEuro(p.compensoTotaleCent),
     String(p.aliquota_iva).replace('.', ','), csvEuro(p.ivaCent), csvEuro(p.totaleLordoCent),
     csvEuro(p.incassatoCent), csvEuro(p.daIncassareCent),
-    p.voci.filter((v) => v.collaboratoreId != null).map((v) => `${nomeCollab.get(v.collaboratoreId) ?? '?'} ${String(v.quotaPct).replace('.', ',')}%`).join(' / '),
+    p.voci.filter((v) => v.collaboratoreId != null && !v.fissa).map((v) => `${nomeCollab.get(v.collaboratoreId) ?? '?'} ${String(v.quotaPct).replace('.', ',')}%`).join(' / '),
     csvEuro(p.provvigioniCent), csvEuro(p.maturateCent), csvEuro(p.liquidateCent), csvEuro(p.daLiquidareCent),
     p.mancanti.map((m) => m.testo).join(' | '), p.note ?? '',
   ]);
@@ -42,7 +42,7 @@ export function csvProvvigioni(modello, voci) {
   const intestazioni = ['Codice pratica', 'Data rogito', 'Zona', 'Collaboratore', 'Quota %', 'Fatturato attribuito', 'Percentuale applicata', 'Provvigione calcolata', 'Maturata', 'Liquidata', 'Da liquidare'];
   const righe = voci.map(({ p, v }) => [
     p.codice, p.data_rogito ? dataIt(p.data_rogito) : '', p.zonaNome ?? '', nomeCollab.get(v.collaboratoreId) ?? 'Non assegnato',
-    String(v.quotaPct).replace('.', ','), csvEuro(v.fatturatoCent), String(Math.round(v.percentualeApplicata * 100) / 100).replace('.', ','),
+    v.fissa ? '' : String(v.quotaPct).replace('.', ','), csvEuro(v.fatturatoCent), String(Math.round(v.percentualeApplicata * 100) / 100).replace('.', ','),
     csvEuro(v.provvigioneCent), csvEuro(v.maturataCent), csvEuro(v.liquidataCent), csvEuro(v.daLiquidareCent),
   ]);
   return creaCsv(intestazioni, righe);

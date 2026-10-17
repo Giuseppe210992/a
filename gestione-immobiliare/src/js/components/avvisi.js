@@ -119,7 +119,7 @@ export async function calcolaAvvisi() {
   }
 
   // 7) zone senza ripartizione: le nuove pratiche di quelle zone resterebbero senza assegnazione ai collaboratori
-  const attivi = m.collaboratori.filter((c) => c.attivo);
+  const attivi = m.collaboratori.filter((c) => c.attivo && !c.percentualeFissa);
   const sommaPredefinita = (imp['ripartizione.predefinita'] || []).filter((x) => attivi.some((c) => c.id === x.collaboratoreId)).reduce((s, x) => s + Math.round(x.percentuale * 100), 0);
   if (attivi.length > 1 && sommaPredefinita !== 10000) {
     const senza = m.zone.filter((z) => z.attiva && !(z.ripartizione || []).length);

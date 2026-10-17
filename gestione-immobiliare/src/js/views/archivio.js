@@ -37,9 +37,9 @@ export function eliminaPraticaConConferma(p, { dopo = null } = {}) {
         ...(p.stato !== 'annullata' ? [{ id: 'annulla', etichetta: 'Segna come annullata', tipo: 'primario', onClick: async () => {
           // si riscrive la pratica identica, cambiando solo lo stato (compresi gli importi pagati e il loro modo)
           const dati = Object.fromEntries(['id', 'codice', 'data_pratica', 'data_rogito', 'zona_id', 'immobile_indirizzo', 'immobile_comune', 'immobile_tipo', 'prezzo_vendita_cent', 'prezzo_acquisto_cent', 'venditore', 'acquirente',
-            'compensi_da_pagamenti', ...CAMPI_PAGAMENTO, 'compenso_venditore_cent', 'compenso_acquirente_cent', 'aliquota_iva', 'note'].map((c) => [c, p[c]]));
+            'compensi_da_pagamenti', 'mese_proposta', ...CAMPI_PAGAMENTO, 'compenso_venditore_cent', 'compenso_acquirente_cent', 'aliquota_iva', 'note'].map((c) => [c, p[c]]));
           await salvaPratica(app.archivio, { ...dati, stato: 'annullata' },
-            p.voci.filter((v) => v.collaboratoreId != null).map((v) => ({ collaboratore_id: v.collaboratoreId, percentuale: v.quotaPct })));
+            p.voci.filter((v) => v.collaboratoreId != null && !v.fissa).map((v) => ({ collaboratore_id: v.collaboratoreId, percentuale: v.quotaPct })));
           notificaOk(`Pratica ${p.codice} segnata come annullata.`);
           if (dopo) dopo('annullata');
         } }] : []),
@@ -188,15 +188,15 @@ export const archivio = {
         const incassoPct = p.totaleLordoCent > 0 ? Math.min(100, (p.incassatoCent / p.totaleLordoCent) * 100) : 0;
         return h('tr', { class: 'cliccabile', dataset: { id: p.id }, onclick: (ev) => { if (!ev.target.closest('a, button, .popover')) vai(); } },
           h('td', { class: 'forte' }, h('a', { href: `#/pratiche/${p.id}`, style: { color: 'var(--text)' } }, ...evidenzia(p.codice, termini)), p.incompleta ? h('span', { class: 'badge badge-warn', style: { marginLeft: '8px' }, title: p.mancanti.map((x) => x.testo).join(' · ') }, icona('triangle-alert', { dimensione: 13 }), 'Dati') : null),
-          h('td', { class: 'num' }, dataIt(p.dataRif)),
+          h('td', { class: 'num' }, p.dataEtichetta),
           h('td', { class: 'immobile' }, h('span', { class: 'forte' }, ...evidenzia(p.descrizione, termini)), h('span', { class: 'sottotesto' }, ...evidenzia([p.immobile_comune, p.immobile_tipo].filter(Boolean).join(' · '), termini), p.prezzo_vendita_cent ? h('span', { class: 'prezzo-inline' }, ` · ${eurInt(p.prezzo_vendita_cent)}`) : null),
             (p.venditore || p.acquirente) ? h('span', { class: 'sottotesto' }, ...evidenzia([p.venditore && `Ven. ${p.venditore}`, p.acquirente && `Acq. ${p.acquirente}`].filter(Boolean).join(' · '), termini)) : null),
           h('td', null, p.zonaNome ?? h('span', { class: 'badge badge-warn' }, 'Da indicare')),
           h('td', null, badgeStato(p.stato)),
-          h('td', null, h('div', { style: { display: 'flex', gap: '4px', flexWrap: 'wrap' } }, p.voci.filter((v) => v.collaboratoreId != null).map((v) => {
+          h('td', null, h('div', { style: { display: 'flex', gap: '4px', flexWrap: 'wrap' } }, p.voci.filter((v) => v.collaboratoreId != null && !v.fissa).map((v) => {
             const c = m.collaboratori.find((x) => x.id === v.collaboratoreId);
             return h('span', { class: 'chip-col', title: `${c?.nome} ${pct(v.quotaPct)}` }, h('span', { class: `punto-col col-${c?.colore ?? 0}` }), c?.nome ?? '?', v.quotaPct < 100 ? h('span', { class: 'sottotesto' }, ` ${pct(v.quotaPct)}`) : null);
-          }), p.voci.every((v) => v.collaboratoreId == null) ? h('span', { class: 'sottotesto' }, '—') : null)),
+          }), p.voci.every((v) => v.collaboratoreId == null || v.fissa) ? h('span', { class: 'sottotesto' }, '—') : null)),
           h('td', { class: 'num col-prezzo' }, p.prezzo_vendita_cent ? eur(p.prezzo_vendita_cent) : '—'),
           h('td', { class: 'num forte' }, eur(p.compensoTotaleCent)),
           h('td', { class: 'num' }, eur(p.incassatoCent), p.totaleLordoCent > 0 ? h('span', { class: 'sottotesto' }, `${Math.round(incassoPct)}% di ${eurInt(p.totaleLordoCent)}`) : null),

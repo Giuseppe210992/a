@@ -1,5 +1,5 @@
-// Nuova pratica e modifica: il modulo ha tre passi (zona, prezzo, quanto ha pagato ciascuna parte con contanti, bonifico e
-// assegno: tutti con IVA compresa). Numero, stato, data e ripartizione tra i collaboratori sono automatici; le informazioni
+// Nuova pratica e modifica: il modulo ha tre passi (zona; mese della proposta e prezzo; chi ha pagato e quanto, con contanti,
+// bonifico e assegno: tutti con IVA compresa; i nominativi sono obbligatori). Numero, stato, data e ripartizione tra i collaboratori sono automatici; le informazioni
 // facoltative stanno in una sezione chiusa. Totali in tempo reale, stima delle provvigioni, salvataggio sul database,
 // avviso per le modifiche non salvate.
 // I numeri attesi sono calcolati a mano.
@@ -49,6 +49,11 @@ describe('Nuova pratica e modifica', () => {
   const stima = async () => rimuoviSpazi(await app.pagina.locator('.stima-provvigione').innerText());
   const ripartizione = async () => rimuoviSpazi(await app.pagina.locator('#ripartizione-automatica').innerText());
   const scegliZona = async (nome) => { await L(ZONA).selectOption({ label: nome }); };
+  /** Nominativi di venditore e acquirente (obbligatori). */
+  const nomi = async (venditore = 'Mario Rossi', acquirente = 'Anna Bianchi') => {
+    await L('Nominativo del venditore').fill(venditore);
+    await L('Nominativo dell\'acquirente').fill(acquirente);
+  };
   const testoDi = async (selettore) => rimuoviSpazi(await app.pagina.locator(selettore).innerText());
   /** Apre la sezione «Altre informazioni (facoltative)» se è chiusa. */
   const apriAltre = async () => { if (!(await app.pagina.locator('#altre-info').evaluate((d) => d.open))) await app.pagina.click('#altre-info summary'); };
@@ -63,16 +68,21 @@ describe('Nuova pratica e modifica', () => {
     assert.equal(await p.locator('#form-pratica input[type="text"]').evaluateAll((a) => a.filter((i) => /gg\/mm\/aaaa/.test(i.placeholder)).length), 0, 'nessun campo data');
     assert.match(await testoDi('#data-pratica'), /^Data della pratica: 16\/10\/2026 \(oggi\)\.$/);
     // tre passi e una sezione chiusa per il resto
-    assert.deepEqual((await p.locator('#form-pratica .form-colonna > section > h2').allInnerTexts()).map(rimuoviSpazi), ['1. In che zona?', '2. A che prezzo è stata venduta?', '3. Quanto hanno pagato?']);
+    assert.deepEqual((await p.locator('#form-pratica .form-colonna > section > h2').allInnerTexts()).map(rimuoviSpazi), ['1. In che zona?', '2. Quando e a che prezzo?', '3. Chi ha pagato e quanto?']);
     assert.equal(await p.locator('#altre-info').evaluate((d) => d.open), false, 'le informazioni facoltative sono chiuse');
     assert.equal(await testoDi('#altre-info summary'), 'Altre informazioni (facoltative)');
     // zona, prezzo, pagamenti
     assert.deepEqual((await L(ZONA).locator('option').allInnerTexts()).map((x) => x.trim()), ['Scegli la zona', 'Centro', 'Collina', 'Lungomare', 'Porto', 'Scalo']);
     assert.equal(await L('Prezzo di vendita').inputValue(), '');
+    // mese della proposta: di default quello di oggi; da novembre 2026 (il prossimo) fino a ventiquattro mesi fa
+    assert.equal(await L('Mese della proposta').locator('option:checked').innerText(), 'Ottobre 2026');
+    const mesi = (await L('Mese della proposta').locator('option').allInnerTexts()).map((x) => x.trim());
+    assert.deepEqual([mesi[0], mesi[1], mesi[mesi.length - 1], mesi.length], ['Novembre 2026', 'Ottobre 2026', 'Ottobre 2024', 26]);
     // i sei importi pagati (due parti × tre modi), tutti vuoti, con la dicitura sull'IVA
     for (const parte of ['venditore', 'acquirente']) {
-      assert.match(await testoDi(`#pagamenti-${parte} legend`), parte === 'venditore' ? /^Quanto ha pagato il venditore\?$/i : /^Quanto ha pagato l'acquirente\?$/i);
-      assert.deepEqual((await p.locator(`#pagamenti-${parte} label`).allInnerTexts()).map(rimuoviSpazi), ['Contanti', 'Bonifico', 'Assegno']);
+      assert.match(await testoDi(`#pagamenti-${parte} legend`), parte === 'venditore' ? /^Il venditore$/i : /^L'acquirente$/i);
+      assert.deepEqual((await p.locator(`#pagamenti-${parte} label`).allInnerTexts()).map((x) => rimuoviSpazi(x).replace('*', '')), [parte === 'venditore' ? 'Nominativo del venditore' : 'Nominativo dell\'acquirente', 'Contanti', 'Bonifico', 'Assegno']);
+      assert.equal(await L(parte === 'venditore' ? 'Nominativo del venditore' : 'Nominativo dell\'acquirente').inputValue(), '');
       for (const modo of ['Contanti', 'Bonifico', 'Assegno']) assert.equal(await P(parte, modo).inputValue(), '');
     }
     // la ripartizione non si sceglie: niente righe, niente scorciatoie
@@ -103,13 +113,17 @@ describe('Nuova pratica e modifica', () => {
     await errori(p).first().waitFor();
     const elenco = await p.$$eval('#form-pratica .campo.ha-errore .errore', (a) => a.map((x) => x.textContent.trim()));
     assert.ok(elenco.some((e) => /Scegli la zona/.test(e)), `errore sulla zona: ${elenco}`);
+    assert.ok(elenco.some((e) => /Scrivi il nominativo del venditore/.test(e)), `nominativo del venditore obbligatorio: ${elenco}`);
+    assert.ok(elenco.some((e) => /Scrivi il nominativo dell'acquirente/.test(e)), `nominativo dell'acquirente obbligatorio: ${elenco}`);
     await attendiNotifica(p, /Controlla i campi evidenziati/);
     assert.equal(await p.evaluate(() => location.hash), '#/nuova', 'si resta sul modulo');
     assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM pratiche'), 0);
     // il cursore va sul primo campo sbagliato
     assert.equal(await p.evaluate(() => document.activeElement.labels?.[0]?.textContent.replace('*', '').trim()), 'Zona');
-    // importi scritti male
+    // importi scritti male (con i nominativi già scritti, che sono obbligatori)
     await scegliZona('Centro');
+    await nomi();
+    await p.waitForFunction(() => document.querySelectorAll('#form-pratica .campo.ha-errore').length === 0);
     await L('Prezzo di vendita').fill('abc');
     await P('venditore', 'Bonifico').fill('12x');
     await p.click('#salva-pratica');
@@ -287,11 +301,11 @@ describe('Nuova pratica e modifica', () => {
     const p = app.pagina;
     await scegliZona('Centro');
     await L('Prezzo di vendita').fill('185.000,00');
+    await L('Mese della proposta').selectOption({ label: 'Settembre 2026' });
+    await nomi();
     await apriAltre();
     await L('Tipo di immobile').selectOption({ label: 'Appartamento' });
     await L('Prezzo di acquisto').fill('150.000,00');
-    await L('Venditore (nome', { exact: false }).fill('Mario Rossi');
-    await L('Acquirente (nome', { exact: false }).fill('Anna Bianchi');
     // 4.514,00 con IVA 22% = 3.700,00 + 814,00 (venditore con bonifico, acquirente con assegno)
     await P('venditore', 'Bonifico').fill('4.514,00');
     await P('acquirente', 'Assegno').fill('4.514,00');
@@ -302,8 +316,8 @@ describe('Nuova pratica e modifica', () => {
     assert.match(await p.evaluate(() => location.hash), /^#\/pratiche\/\d+$/);
     const riga = (await sql(p, 'SELECT * FROM pratiche'))[0];
     assert.deepEqual(
-      [riga.codice, riga.stato, riga.data_pratica, riga.data_rogito, riga.immobile_indirizzo, riga.immobile_comune, riga.immobile_tipo, riga.prezzo_vendita_cent, riga.prezzo_acquisto_cent, riga.venditore, riga.acquirente, riga.aliquota_iva, riga.note],
-      ['2026/001', 'conclusa', '2026-10-16', '2026-10-16', null, null, 'Appartamento', 18500000, 15000000, 'Mario Rossi', 'Anna Bianchi', 22, 'Atto presso il notaio\nsecondo piano']);
+      [riga.codice, riga.stato, riga.data_pratica, riga.data_rogito, riga.mese_proposta, riga.immobile_indirizzo, riga.immobile_comune, riga.immobile_tipo, riga.prezzo_vendita_cent, riga.prezzo_acquisto_cent, riga.venditore, riga.acquirente, riga.aliquota_iva, riga.note],
+      ['2026/001', 'conclusa', '2026-10-16', '2026-10-16', '2026-09', null, null, 'Appartamento', 18500000, 15000000, 'Mario Rossi', 'Anna Bianchi', 22, 'Atto presso il notaio\nsecondo piano']);
     assert.deepEqual(
       [riga.compensi_da_pagamenti, riga.venditore_contanti_cent, riga.venditore_bonifico_cent, riga.venditore_assegno_cent, riga.acquirente_contanti_cent, riga.acquirente_bonifico_cent, riga.acquirente_assegno_cent, riga.compenso_venditore_cent, riga.compenso_acquirente_cent],
       [1, 0, 451400, 0, 0, 0, 451400, 370000, 370000]);
@@ -316,7 +330,7 @@ describe('Nuova pratica e modifica', () => {
     assert.match(t, /Pratica 2026\/001 · Appartamento · Zona Centro/);
     assert.match(t, /Prezzo di vendita 185\.000,00 €/);
     assert.match(t, /Differenza \+35\.000,00 € \(\+23,3%\)/);
-    assert.match(t, /Data 16\/10\/2026/);
+    assert.match(t, /Mese della proposta settembre 2026 Inserita il 16\/10\/2026/);
     assert.doesNotMatch(t, /Tempo di lavorazione|Rogito|Indirizzo/);
     assert.match(t, /Totale compenso senza IVA 7\.400,00 €/);
     assert.match(t, /IVA 22% compresa in quanto pagato 1\.628,00 €/);
@@ -336,6 +350,7 @@ describe('Nuova pratica e modifica', () => {
   test('"Salva e inserisci un\'altra" salva e riapre un modulo vuoto con il numero successivo', async () => {
     const p = app.pagina;
     await scegliZona('Lungomare');
+    await nomi();
     await P('venditore', 'Contanti').fill('1.000');
     await p.click('#salva-e-nuova');
     await attendiNotifica(p, /Pratica 2026\/002 salvata/);
@@ -382,6 +397,7 @@ describe('Nuova pratica e modifica', () => {
   test('una zona senza ripartizione: si può salvare lo stesso dopo conferma, e la pratica viene segnalata', async () => {
     const p = app.pagina;
     await scegliZona('Scalo');
+    await nomi();
     await P('venditore', 'Contanti').fill('500');
     await p.click('#salva-pratica');
     const f = finestra(p);
@@ -474,16 +490,21 @@ describe('Nuova pratica e modifica', () => {
     assert.equal(await testoDi('#riep-imponibile'), '5.000,00 €');
     assert.equal(await testoDi('#riep-iva'), '1.100,00 €');
     assert.match(await ripartizione(), /Luca 70%.*Giuseppe 30%.*Divisione già registrata/, 'la ripartizione di allora resta');
+    // la pratica vecchia non ha i nominativi: ora sono obbligatori, il modulo li chiede prima di salvare
+    assert.equal(await L('Mese della proposta').locator('option:checked').innerText(), 'Settembre 2026', 'proposto il mese del rogito di allora');
+    await p.click('#salva-pratica');
+    await p.waitForFunction(() => document.querySelectorAll('#form-pratica .campo.ha-errore').length === 2);
+    assert.equal(await valoreSql(p, "SELECT COUNT(*) FROM pratiche WHERE codice = 'V/1' AND venditore IS NOT NULL"), 0, 'non è stato salvato niente');
+    await nomi('Giulia Verdi', 'Paolo Neri');
     await p.click('#salva-pratica');
     await attendiNotifica(p, /Pratica V\/1 aggiornata/);
     await p.waitForSelector('#contenuto h1:has-text("Via Vecchia 5")');
     const r = (await sql(p, "SELECT * FROM pratiche WHERE codice = 'V/1'"))[0];
-    assert.deepEqual([r.compensi_da_pagamenti, r.compenso_venditore_cent, r.compenso_acquirente_cent, r.data_pratica, r.data_rogito, r.immobile_indirizzo], [1, 300000, 200000, '2026-09-01', '2026-09-10', 'Via Vecchia 5'], 'importi, date e indirizzo di allora restano');
+    assert.deepEqual([r.compensi_da_pagamenti, r.compenso_venditore_cent, r.compenso_acquirente_cent, r.data_pratica, r.data_rogito, r.immobile_indirizzo, r.venditore, r.acquirente, r.mese_proposta], [1, 300000, 200000, '2026-09-01', '2026-09-10', 'Via Vecchia 5', 'Giulia Verdi', 'Paolo Neri', '2026-09'], 'importi, date e indirizzo di allora restano');
     assert.deepEqual(await sql(p, "SELECT c.nome, q.percentuale FROM quote q JOIN collaboratori c ON c.id = q.collaboratore_id WHERE q.pratica_id = ? ORDER BY c.id", [id]), [{ nome: 'Luca', percentuale: 70 }, { nome: 'Giuseppe', percentuale: 30 }]);
     const t = rimuoviSpazi(await p.locator('#contenuto').innerText());
     assert.match(t, /Totale compenso senza IVA 5\.000,00 €/);
-    assert.match(t, /Apertura 01\/09\/2026/);
-    assert.match(t, /Rogito 10\/09\/2026/);
+    assert.match(t, /Mese della proposta settembre 2026 Inserita il 01\/09\/2026/);
   });
 
   test('una pratica che non esiste più viene spiegata, senza errori', async () => {

@@ -133,7 +133,7 @@ export const dashboard = {
         h('tbody', null, ultime.map((p) => {
           const vai = () => naviga(`#/pratiche/${p.id}`);
           return h('tr', { class: 'cliccabile', onclick: (ev) => { if (!ev.target.closest('a')) vai(); } },
-            h('td', null, dataIt(p.dataRif)),
+            h('td', null, p.dataEtichetta),
             h('td', null, h('a', { href: `#/pratiche/${p.id}`, class: 'forte', style: { color: 'var(--text)' } }, p.descrizione), h('span', { class: 'sottotesto' }, p.codice)),
             h('td', { class: 'num forte' }, eur(p.compensoTotaleCent)));
         }))))

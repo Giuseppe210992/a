@@ -22,7 +22,7 @@ Ti serve: un PC con Windows 10 o 11 e un account GitHub con accesso al repositor
 
 ## 2. Primo avvio
 
-Si apre un archivio **senza pratiche né zone**: nessun dato dimostrativo. Ci sono i due collaboratori, **Luca** e **Giuseppe**, e gli **scaglioni che hai indicato** (5% fino a 2.600 €, 8% fino a 5.200 €, 11% fino a 7.800 €, 15% fino a 13.000 €, 20% oltre i 13.000 €).
+Si apre un archivio **senza pratiche né zone**: nessun dato dimostrativo. Ci sono **Luca** e **Giuseppe**, il **capo** (15%) e la **segretaria** (4%) con la loro percentuale fissa, e gli **scaglioni che hai indicato** (5% fino a 2.600 €, 8% fino a 5.200 €, 11% fino a 7.800 €, 15% fino a 13.000 €, 20% oltre i 13.000 €).
 
 | # | Cosa controllare | Esito |
 |---|---|---|
@@ -53,7 +53,7 @@ Gli scaglioni sono già impostati con quelli che mi hai indicato. Vai in **Impos
 
 ## 4. Inserisci una pratica (vera o di prova)
 
-**+ Nuova pratica** → il modulo ha tre passi: **1)** scegli la **zona**, **2)** scrivi il **prezzo di vendita**, **3)** scrivi **quanto ha pagato** il venditore e quanto l'acquirente, in contanti, bonifico e assegno. Non ci sono codice, stato, date né via dell'immobile: il codice lo dà il programma (`AAAA/001`, `AAAA/002`…), la pratica è sempre «conclusa» e la data è quella di oggi. La divisione tra Luca e Giuseppe compare da sola, secondo la zona. Le cose facoltative (tipo di immobile, nomi, note…) stanno in «Altre informazioni». → **Salva pratica**.
+**+ Nuova pratica** → il modulo ha tre passi: **1)** scegli la **zona**, **2)** scegli il **mese della proposta** (da lì si decide in quale cumulo mensile entra la pratica) e scrivi il **prezzo di vendita**, **3)** scrivi il **nominativo** (obbligatorio) del venditore e dell'acquirente e **quanto ha pagato** ciascuno, in contanti, bonifico e assegno. Non ci sono codice, stato, date né via dell'immobile: il codice lo dà il programma (`AAAA/001`, `AAAA/002`…), la pratica è sempre «conclusa» e la data è quella di oggi. La divisione tra Luca e Giuseppe compare da sola, secondo la zona. Le cose facoltative (tipo di immobile, nomi, note…) stanno in «Altre informazioni». → **Salva pratica**.
 
 Come si leggono gli importi: **contanti, bonifico e assegno comprendono tutti l'IVA** (il programma la toglie). Esempio con IVA 22%: venditore 3.660 € di bonifico + acquirente 2.440 € in contanti → compenso senza IVA **5.000 €**, IVA **1.100 €**, pagato **6.100 €**.
 
@@ -68,6 +68,10 @@ Come si leggono gli importi: **contanti, bonifico e assegno comprendono tutti l'
 | 4.7 | Nelle finestre semplici (Registra incasso, Nuova zona, modifiche) scrivi il valore e premi **Invio**: fa quello che fa il pulsante principale. Nella liquidazione a più righe Invio **non** registra il pagamento (serve il pulsante) | |
 | 4.8 | **Ricerca rapida** (in alto, oppure premi `/`): scrivi una parola (codice, zona, nome del venditore o dell'acquirente), scorri con le frecce, Invio apre la pratica; Maiusc+Invio mostra tutte le corrispondenze nell'archivio | |
 | 4.9 | Provando a cambiare le percentuali della ripartizione di una zona, le pratiche **già inserite** restano come sono; valgono per quelle nuove | |
+| 4.10 | Provando a salvare senza il nominativo del venditore o dell'acquirente il programma non salva e lo dice | |
+| 4.11 | Con il mese della proposta diverso da quello di oggi, la stima dice «Cumulo di <mese scelto>» e la pratica compare in quel mese in Cumulo mensile e nelle Statistiche | |
+| 4.12 | **Capo e segretaria**: nella stima e nella scheda compaiono anche loro. Esempio con 10.000 € di compenso nel Centro tutto a Luca: Luca 1.500 €, Capo 225 € (15% di 1.500), Segretaria 60 € (4% di 1.500). Controlla che sia questo che intendevi (in più rispetto a Luca e Giuseppe, sul totale delle loro provvigioni) | |
+| 4.13 | In *Impostazioni → Collaboratori* si legge «Capo 15% del totale delle provvigioni» e «Segretaria 4%…»; con *Modifica* si cambia la percentuale. In *Paga un collaboratore* si possono pagare anche loro | |
 
 ## 5. Chiudi e riapri (la prova più importante)
 

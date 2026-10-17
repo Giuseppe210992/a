@@ -6,6 +6,7 @@
 // Importi sempre in centesimi interi.
 
 import { chiaveMese } from '../../core/dates.js';
+import { dataIt, meseAnno } from '../../core/format.js';
 import {
   arrotonda, creaTabella, controllaTabella, indiceScaglione, percentualeRaggiunta,
   prossimoScaglione, descriviScaglioni, distribuisciProvvigione,
@@ -111,7 +112,10 @@ export function calcolaModello(dati, opzioniIn = {}) {
     const incassatoCent = pagatoAllaConclusioneCent + (incassatoPerPratica.get(riga.id) || 0);
     const daIncassareCent = Math.max(0, totaleLordoCent - incassatoCent);
     const frazioneIncassata = totaleLordoCent > 0 ? Math.min(1, incassatoCent / totaleLordoCent) : 0;
-    const dataRif = conclusa ? (riga.data_rogito || riga.data_pratica) : riga.data_pratica;
+    // Giorno di riferimento: per le pratiche con il mese della proposta conta quel mese (si usa il suo primo giorno),
+    // da cui dipendono il cumulo mensile, i periodi e i grafici; per le vecchie conta il rogito.
+    const meseProposta = riga.mese_proposta || null;
+    const dataRif = meseProposta ? `${meseProposta}-01` : (conclusa ? (riga.data_rogito || riga.data_pratica) : riga.data_pratica);
 
     const quote = (quotePerPratica.get(riga.id) || []).slice().sort((a, b) => a.collaboratore_id - b.collaboratore_id);
     const quoteEffettive = quote.length ? quote : [{ collaboratore_id: null, percentuale: 100 }];
@@ -155,6 +159,9 @@ export function calcolaModello(dati, opzioniIn = {}) {
       incassatoCent, daIncassareCent, frazioneIncassata,
       dataRif,
       meseRif: chiaveMese(dataRif),
+      meseProposta,
+      // la data come si scrive nelle tabelle: «settembre 2026» se c'è il mese della proposta, altrimenti il giorno
+      dataEtichetta: meseProposta ? meseAnno(meseProposta) : dataIt(dataRif),
       voci,
       quoteDefinite: quote.length > 0,
       provvigioniCent: 0, maturateCent: 0, liquidateCent: 0, daLiquidareCent: 0,
@@ -223,6 +230,30 @@ export function calcolaModello(dati, opzioniIn = {}) {
   }
   cumuli.sort((a, b) => a.mese.localeCompare(b.mese) || (a.zonaNome || '').localeCompare(b.zonaNome || '', 'it') || (a.collaboratoreNome || '').localeCompare(b.collaboratoreNome || '', 'it'));
 
+  // --- 2b) chi prende una percentuale fissa (capo, segretaria): una percentuale del totale delle provvigioni di ogni
+  //         pratica conclusa, in qualsiasi zona. Si somma a quanto spetta ai collaboratori (è un costo in più per l'agenzia).
+  //         Ogni importo è arrotondato al centesimo pratica per pratica (mezzi verso l'alto).
+  const fissi = collaboratori.filter((c) => Number(c.percentuale_fissa) > 0);
+  if (fissi.length) {
+    for (const p of out) {
+      if (!p.conclusa) continue;
+      const base = p.voci.reduce((somma, v) => somma + v.provvigioneCent, 0);
+      if (base <= 0) continue;
+      for (const c of fissi) {
+        const voce = {
+          praticaId: p.id, collaboratoreId: c.id, fissa: true, quotaPct: 0, percentualeFissa: Number(c.percentuale_fissa),
+          baseCent: base,
+          fatturatoCent: 0,
+          provvigioneCent: arrotonda(base * Math.round(Number(c.percentuale_fissa) * 100), 10000),
+          maturataCent: 0, liquidataCent: 0, daLiquidareCent: 0,
+          cumuloChiave: null, scaglioneIdx: -1, percentualeApplicata: Number(c.percentuale_fissa),
+        };
+        p.voci.push(voce);
+        tutteLeVoci.push(voce);
+      }
+    }
+  }
+
   // --- 3) maturato / liquidato / da liquidare per voce e per pratica
   for (const p of out) {
     for (const v of p.voci) {
@@ -243,6 +274,7 @@ export function calcolaModello(dati, opzioniIn = {}) {
   // --- 4) riepiloghi per collaboratore e per zona (tutto lo storico)
   const riepCollab = new Map(collaboratori.map((c) => [c.id, {
     id: c.id, nome: c.nome, colore: c.colore, attivo: !!c.attivo,
+    percentualeFissa: Number(c.percentuale_fissa) > 0 ? Number(c.percentuale_fissa) : null,
     fatturatoCent: 0, maturateCent: 0, liquidateCent: 0, daLiquidareCent: 0, pratiche: 0,
   }]));
   const riepZona = new Map(zone.map((z) => [z.id, {
@@ -256,7 +288,7 @@ export function calcolaModello(dati, opzioniIn = {}) {
     for (const v of p.voci) {
       const c = v.collaboratoreId != null ? riepCollab.get(v.collaboratoreId) : null;
       if (!c) continue;
-      if (p.conclusa) { c.fatturatoCent += v.fatturatoCent; c.pratiche += 1; }
+      if (p.conclusa && !v.fissa) { c.fatturatoCent += v.fatturatoCent; c.pratiche += 1; }
       c.maturateCent += v.maturataCent;
       c.liquidateCent += v.liquidataCent;
       c.daLiquidareCent += v.daLiquidareCent;
@@ -289,7 +321,7 @@ export function calcolaModello(dati, opzioniIn = {}) {
         const importoCent = p.compensi[parte.id][`${modo.id}Cent`];
         if (importoCent > 0) {
           pagamenti.push({
-            praticaId: p.id, pratica: p, data: p.dataRif, parte: parte.etichetta, parteId: parte.id,
+            praticaId: p.id, pratica: p, data: p.data_pratica, parte: parte.etichetta, parteId: parte.id,
             modalita: modo.etichetta, modalitaId: modo.id, conIva: modo.conIva, importo_cent: importoCent,
           });
         }

@@ -34,7 +34,7 @@ async function archivioV1() {
 const conta = (db, t) => db.exec(`SELECT COUNT(*) FROM ${t}`)[0].values[0][0];
 const righe = (db, sql) => { const r = db.exec(sql); return r.length ? r[0].values : []; };
 
-test('migrazione 1 → 2: pratiche, quote, incassi e liquidazioni restano tutti, con gli stessi numeri', async () => {
+test('migrazione 1 → 3: pratiche, quote, incassi e liquidazioni restano tutti, con gli stessi numeri', async () => {
   const db = await archivioV1();
   const prima = {
     pratiche: righe(db, 'SELECT id, codice, stato, data_pratica, data_rogito, zona_id, immobile_indirizzo, immobile_comune, immobile_tipo, prezzo_vendita_cent, venditore, acquirente, compenso_venditore_cent, compenso_acquirente_cent, aliquota_iva, note, creato_il, aggiornato_il FROM pratiche ORDER BY id'),
@@ -44,7 +44,7 @@ test('migrazione 1 → 2: pratiche, quote, incassi e liquidazioni restano tutti,
   };
   assert.equal(migra(db), 1, 'riparte dalla versione 1');
   assert.equal(versioneDatabase(db), VERSIONE_SCHEMA);
-  assert.equal(VERSIONE_SCHEMA, 2);
+  assert.equal(VERSIONE_SCHEMA, 3);
   assert.deepEqual(righe(db, 'SELECT id, codice, stato, data_pratica, data_rogito, zona_id, immobile_indirizzo, immobile_comune, immobile_tipo, prezzo_vendita_cent, venditore, acquirente, compenso_venditore_cent, compenso_acquirente_cent, aliquota_iva, note, creato_il, aggiornato_il FROM pratiche ORDER BY id'), prima.pratiche);
   assert.deepEqual(righe(db, 'SELECT * FROM quote ORDER BY 1, 2'), prima.quote);
   assert.deepEqual(righe(db, 'SELECT * FROM incassi'), prima.incassi);
@@ -57,7 +57,7 @@ test('migrazione 1 → 2: pratiche, quote, incassi e liquidazioni restano tutti,
   assert.equal(righe(db, 'PRAGMA integrity_check')[0][0], 'ok');
 });
 
-test('migrazione 1 → 2: i collegamenti funzionano ancora (eliminare una pratica porta via le sue quote e i suoi incassi, ma non quella con liquidazioni)', async () => {
+test('migrazione 1 → 3: i collegamenti funzionano ancora (eliminare una pratica porta via le sue quote e i suoi incassi, ma non quella con liquidazioni)', async () => {
   const db = await archivioV1();
   migra(db);
   db.run('PRAGMA foreign_keys = ON');
@@ -72,14 +72,14 @@ test('migrazione 1 → 2: i collegamenti funzionano ancora (eliminare una pratic
   assert.throws(() => db.run(`INSERT INTO pratiche (codice, stato, data_pratica, zona_id, creato_il, aggiornato_il) VALUES ('X', 'conclusa', '2026-10-01', 99, '${T}', '${T}')`), /FOREIGN KEY/i);
 });
 
-test('migrazione 1 → 2: un numero di pratica già usato e poi cancellato non viene riutilizzato', async () => {
+test('migrazione 1 → 3: un numero di pratica già usato e poi cancellato non viene riutilizzato', async () => {
   const db = await archivioV1();
   migra(db);
   db.run(`INSERT INTO pratiche (codice, stato, data_pratica, creato_il, aggiornato_il) VALUES ('2026/009', 'conclusa', '2026-10-01', '${T}', '${T}')`);
   assert.equal(righe(db, 'SELECT last_insert_rowid()')[0][0], 4, 'la 3 era stata usata: la prossima è la 4');
 });
 
-test('migrazione 1 → 2: l\'indirizzo non è più obbligatorio, ci sono i sei importi per parte e la ripartizione per zona', async () => {
+test('migrazione 1 → 3: l\'indirizzo non è più obbligatorio, ci sono i sei importi per parte e la ripartizione per zona', async () => {
   const db = await archivioV1();
   migra(db);
   db.run(`INSERT INTO pratiche (codice, stato, data_pratica, zona_id, compensi_da_pagamenti, venditore_bonifico_cent, acquirente_contanti_cent, creato_il, aggiornato_il)
@@ -94,21 +94,55 @@ test('migrazione 1 → 2: l\'indirizzo non è più obbligatorio, ci sono i sei i
   assert.equal(conta(db, 'zone_quote'), 2);
 });
 
-test('migrazione 1 → 2: dati già scollegati nell\'archivio vecchio non bloccano l\'apertura (restano come erano, li segnala la verifica)', async () => {
+test('migrazione 1 → 3: dati già scollegati nell\'archivio vecchio non bloccano l\'apertura (restano come erano, li segnala la verifica)', async () => {
   const db = await archivioV1();
   db.run('PRAGMA foreign_keys = OFF');
   db.run('INSERT INTO quote (pratica_id, collaboratore_id, percentuale) VALUES (77, 1, 50)'); // pratica inesistente
   assert.doesNotThrow(() => migra(db));
-  assert.equal(versioneDatabase(db), 2);
+  assert.equal(versioneDatabase(db), 3);
   assert.equal(righe(db, 'PRAGMA foreign_key_check').length, 1, 'il problema c\'era e c\'è ancora: la migrazione non lo nasconde né lo peggiora');
   assert.equal(conta(db, 'pratiche'), 2);
 });
 
-test('un archivio nuovo parte già dalla versione 2 e una seconda migrazione non cambia nulla', async () => {
+test('un archivio nuovo parte già dall\'ultima versione e una seconda migrazione non cambia nulla', async () => {
   const SQL = await motore();
   const db = new SQL.Database();
   assert.equal(migra(db), 0);
-  assert.equal(versioneDatabase(db), 2);
-  assert.equal(migra(db), 2);
+  assert.equal(versioneDatabase(db), 3);
+  assert.equal(migra(db), 3);
+  assert.equal(conta(db, 'collaboratori'), 0, 'un archivio nuovo è vuoto: il capo e la segretaria li crea il primo avvio');
   assert.equal(righe(db, 'PRAGMA foreign_keys')[0][0], 1, 'i vincoli tra tabelle restano accesi');
+});
+
+test('migrazione 3: gli archivi che hanno già dei collaboratori ricevono il capo (15%) e la segretaria (4%), una volta sola', async () => {
+  const db = await archivioV1();
+  const nomiPrima = righe(db, 'SELECT nome FROM collaboratori ORDER BY id').map((r) => r[0]);
+  migra(db);
+  assert.deepEqual(righe(db, 'SELECT nome, percentuale_fissa FROM collaboratori ORDER BY id').map((r) => r.join('=')), [...nomiPrima.map((n) => `${n}=`), 'Capo=15', 'Segretaria=4']);
+  assert.deepEqual(righe(db, 'SELECT DISTINCT mese_proposta FROM pratiche'), [[null]], 'le pratiche di prima non hanno il mese della proposta: contano dal rogito');
+  migra(db); // già all'ultima versione: nulla cambia
+  assert.equal(conta(db, 'collaboratori'), nomiPrima.length + 2);
+});
+
+test('migrazione 3: se il capo o la segretaria esistono già (stesso nome) non si duplicano', async () => {
+  const db = await archivioV1();
+  db.run("INSERT INTO collaboratori (nome, attivo, colore, creato_il, aggiornato_il) VALUES ('capo', 1, 5, 'x', 'x')");
+  migra(db);
+  assert.equal(conta(db, "collaboratori WHERE nome = 'Capo' COLLATE NOCASE"), 1);
+  assert.equal(conta(db, "collaboratori WHERE nome = 'Segretaria'"), 1);
+});
+
+test('i vincoli della versione 3: la percentuale fissa va da oltre 0 a 100 e il mese della proposta ha il formato AAAA-MM', async () => {
+  const SQL = await motore();
+  const db = new SQL.Database();
+  migra(db);
+  const prova = (sql) => { try { db.run(sql); return 'ok'; } catch { return 'rifiutato'; } };
+  const base = "INSERT INTO collaboratori (nome, attivo, colore, creato_il, aggiornato_il, percentuale_fissa) VALUES ('X', 1, 1, 'x', 'x', ";
+  assert.equal(prova(`${base}0)`), 'rifiutato');
+  assert.equal(prova(`${base}100.5)`), 'rifiutato');
+  assert.equal(prova(`${base}15)`), 'ok');
+  const pratica = "INSERT INTO pratiche (codice, stato, data_pratica, creato_il, aggiornato_il, mese_proposta) VALUES ('P1', 'conclusa', '2026-10-16', 'x', 'x', ";
+  assert.equal(prova(`${pratica}'2026-13x')`), 'rifiutato');
+  assert.equal(prova(`${pratica}'ottobre')`), 'rifiutato');
+  assert.equal(prova(`${pratica}'2026-10')`), 'ok');
 });

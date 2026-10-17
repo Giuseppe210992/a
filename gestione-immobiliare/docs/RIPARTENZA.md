@@ -23,6 +23,9 @@ Dove: cartella `gestione-immobiliare/` del repository `Giuseppe210992/a`, ramo `
 | Base del cumulo (predefinita) | Per **collaboratore e zona** (alternative: per zona; per collaboratore) | Richiesta: «cumulo mensile per zona» con Luca e Giuseppe |
 | Maturazione (predefinita) | **Alla conclusione** (rogito). Alternativa: in proporzione agli incassi | Le pratiche si contano per `data_rogito` (se manca, per `data_pratica`) |
 | Importi lordi | Nessuna ritenuta, contributo o tassa sui compensi dei collaboratori | Non richiesto: da confermare |
+| Capo e segretaria | **Collaboratori con `collaboratori.percentuale_fissa`** (Capo 15, Segretaria 4, creati al primo avvio e, dalla migrazione 3, anche negli archivi che hanno già collaboratori). Per ogni pratica conclusa con provvigioni, `modello.js` aggiunge a `p.voci` una voce `fissa: true` (quota 0, fatturato 0, `baseCent` = somma delle provvigioni dei collaboratori della pratica, provvigione = base × percentuale, arrotondata al centesimo). Così maturata/liquidata/da liquidare, liquidazioni, CSV e riquadri funzionano senza altro codice. Non entrano nelle quote delle pratiche, nelle ripartizioni delle zone, nella ripartizione predefinita né nel «collaboratore unico». **Ipotesi da confermare con l'utente:** base = totale delle provvigioni dei collaboratori (non il compenso) e importo **in più** (non tolto a Luca e Giuseppe); la percentuale si applica retroattivamente come gli scaglioni | Richiesta dell'utente: «il capo e la segretaria prenderanno il 15% e il 4% del totale delle provvigioni in qualsiasi zona» |
+| Mese della proposta | `pratiche.mese_proposta` (AAAA-MM). Se c'è, `dataRif` = primo giorno di quel mese (cumulo, periodi, grafici); `dataEtichetta` mostra «settembre 2026»; `data_pratica` resta il giorno vero di inserimento (usato per i pagamenti). Per le pratiche vecchie è vuoto e conta il rogito | Richiesta dell'utente: «da lì verrà calcolato se è cumulativo o meno» |
+| Nominativi | Obbligatori nel modulo (non a livello di database, per non rompere le pratiche vecchie) | Richiesta dell'utente |
 | Dati incompleti | La pratica si salva comunque e viene segnalata come incompleta (la zona è l'unico dato obbligatorio del modulo) | Non perdere mai ciò che l'utente ha scritto |
 | Modulo «Nuova pratica» | **Tre passi, a rogito concluso**: zona, prezzo di vendita, pagamenti per parte; tipo di immobile, prezzo di acquisto, nomi, aliquota IVA e note stanno in «Altre informazioni» (`<details>` chiuso, si apre da solo se c'è un errore). **Niente** codice, stato, date, via. Codice automatico `AAAA/NNN` (`prossimoCodice`), stato sempre `conclusa`, `data_pratica = data_rogito = oggi` | Richiesta dell'utente: «i dati li inseriamo sempre a conclusione», «interessa solo la zona» |
 | Compensi dai pagamenti | Per ogni parte: **contanti, bonifico e assegno comprendono tutti l'IVA** (l'utente lo ha corretto: all'inizio i contanti erano senza IVA). Si sommano i tre importi e si scorpora **una sola volta** sul totale, arrotondato al centesimo (mezzi verso l'alto: `src/js/data/calc/compensi.js`). Compenso senza IVA = somma delle due parti. Flag `pratiche.compensi_da_pagamenti` = 1. Le colonne `compenso_venditore_cent` / `compenso_acquirente_cent` sono un valore derivato, ricalcolato dal modello a ogni lettura e riscritto a ogni salvataggio (nessuna migrazione dello schema per il cambio dei contanti) | Richiesta dell'utente |
@@ -45,7 +48,7 @@ src/js/core/                          router (#/percorso), DOM (h, monta), forma
 src/js/components/                    campi, filtri, ricerca, finestre di registrazione incasso/liquidazione, avvisi
 src/js/charts/                        grafici SVG scritti a mano (colonne, barre, linee, dumbbell, sparkline)
 src/js/views/                         una schermata per file (8 + scheda pratica + recupero)
-src/js/data/schema.js, db.js          schema SQLite (user_version 2) e classe Archivio (transazioni, esporta, sostituisci)
+src/js/data/schema.js, db.js          schema SQLite (user_version 3) e classe Archivio (transazioni, esporta, sostituisci)
 src/js/data/calc/                     MOTORE DI CALCOLO: funzioni pure (scaglioni.js, compensi.js, modello.js, aggregati.js)
 src/js/data/repo/                     lettura e scrittura di pratiche, anagrafiche, impostazioni
 src/js/data/drivers/                  dove finiscono i byte: IndexedDB (browser), file (Electron), memoria (test)
@@ -68,7 +71,7 @@ Regole da non rompere:
 ```
 cd gestione-immobiliare
 npm ci
-npm test                  # 126 prove su calcoli, compensi dai pagamenti, migrazione dello schema, scaglioni dell'agenzia, date, formati, archivio, host file, icone (circa 1 s)
+npm test                  # 141 prove su calcoli, compensi dai pagamenti, migrazione dello schema, scaglioni dell'agenzia, date, formati, archivio, host file, icone (circa 1 s)
 npm run test:e2e          # costruisce e prova ogni schermata nel browser (Chromium + Playwright), circa 4 minuti
 GI_RALLENTA=4 npm run test:e2e   # lo stesso con il browser 4 volte più lento
 GI_RITARDO=150 npm run test:e2e  # lo stesso con eventi e scritture su disco in ritardo di 150 ms (scova le letture troppo presto)

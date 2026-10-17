@@ -58,7 +58,7 @@ describe('Dashboard: operazioni rapide, esportazioni e importazioni', () => {
     const csv = leggiCsv(file.bytes);
     assert.equal(csv.bom, true, 'UTF-8 con BOM: Excel legge bene gli accenti');
     assert.equal(csv.intestazioni[0], 'Codice');
-    assert.equal(csv.intestazioni.length, 33); // 27 di prima + sei importi pagati (contanti, bonifico, assegno × venditore e acquirente)
+    assert.equal(csv.intestazioni.length, 34); // 27 di prima + sei importi pagati (contanti, bonifico, assegno × venditore e acquirente) + il mese della proposta
     assert.equal(csv.righe.length, 15);
     const col = (nome) => csv.intestazioni.indexOf(nome);
     const r11 = csv.righe.find((r) => r[0] === '2026/011');

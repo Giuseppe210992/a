@@ -63,6 +63,8 @@ describe('Scaglioni dell\'agenzia preimpostati', () => {
     const L = (e, o = {}) => p.locator('#form-pratica').getByLabel(e, o);
     await L(/^Zona\*?$/).selectOption({ label: 'Centro' });
     await L('Prezzo di vendita').fill('200.000');
+    await L('Nominativo del venditore').fill('Mario Rossi');
+    await L('Nominativo dell\'acquirente').fill('Anna Bianchi');
     // 6.100 con bonifico = 5.000 + 1.100 di IVA (22%) da ciascuna parte: 10.000 € di compenso senza IVA
     await p.locator('#pagamenti-venditore').getByLabel('Bonifico').fill('6.100');
     await p.locator('#pagamenti-acquirente').getByLabel('Bonifico').fill('6.100');
