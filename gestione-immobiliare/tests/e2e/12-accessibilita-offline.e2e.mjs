@@ -30,6 +30,15 @@ const SENZA_NOME = () => {
   return out.slice(0, 10);
 };
 
+/** Primo Tab dopo un ricaricamento: se la pagina non ha ancora preso il cursore, il Tab non arriva a nessun elemento. Si riprova. */
+async function primoTab(p) {
+  for (let i = 0; i < 5; i++) {
+    await p.keyboard.press('Tab');
+    if (await p.evaluate(() => document.activeElement && document.activeElement !== document.body)) return;
+    await p.waitForTimeout(50);
+  }
+}
+
 describe('Accessibilità', () => {
   let app; let id;
   before(async () => { app = await avvia({ viewport: { width: 1366, height: 800 } }); await inserisciDatiProva(app.pagina); id = await idPratica(app.pagina, '2026/011'); });
@@ -91,7 +100,7 @@ describe('Accessibilità', () => {
     const p = app.pagina;
     await p.reload(); // come all'apertura del programma: la tastiera parte dall'inizio della pagina
     await p.waitForFunction(() => window.__gi?.app?.archivio);
-    await p.keyboard.press('Tab');
+    await primoTab(p);
     assert.equal(await p.evaluate(() => document.activeElement.className), 'salta-contenuto');
     assert.equal(await p.evaluate(() => document.activeElement.getBoundingClientRect().top >= 0), true, 'compare quando ha il cursore');
     await p.keyboard.press('Enter');
@@ -102,7 +111,7 @@ describe('Accessibilità', () => {
     const visti = [];
     const senzaSegno = [];
     for (let i = 0; i < 28; i++) {
-      await p.keyboard.press('Tab');
+      if (i === 0) await primoTab(p); else await p.keyboard.press('Tab');
       const info = await p.evaluate(() => {
         const e = document.activeElement; const cs = getComputedStyle(e);
         const segno = (cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) > 0) || (cs.boxShadow && cs.boxShadow !== 'none');
