@@ -28,7 +28,7 @@ Si apre un archivio **senza pratiche né zone**: nessun dato dimostrativo. Ci so
 |---|---|---|
 | 2.1 | A sinistra c'è la barra con 8 voci: Dashboard, Nuova pratica, Archivio pratiche, Provvigioni e liquidazioni, Cumulo mensile per zona, Statistiche e grafici, Backup e archivio storico, Impostazioni | |
 | 2.2 | In alto: «Gestione Immobiliare», la data di oggi, il periodo, la ricerca e il pulsante **+ Nuova pratica** | |
-| 2.3 | La dashboard mostra 6 riquadri a zero e un invito a inserire la prima pratica | |
+| 2.3 | La dashboard mostra 4 riquadri a zero, 4 pulsanti grandi, un solo grafico vuoto e un invito a inserire la prima pratica | |
 | 2.4 | **Riduci barra** nasconde i nomi e lascia le icone; passando il mouse su un'icona compare il nome; la scelta resta dopo aver chiuso e riaperto | |
 
 ## 3. Imposta i tuoi numeri (Impostazioni)
@@ -53,16 +53,16 @@ Gli scaglioni sono già impostati con quelli che mi hai indicato. Vai in **Impos
 
 ## 4. Inserisci una pratica (vera o di prova)
 
-**+ Nuova pratica** → il modulo è corto: scegli la **zona**, scrivi il **prezzo di vendita** e, per venditore e acquirente, **quanto ha pagato ciascuno** in contanti, bonifico e assegno. Non ci sono codice, stato, date né via dell'immobile: il codice lo dà il programma (`AAAA/001`, `AAAA/002`…), la pratica è sempre «conclusa» e la data è quella di oggi. La ripartizione tra Luca e Giuseppe compare da sola, secondo la zona. → **Salva**.
+**+ Nuova pratica** → il modulo ha tre passi: **1)** scegli la **zona**, **2)** scrivi il **prezzo di vendita**, **3)** scrivi **quanto ha pagato** il venditore e quanto l'acquirente, in contanti, bonifico e assegno. Non ci sono codice, stato, date né via dell'immobile: il codice lo dà il programma (`AAAA/001`, `AAAA/002`…), la pratica è sempre «conclusa» e la data è quella di oggi. La divisione tra Luca e Giuseppe compare da sola, secondo la zona. Le cose facoltative (tipo di immobile, nomi, note…) stanno in «Altre informazioni». → **Salva pratica**.
 
-Come si leggono gli importi: i **contanti** sono già **senza IVA**; **bonifico** e **assegno** sono **IVA compresa** (il programma toglie l'IVA). Esempio con IVA 22%: venditore 3.660 € di bonifico + acquirente 2.000 € in contanti → compenso senza IVA **5.000 €**, IVA **660 €**, pagato **5.660 €**.
+Come si leggono gli importi: **contanti, bonifico e assegno comprendono tutti l'IVA** (il programma la toglie). Esempio con IVA 22%: venditore 3.660 € di bonifico + acquirente 2.440 € in contanti → compenso senza IVA **5.000 €**, IVA **1.100 €**, pagato **6.100 €**.
 
 | # | Cosa controllare | Esito |
 |---|---|---|
-| 4.1 | Mentre scrivi, il riepilogo (compenso senza IVA, IVA, totale pagato, provvigioni stimate) si aggiorna da solo; con l'esempio sopra legge 5.000 € / 660 € / 5.660 € | |
+| 4.1 | Mentre scrivi, il riepilogo (compenso senza IVA, IVA, totale pagato, provvigioni stimate) si aggiorna da solo; con l'esempio sopra «Il conto» legge 5.000 € / 1.100 € / 6.100 € | |
 | 4.2 | Scegliendo la zona compare la ripartizione automatica (ad esempio «Luca 60% · Giuseppe 40%»); se la zona non ne ha una, il modulo lo dice e al salvataggio chiede conferma | |
 | 4.3 | Dopo il salvataggio la pratica compare in **Archivio pratiche** e nella tabella «Ultime pratiche» della dashboard; cliccando la riga si apre la scheda, che mostra zona, pagamenti, compenso senza IVA, IVA e provvigioni | |
-| 4.4 | I 6 riquadri della dashboard cambiano e coincidono con i tuoi conti (ricorda: il pagato è già contato come incassato; «Pratiche in corso» resta a zero perché le pratiche si inseriscono a conclusione) | |
+| 4.4 | I 4 riquadri della dashboard cambiano e coincidono con i tuoi conti (ricorda: quanto scritto nel modulo è già contato come incassato) | |
 | 4.5 | Dalla scheda: **Registra incasso** (la finestra mostra il residuo da incassare, che è 0 se le parti hanno già pagato tutto) e **Registra liquidazione** funzionano e i numeri si aggiornano | |
 | 4.6 | **Cumulo mensile per zona** mostra lo scaglione raggiunto e la percentuale; coincide con il tuo conto (compenso **senza IVA** di tutte le pratiche del mese nella stessa zona, per collaboratore secondo la ripartizione) | |
 | 4.7 | Nelle finestre semplici (Registra incasso, Nuova zona, modifiche) scrivi il valore e premi **Invio**: fa quello che fa il pulsante principale. Nella liquidazione a più righe Invio **non** registra il pagamento (serve il pulsante) | |

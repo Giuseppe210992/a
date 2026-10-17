@@ -122,8 +122,8 @@ const MIGRAZIONI = [
     senzaVincoli: true,
     sql: `
       -- 1) pratiche: l'indirizzo dell'immobile non e' piu' obbligatorio (conta la zona) e per ogni parte
-      --    (venditore, acquirente) si registra quanto e' stato pagato in contanti (senza IVA), con bonifico
-      --    e con assegno (IVA compresa). Le pratiche gia' presenti restano com'erano (compensi_da_pagamenti = 0).
+      --    (venditore, acquirente) si registra quanto e' stato pagato in contanti, con bonifico
+      --    e con assegno (tutti con IVA compresa). Le pratiche gia' presenti restano com'erano (compensi_da_pagamenti = 0).
       CREATE TEMP TABLE sequenza_pratiche AS SELECT seq FROM sqlite_sequence WHERE name = 'pratiche';
 
       CREATE TABLE pratiche_nuova (

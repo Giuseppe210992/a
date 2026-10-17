@@ -94,7 +94,9 @@ describe('Programma Windows (Electron)', { skip: binarioElectron() ? false : 'El
     assert.equal(copie.length, 1);
     assert.match(copie[0], /^copia_manuale_\d{8}T\d{9}Z\.sqlite$/);
     // esportazione in CSV (nella cartella Esportazioni, senza finestre in prova)
-    await p.click('#op-esporta');
+    await p.evaluate(() => { location.hash = '#/backup'; });
+    await p.waitForSelector('#bk-csv');
+    await p.click('#bk-csv');
     await p.locator('dialog.modale[open] button', { hasText: 'Esporta' }).last().click();
     await p.waitForFunction(() => /salvato/.test(document.querySelector('.toast-area')?.textContent ?? ''));
     const esportati = fs.readdirSync(path.join(datiPercorso, 'Esportazioni'));
@@ -129,7 +131,7 @@ describe('Programma Windows (Electron)', { skip: binarioElectron() ? false : 'El
     assert.equal(await valore(p, 'SELECT COUNT(*) FROM liquidazioni'), 3);
     assert.equal(await valore(p, 'PRAGMA integrity_check'), 'ok');
     await p.waitForSelector('.kpi');
-    assert.match(await p.locator('.kpi', { hasText: 'Compravendite concluse' }).locator('.kpi-valore').innerText(), /\d/);
+    assert.match(await p.locator('.kpi', { hasText: 'Pratiche concluse' }).locator('.kpi-valore').innerText(), /\d/);
     // all'avvio è stata fatta anche la copia automatica del giorno
     await p.evaluate(() => { location.hash = '#/backup'; });
     await p.waitForSelector('#tabella-storico');

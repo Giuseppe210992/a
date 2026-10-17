@@ -83,7 +83,7 @@ describe('Persistenza dopo chiusura e riapertura', () => {
     await p.click('#op-backup');
     await attendiNotifica(p, /Backup creato/);
     // cumulo di Luca in ottobre 6.000 € = 3° scaglione (11%); metodo progressivo (scelto sopra): 130 + 208 + 800 × 11% = 426 €, meno 200 € già liquidati
-    assert.deepEqual(await riquadri(p), { concluse: 1, compensi: 6000 * E, maturate: 426 * E, daLiquidare: 226 * E, valore: 200000 * E, inCorso: 0 });
+    assert.deepEqual(await riquadri(p), { concluse: 1, compensi: 6000 * E, maturate: 426 * E, daLiquidare: 226 * E });
     // ultima azione: si chiude SUBITO dopo (la finestra di conferma si chiude solo a salvataggio avvenuto)
     await p.click('#op-incasso');
     await finestra(p).getByLabel('Pratica').selectOption({ index: 1 });
@@ -111,7 +111,7 @@ describe('Persistenza dopo chiusura e riapertura', () => {
     assert.equal(await p.evaluate(() => document.documentElement.dataset.theme), 'dark');
     assert.equal(await p.evaluate(() => document.body.dataset.sidebar), 'ridotta');
     // numeri (7.320 € pagati alla conclusione + 2.123,45 € di incassi registrati dopo)
-    assert.deepEqual(await riquadri(p), { concluse: 1, compensi: 6000 * E, maturate: 426 * E, daLiquidare: 226 * E, valore: 200000 * E, inCorso: 0 });
+    assert.deepEqual(await riquadri(p), { concluse: 1, compensi: 6000 * E, maturate: 426 * E, daLiquidare: 226 * E });
     // il backup manuale di prima è nell'archivio storico, e all'avvio è stata fatta la copia automatica del giorno
     await vai(p, '#/backup');
     const tipi = await p.evaluate(async () => (await window.__gi.app.driver.elencaCopie()).map((c) => c.tipo).sort());

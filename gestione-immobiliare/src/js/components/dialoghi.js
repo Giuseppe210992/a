@@ -35,9 +35,6 @@ export function apriDialogoIncasso({ praticaId = null } = {}) {
   const importo = campoImporto({ etichetta: 'Importo incassato (IVA inclusa)', obbligatorio: true });
   const pagante = campoSelezione({ etichetta: 'Pagato da', vuoto: 'Non indicato', opzioni: PAGANTI.map((x) => ({ valore: x, etichetta: x })) });
   const metodo = campoSelezione({ etichetta: 'Metodo di pagamento', vuoto: 'Non indicato', opzioni: METODI_PAGAMENTO.map((x) => ({ valore: x, etichetta: x })) });
-  // I contanti si scrivono già senza IVA; bonifico e assegno con l'IVA compresa.
-  const etichettaImporto = importo.el.querySelector('label');
-  metodo.input.addEventListener('change', () => { etichettaImporto.firstChild.textContent = metodo.get() === 'Contanti' ? 'Importo incassato (contanti, già senza IVA)' : 'Importo incassato (IVA inclusa)'; });
   const note = campoAreaTesto({ etichetta: 'Note', righe: 2, maxlength: 400 });
   const riepilogo = h('div', { class: 'riepilogo-calcolo', 'aria-live': 'polite' });
   const riempiResiduo = h('button', { type: 'button', class: 'btn btn-secondario btn-sm', onclick: () => {

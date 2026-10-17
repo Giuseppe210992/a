@@ -1,5 +1,5 @@
 // Una pratica inserita dal modulo semplificato: codice, stato e date automatici, niente indirizzo, importi pagati da
-// ciascuna parte (contanti senza IVA, bonifico e assegno con IVA compresa) e ripartizione automatica a seconda della zona.
+// ciascuna parte (contanti, bonifico e assegno: tutti con IVA compresa) e ripartizione automatica a seconda della zona.
 // I numeri attesi sono calcolati a mano.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -28,7 +28,7 @@ test('pratica dal modulo: numero, stato e date si assegnano da soli; nessun indi
   const { archivio, zona, luca } = await appConZona();
   const id = await salvaPratica(archivio, {
     zona_id: zona, prezzo_vendita_cent: 150000 * E,
-    venditore_bonifico_cent: 3660 * E, acquirente_contanti_cent: 2000 * E, aliquota_iva: 22,
+    venditore_bonifico_cent: 3660 * E, acquirente_contanti_cent: 2440 * E, aliquota_iva: 22,
   }, [{ collaboratore_id: luca.id, percentuale: 100 }]);
   const p = riga(archivio, id);
   assert.match(p.codice, /^\d{4}\/001$/);
@@ -37,10 +37,10 @@ test('pratica dal modulo: numero, stato e date si assegnano da soli; nessun indi
   assert.equal(p.data_rogito, oggi(), 'la data del rogito è quella dell\'inserimento');
   assert.equal(p.immobile_indirizzo, null);
   assert.equal(p.compensi_da_pagamenti, 1);
-  // a mano: venditore 3.660 con IVA 22% = 3.000 + 660; acquirente 2.000 in contanti, già senza IVA
+  // a mano: venditore 3.660 con IVA 22% = 3.000 + 660; acquirente 2.440 in contanti con IVA 22% = 2.000 + 440
   assert.deepEqual([p.compenso_venditore_cent, p.compenso_acquirente_cent], [3000 * E, 2000 * E]);
   assert.deepEqual([p.venditore_contanti_cent, p.venditore_bonifico_cent, p.venditore_assegno_cent], [0, 3660 * E, 0]);
-  assert.deepEqual([p.acquirente_contanti_cent, p.acquirente_bonifico_cent, p.acquirente_assegno_cent], [2000 * E, 0, 0]);
+  assert.deepEqual([p.acquirente_contanti_cent, p.acquirente_bonifico_cent, p.acquirente_assegno_cent], [2440 * E, 0, 0]);
   // un secondo inserimento prende il numero successivo
   const id2 = await salvaPratica(archivio, { zona_id: zona, acquirente_contanti_cent: 1000 * E }, []);
   assert.match(riga(archivio, id2).codice, /^\d{4}\/002$/);
@@ -50,14 +50,14 @@ test('il modello calcola compenso senza IVA, IVA e totale pagato dai pagamenti, 
   const { archivio, zona, luca } = await appConZona();
   const id = await salvaPratica(archivio, {
     zona_id: zona, prezzo_vendita_cent: 150000 * E,
-    venditore_bonifico_cent: 3660 * E, acquirente_contanti_cent: 2000 * E, aliquota_iva: 22,
+    venditore_bonifico_cent: 3660 * E, acquirente_contanti_cent: 2440 * E, aliquota_iva: 22,
   }, [{ collaboratore_id: luca.id, percentuale: 100 }]);
   const p = modelloDi(archivio).perId.get(id);
   assert.equal(p.compensoTotaleCent, 5000 * E, 'compenso totale senza IVA: 3.000 + 2.000');
-  assert.equal(p.ivaCent, 660 * E, 'IVA solo su quanto pagato con bonifico: i contanti sono già senza IVA');
-  assert.equal(p.totaleLordoCent, 5660 * E);
-  assert.equal(p.pagatoAllaConclusioneCent, 5660 * E);
-  assert.equal(p.incassatoCent, 5660 * E);
+  assert.equal(p.ivaCent, 1100 * E, 'IVA contenuta in tutto quanto è stato pagato, contanti compresi: 660 + 440');
+  assert.equal(p.totaleLordoCent, 6100 * E);
+  assert.equal(p.pagatoAllaConclusioneCent, 6100 * E);
+  assert.equal(p.incassatoCent, 6100 * E);
   assert.equal(p.daIncassareCent, 0);
   assert.equal(p.compenso_venditore_cent, 3000 * E);
   assert.equal(p.compenso_acquirente_cent, 2000 * E);
@@ -67,22 +67,22 @@ test('il modello calcola compenso senza IVA, IVA e totale pagato dai pagamenti, 
   assert.equal(p.provvigioniCent, 400 * E);
   // l'elenco dei pagamenti fatti alla conclusione (per le statistiche e le esportazioni)
   const m = modelloDi(archivio);
-  assert.deepEqual(m.pagamenti.map((x) => [x.parte, x.modalita, x.importo_cent, x.conIva]), [['Venditore', 'Bonifico', 366000, true], ['Acquirente', 'Contanti', 200000, false]]);
+  assert.deepEqual(m.pagamenti.map((x) => [x.parte, x.modalita, x.importo_cent, x.conIva]), [['Venditore', 'Bonifico', 366000, true], ['Acquirente', 'Contanti', 244000, true]]);
   assert.equal(m.pagamenti[0].data, oggi());
   // un incasso registrato dopo si somma a quanto pagato alla conclusione
   await registraIncasso(archivio, { praticaId: id, data: oggi(), importoCent: 100 * E });
-  assert.equal(modelloDi(archivio).perId.get(id).incassatoCent, 5760 * E);
+  assert.equal(modelloDi(archivio).perId.get(id).incassatoCent, 6200 * E);
 });
 
-test('bonifico e assegno insieme: l\'IVA si toglie dalla somma; contanti, bonifico e assegno di una stessa parte', async () => {
+test('contanti, bonifico e assegno di una stessa parte: l\'IVA si toglie una volta sola dalla somma', async () => {
   const { archivio, zona, luca } = await appConZona();
   const id = await salvaPratica(archivio, {
-    zona_id: zona, venditore_contanti_cent: 1000 * E, venditore_bonifico_cent: 1220 * E, venditore_assegno_cent: 2440 * E, aliquota_iva: 22,
+    zona_id: zona, venditore_contanti_cent: 1220 * E, venditore_bonifico_cent: 1220 * E, venditore_assegno_cent: 1220 * E, aliquota_iva: 22,
   }, [{ collaboratore_id: luca.id, percentuale: 100 }]);
   const p = modelloDi(archivio).perId.get(id);
-  // con IVA: 1.220 + 2.440 = 3.660 → 3.000 + 660; più 1.000 di contanti già senza IVA
-  assert.deepEqual([p.compensoTotaleCent, p.ivaCent, p.totaleLordoCent], [4000 * E, 660 * E, 4660 * E]);
-  assert.equal(p.compensi.venditore.imponibileCent, 4000 * E);
+  // 3 × 1.220 = 3.660 con IVA → 3.000 + 660
+  assert.deepEqual([p.compensoTotaleCent, p.ivaCent, p.totaleLordoCent], [3000 * E, 660 * E, 3660 * E]);
+  assert.equal(p.compensi.venditore.imponibileCent, 3000 * E);
 });
 
 test('modificare una pratica ricalcola tutto e si può cambiare modo di pagamento', async () => {
@@ -90,11 +90,11 @@ test('modificare una pratica ricalcola tutto e si può cambiare modo di pagament
   const quote = [{ collaboratore_id: luca.id, percentuale: 100 }];
   const id = await salvaPratica(archivio, { zona_id: zona, venditore_bonifico_cent: 3660 * E, aliquota_iva: 22 }, quote);
   const prima = riga(archivio, id);
-  await salvaPratica(archivio, { id, codice: prima.codice, stato: prima.stato, data_pratica: prima.data_pratica, data_rogito: prima.data_rogito, zona_id: zona, venditore_contanti_cent: 3000 * E, aliquota_iva: 22 }, quote);
+  await salvaPratica(archivio, { id, codice: prima.codice, stato: prima.stato, data_pratica: prima.data_pratica, data_rogito: prima.data_rogito, zona_id: zona, venditore_contanti_cent: 3660 * E, aliquota_iva: 22 }, quote);
   const dopo = riga(archivio, id);
-  assert.deepEqual([dopo.venditore_contanti_cent, dopo.venditore_bonifico_cent, dopo.compenso_venditore_cent], [3000 * E, 0, 3000 * E]);
+  assert.deepEqual([dopo.venditore_contanti_cent, dopo.venditore_bonifico_cent, dopo.compenso_venditore_cent], [3660 * E, 0, 3000 * E]);
   const p = modelloDi(archivio).perId.get(id);
-  assert.deepEqual([p.compensoTotaleCent, p.ivaCent, p.totaleLordoCent], [3000 * E, 0, 3000 * E], 'stesso compenso, ora in contanti: niente IVA');
+  assert.deepEqual([p.compensoTotaleCent, p.ivaCent, p.totaleLordoCent], [3000 * E, 660 * E, 3660 * E], 'stesso importo, ora in contanti: stesso compenso e stessa IVA');
   assert.equal(dopo.codice, prima.codice, 'il numero non cambia');
 });
 
@@ -131,16 +131,16 @@ test('modificare e risalvare una pratica non cambia il suo modello: la vecchia r
     codice: 'V/2', stato: 'conclusa', data_pratica: '2026-09-01', data_rogito: '2026-09-10', zona_id: zona,
     prezzo_vendita_cent: 100000 * E, compenso_venditore_cent: 2800 * E, compenso_acquirente_cent: 2800 * E, aliquota_iva: 22,
   }, quote);
-  const nuova = await salvaPratica(archivio, { zona_id: zona, venditore_bonifico_cent: 3660 * E, acquirente_contanti_cent: 2000 * E, aliquota_iva: 22 }, quote);
+  const nuova = await salvaPratica(archivio, { zona_id: zona, venditore_bonifico_cent: 3660 * E, acquirente_contanti_cent: 2440 * E, aliquota_iva: 22 }, quote);
   // si riscrive la riga così com'è nel database (colonne dei pagamenti a 0 per la vecchia)
   for (const id of [vecchia, nuova]) await salvaPratica(archivio, { ...riga(archivio, id), note: 'ritoccata' }, quote);
   const v = riga(archivio, vecchia);
   assert.deepEqual([v.compensi_da_pagamenti, v.compenso_venditore_cent, v.compenso_acquirente_cent, v.venditore_bonifico_cent], [0, 2800 * E, 2800 * E, 0]);
   const n = riga(archivio, nuova);
-  assert.deepEqual([n.compensi_da_pagamenti, n.compenso_venditore_cent, n.compenso_acquirente_cent, n.venditore_bonifico_cent, n.acquirente_contanti_cent], [1, 3000 * E, 2000 * E, 3660 * E, 2000 * E]);
+  assert.deepEqual([n.compensi_da_pagamenti, n.compenso_venditore_cent, n.compenso_acquirente_cent, n.venditore_bonifico_cent, n.acquirente_contanti_cent], [1, 3000 * E, 2000 * E, 3660 * E, 2440 * E]);
   const m = modelloDi(archivio);
   assert.deepEqual([m.perId.get(vecchia).totaleLordoCent, m.perId.get(vecchia).incassatoCent], [6832 * E, 0]);
-  assert.deepEqual([m.perId.get(nuova).totaleLordoCent, m.perId.get(nuova).incassatoCent], [5660 * E, 5660 * E]);
+  assert.deepEqual([m.perId.get(nuova).totaleLordoCent, m.perId.get(nuova).incassatoCent], [6100 * E, 6100 * E]);
 });
 
 // ---------------------------------------------------------------- ripartizione automatica a seconda della zona

@@ -1,6 +1,7 @@
-// Nuova pratica e modifica: il modulo chiede la zona e quanto ha pagato ciascuna parte (contanti già senza IVA; bonifico e
-// assegno con IVA compresa). Numero, stato, data e ripartizione tra i collaboratori sono automatici. Totali in tempo reale,
-// stima delle provvigioni, salvataggio sul database, avviso per le modifiche non salvate.
+// Nuova pratica e modifica: il modulo ha tre passi (zona, prezzo, quanto ha pagato ciascuna parte con contanti, bonifico e
+// assegno: tutti con IVA compresa). Numero, stato, data e ripartizione tra i collaboratori sono automatici; le informazioni
+// facoltative stanno in una sezione chiusa. Totali in tempo reale, stima delle provvigioni, salvataggio sul database,
+// avviso per le modifiche non salvate.
 // I numeri attesi sono calcolati a mano.
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -49,6 +50,8 @@ describe('Nuova pratica e modifica', () => {
   const ripartizione = async () => rimuoviSpazi(await app.pagina.locator('#ripartizione-automatica').innerText());
   const scegliZona = async (nome) => { await L(ZONA).selectOption({ label: nome }); };
   const testoDi = async (selettore) => rimuoviSpazi(await app.pagina.locator(selettore).innerText());
+  /** Apre la sezione «Altre informazioni (facoltative)» se è chiusa. */
+  const apriAltre = async () => { if (!(await app.pagina.locator('#altre-info').evaluate((d) => d.open))) await app.pagina.click('#altre-info summary'); };
 
   test('il modulo si apre con pochi campi: niente codice, stato, date e via; il resto è automatico', async () => {
     const p = app.pagina;
@@ -58,33 +61,40 @@ describe('Nuova pratica e modifica', () => {
       assert.equal(await L(etichetta).count(), 0, `non deve esserci il campo ${etichetta}`);
     }
     assert.equal(await p.locator('#form-pratica input[type="text"]').evaluateAll((a) => a.filter((i) => /gg\/mm\/aaaa/.test(i.placeholder)).length), 0, 'nessun campo data');
-    assert.match(await testoDi('#data-pratica'), /^Data della pratica: 16\/10\/2026 \(quella di oggi, assegnata in automatico\)\.$/);
-    // zona, tipo, prezzi, parti
+    assert.match(await testoDi('#data-pratica'), /^Data della pratica: 16\/10\/2026 \(oggi\)\.$/);
+    // tre passi e una sezione chiusa per il resto
+    assert.deepEqual((await p.locator('#form-pratica .form-colonna > section > h2').allInnerTexts()).map(rimuoviSpazi), ['1. In che zona?', '2. A che prezzo è stata venduta?', '3. Quanto hanno pagato?']);
+    assert.equal(await p.locator('#altre-info').evaluate((d) => d.open), false, 'le informazioni facoltative sono chiuse');
+    assert.equal(await testoDi('#altre-info summary'), 'Altre informazioni (facoltative)');
+    // zona, prezzo, pagamenti
     assert.deepEqual((await L(ZONA).locator('option').allInnerTexts()).map((x) => x.trim()), ['Scegli la zona', 'Centro', 'Collina', 'Lungomare', 'Porto', 'Scalo']);
     assert.equal(await L('Prezzo di vendita').inputValue(), '');
     // i sei importi pagati (due parti × tre modi), tutti vuoti, con la dicitura sull'IVA
     for (const parte of ['venditore', 'acquirente']) {
-      assert.match(await testoDi(`#pagamenti-${parte} legend`), parte === 'venditore' ? /^Pagato dal venditore$/i : /^Pagato dall'acquirente$/i);
-      assert.deepEqual((await p.locator(`#pagamenti-${parte} label`).allInnerTexts()).map(rimuoviSpazi), ['Contanti (già senza IVA)', 'Bonifico (IVA compresa)', 'Assegno (IVA compresa)']);
+      assert.match(await testoDi(`#pagamenti-${parte} legend`), parte === 'venditore' ? /^Quanto ha pagato il venditore\?$/i : /^Quanto ha pagato l'acquirente\?$/i);
+      assert.deepEqual((await p.locator(`#pagamenti-${parte} label`).allInnerTexts()).map(rimuoviSpazi), ['Contanti', 'Bonifico', 'Assegno']);
       for (const modo of ['Contanti', 'Bonifico', 'Assegno']) assert.equal(await P(parte, modo).inputValue(), '');
     }
-    assert.equal(await L('Aliquota IVA').inputValue(), '22');
-    const iva = await L('Aliquota IVA').locator('option').allInnerTexts();
-    assert.deepEqual(iva.map((x) => x.replace(/ /g, ' ')), ['22%', '10%', '4%', '0% (esente / non imponibile)']);
     // la ripartizione non si sceglie: niente righe, niente scorciatoie
     assert.equal(await p.locator('.quote-righe').count(), 0);
     assert.equal(await p.locator('#form-pratica').getByRole('button', { name: /^Tutto a / }).count(), 0);
     assert.equal(await p.locator('#form-pratica').getByRole('button', { name: 'Aggiungi collaboratore' }).count(), 0);
-    assert.match(await ripartizione(), /Scegli la zona: i compensi si dividono tra i collaboratori a seconda della zona/);
-    assert.match(await riepilogo(), /Totale pagato dalle parti 0,00 €/);
-    assert.match(await stima(), /Scegli una zona con una ripartizione per vedere la stima delle provvigioni/);
+    assert.match(await ripartizione(), /Scegli la zona: i compensi si dividono da soli tra i collaboratori/);
+    assert.match(await riepilogo(), /Totale pagato dai clienti 0,00 €/);
+    assert.match(await stima(), /Scegli una zona con la sua divisione per vedere quanto spetta a ciascuno/);
     // il cursore è già sulla zona
     assert.equal(await p.evaluate(() => document.activeElement.labels?.[0]?.textContent.replace('*', '').trim()), 'Zona');
     // pulsanti
     assert.ok(await p.locator('#salva-pratica').isVisible());
     assert.ok(await p.locator('#salva-e-nuova').isVisible());
     assert.ok(await p.locator('#annulla-pratica').isVisible());
-    assert.match(rimuoviSpazi(await p.locator('.stato-mod').innerText()), /Compila i dati della pratica/);
+    assert.match(rimuoviSpazi(await p.locator('.stato-mod').innerText()), /Compila i tre passi/);
+    // l'aliquota sta tra le informazioni facoltative
+    assert.match(await testoDi('#form-pratica .form-colonna'), /contanti, bonifico e assegno comprendono l'IVA, la toglie il programma/);
+    await apriAltre();
+    assert.equal(await L('Aliquota IVA').inputValue(), '22');
+    const iva = await L('Aliquota IVA').locator('option').allInnerTexts();
+    assert.deepEqual(iva.map((x) => x.replace(/ /g, ' ')), ['22%', '10%', '4%', '0% (esente / non imponibile)']);
   });
 
   test('la zona è obbligatoria e gli importi non validi vengono segnalati, senza salvare', async () => {
@@ -107,6 +117,14 @@ describe('Nuova pratica e modifica', () => {
     const testi = (await p.$$eval('#form-pratica .campo.ha-errore .errore', (a) => a.map((x) => x.textContent.trim()))).join(' | ');
     assert.match(testi, /Scrivi un importo valido/);
     assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM pratiche'), 0);
+    // un errore in una sezione chiusa la riapre da solo
+    await apriAltre();
+    await L('Prezzo di acquisto').fill('zz');
+    await p.click('#altre-info summary');
+    assert.equal(await p.locator('#altre-info').evaluate((d) => d.open), false);
+    await p.click('#salva-pratica');
+    await p.waitForFunction(() => document.querySelector('#altre-info').open);
+    await L('Prezzo di acquisto').fill('');
     // correggendo, l'errore del campo sparisce non appena si scrive
     await L('Prezzo di vendita').fill('100000');
     await p.waitForFunction(() => document.querySelectorAll('#form-pratica .campo.ha-errore').length === 1);
@@ -114,40 +132,45 @@ describe('Nuova pratica e modifica', () => {
     await p.waitForFunction(() => document.querySelectorAll('#form-pratica .campo.ha-errore').length === 0);
   });
 
-  test('contanti già senza IVA, bonifico e assegno con IVA compresa: compenso, IVA e totale si calcolano mentre si scrive', async () => {
+  test('contanti, bonifico e assegno comprendono tutti l\'IVA: compenso, IVA e totale si calcolano mentre si scrive', async () => {
     const p = app.pagina;
+    const attesa = (re) => p.waitForFunction((x) => new RegExp(x).test(document.querySelector('.form-riepilogo').innerText.replace(/\s+/g, ' ')), re);
     await scegliZona('Centro');
     await L('Prezzo di vendita').fill('150.000,00');
     await P('venditore', 'Bonifico').fill('3.660');
-    await P('acquirente', 'Contanti').fill('2.000');
-    await p.waitForFunction(() => /Totale pagato dalle parti\s+5\.660,00/.test(document.querySelector('.form-riepilogo').innerText.replace(/\s+/g, ' ')));
-    // venditore: 3.660,00 con IVA 22% = 3.000,00 + 660,00; acquirente: 2.000,00 in contanti, già senza IVA
-    assert.equal(await testoDi('#compenso-venditore'), 'Compenso senza IVA dal venditore: 3.000,00 € (IVA compresa nei pagamenti: 660,00 €)');
-    assert.equal(await testoDi('#compenso-acquirente'), 'Compenso senza IVA dall\'acquirente: 2.000,00 €');
-    assert.equal(await testoDi('#riep-venditore'), '3.000,00 €');
-    assert.equal(await testoDi('#riep-acquirente'), '2.000,00 €');
+    await P('acquirente', 'Contanti').fill('2.440');
+    await attesa('Totale pagato dai clienti\\s+6\\.100,00');
+    // venditore: 3.660,00 con IVA 22% = 3.000,00 + 660,00; acquirente: 2.440,00 in contanti, anche loro con IVA = 2.000,00 + 440,00
+    assert.equal(await testoDi('#compenso-venditore'), 'Compenso senza IVA dal venditore: 3.000,00 € (IVA compresa: 660,00 €)');
+    assert.equal(await testoDi('#compenso-acquirente'), 'Compenso senza IVA dall\'acquirente: 2.000,00 € (IVA compresa: 440,00 €)');
     assert.equal(await testoDi('#riep-imponibile'), '5.000,00 €');
-    assert.equal(await testoDi('#riep-iva'), '660,00 €');
-    assert.equal(await testoDi('#riep-pagato'), '5.660,00 €');
-    assert.match(await riepilogo(), /Compenso sul prezzo di vendita 3,33%/);
-    // la stessa parte può pagare in più modi: acquirente 2.000 contanti + 1.220 con assegno (1.000 + 220 di IVA)
+    assert.equal(await testoDi('#riep-iva'), '1.100,00 €');
+    assert.equal(await testoDi('#riep-pagato'), '6.100,00 €');
+    assert.equal(await p.locator('#riep-venditore, #riep-acquirente').count(), 0, 'il conto ha solo tre righe');
+    // la stessa parte può pagare in più modi: acquirente 2.440 contanti + 1.220 con assegno = 3.660 con IVA (3.000 + 660)
     await P('acquirente', 'Assegno').fill('1.220');
-    await p.waitForFunction(() => /Totale pagato dalle parti\s+6\.880,00/.test(document.querySelector('.form-riepilogo').innerText.replace(/\s+/g, ' ')));
-    assert.equal(await testoDi('#compenso-acquirente'), 'Compenso senza IVA dall\'acquirente: 3.000,00 € (IVA compresa nei pagamenti: 220,00 €)');
+    await attesa('Totale pagato dai clienti\\s+7\\.320,00');
+    assert.equal(await testoDi('#compenso-acquirente'), 'Compenso senza IVA dall\'acquirente: 3.000,00 € (IVA compresa: 660,00 €)');
     assert.equal(await testoDi('#riep-imponibile'), '6.000,00 €');
-    assert.equal(await testoDi('#riep-iva'), '880,00 €');
-    // cambiando l'aliquota cambia solo l'IVA contenuta in bonifico e assegno; i contanti restano com'erano
-    // IVA 10%: 3.660 / 1,10 = 3.327,27 (IVA 332,73); 1.220 / 1,10 = 1.109,09 (IVA 110,91); contanti 2.000
+    assert.equal(await testoDi('#riep-iva'), '1.320,00 €');
+    // cambiando l'aliquota cambia solo come i 7.320 pagati si dividono tra compenso e IVA
+    // IVA 10%: per parte 3.660 / 1,10 = 3.327,27 (IVA 332,73); in tutto 6.654,54 + 665,46
+    await apriAltre();
     await L('Aliquota IVA').selectOption('10');
-    await p.waitForFunction(() => /IVA 10% compresa in bonifico e assegno\s+443,64/.test(document.querySelector('.form-riepilogo').innerText.replace(/\s+/g, ' ')));
-    assert.equal(await testoDi('#riep-venditore'), '3.327,27 €');
-    assert.equal(await testoDi('#riep-acquirente'), '3.109,09 €');
-    assert.equal(await testoDi('#riep-imponibile'), '6.436,36 €');
-    assert.equal(await testoDi('#riep-pagato'), '6.880,00 €', 'quanto hanno pagato non cambia: cambia come si divide tra compenso e IVA');
+    await attesa('IVA 10% \\(già dentro quanto pagato\\)\\s+665,46');
+    assert.equal(await testoDi('#compenso-venditore'), 'Compenso senza IVA dal venditore: 3.327,27 € (IVA compresa: 332,73 €)');
+    assert.equal(await testoDi('#riep-imponibile'), '6.654,54 €');
+    assert.equal(await testoDi('#riep-pagato'), '7.320,00 €', 'quanto hanno pagato non cambia: cambia come si divide tra compenso e IVA');
     assert.match(rimuoviSpazi(await p.locator('.stato-mod').innerText()), /Modifiche non ancora salvate/);
-    // tutto vuoto di nuovo: zero
+    // contanti da soli: 1.000,00 con IVA 10% = 909,09 + 90,91
     for (const [parte, modo] of [['venditore', 'Bonifico'], ['acquirente', 'Contanti'], ['acquirente', 'Assegno']]) await P(parte, modo).fill('');
-    await p.waitForFunction(() => /Totale pagato dalle parti\s+0,00/.test(document.querySelector('.form-riepilogo').innerText.replace(/\s+/g, ' ')));
+    await P('venditore', 'Contanti').fill('1.000');
+    await attesa('Totale pagato dai clienti\\s+1\\.000,00');
+    assert.equal(await testoDi('#compenso-venditore'), 'Compenso senza IVA dal venditore: 909,09 € (IVA compresa: 90,91 €)');
+    // tutto vuoto di nuovo: zero
+    await P('venditore', 'Contanti').fill('');
+    await attesa('Totale pagato dai clienti\\s+0,00');
+    assert.equal(await testoDi('#compenso-venditore'), '');
   });
 
   test('la ripartizione tra i collaboratori segue la zona, da sola; una zona senza ripartizione si sistema dal modulo', async () => {
@@ -155,7 +178,7 @@ describe('Nuova pratica e modifica', () => {
     const righe = async () => (await p.locator('#ripartizione-automatica .ripartizione-elenco li').allInnerTexts()).map(rimuoviSpazi);
     await scegliZona('Centro');
     assert.deepEqual(await righe(), ['Luca 100%']);
-    assert.match(await ripartizione(), /Ripartizione impostata per la zona “Centro”/);
+    assert.match(await ripartizione(), /Si divide come stabilito per la zona “Centro”/);
     await scegliZona('Collina');
     assert.deepEqual(await righe(), ['Luca 60%', 'Giuseppe 40%']);
     await scegliZona('Lungomare');
@@ -163,8 +186,8 @@ describe('Nuova pratica e modifica', () => {
     // una zona senza ripartizione: avviso e pulsante per impostarla (sono due collaboratori e non c'è una predefinita)
     await scegliZona('Porto');
     assert.equal(await p.locator('#ripartizione-mancante').count(), 1);
-    assert.match(await ripartizione(), /La zona “Porto” non ha una ripartizione/);
-    assert.match(await stima(), /Scegli una zona con una ripartizione per vedere la stima/);
+    assert.match(await ripartizione(), /Per la zona “Porto” non è ancora stabilito come dividere/);
+    assert.match(await stima(), /Scegli una zona con la sua divisione per vedere quanto spetta a ciascuno/);
     await p.click('#imposta-ripartizione-zona');
     const f = finestra(p);
     await f.waitFor();
@@ -204,17 +227,17 @@ describe('Nuova pratica e modifica', () => {
     });
     await apriNuova();
     await scegliZona('Centro');
-    // venditore 3.050 con bonifico (= 2.500 + 550 di IVA) + acquirente 2.500 in contanti = 5.000 senza IVA → 2° scaglione (8%) = 400
+    // venditore 3.050 con bonifico (= 2.500 + 550 di IVA) + acquirente 3.050 in contanti (= 2.500 + 550) = 5.000 senza IVA → 2° scaglione (8%) = 400
     await P('venditore', 'Bonifico').fill('3.050');
-    await P('acquirente', 'Contanti').fill('2.500');
+    await P('acquirente', 'Contanti').fill('3.050');
     await p.waitForFunction(() => /Quota 100% dei compensi: 5\.000,00/.test(document.querySelector('.stima-provvigione').textContent));
     let s = await stima();
     assert.match(s, /Luca\s*400,00 €/);
     assert.match(s, /Cumulo di ottobre 2026 in Centro: 5\.000,00 € → scaglione 2 \(8%\)/);
     assert.match(s, /Mancano 200,01 € allo scaglione 3 \(11%\)/);
-    // 7.320 con bonifico (= 6.000 + 1.320 di IVA) + 6.000 in contanti = 12.000 → 4° scaglione (15%) = 1.800
+    // 7.320 con bonifico (= 6.000 + 1.320 di IVA) + 7.320 in contanti (= 6.000 + 1.320) = 12.000 → 4° scaglione (15%) = 1.800
     await P('venditore', 'Bonifico').fill('7.320');
-    await P('acquirente', 'Contanti').fill('6.000');
+    await P('acquirente', 'Contanti').fill('7.320');
     await p.waitForFunction(() => /Quota 100% dei compensi: 12\.000,00/.test(document.querySelector('.stima-provvigione').textContent));
     s = await stima();
     assert.match(s, /Luca\s*1\.800,00 €/);
@@ -263,8 +286,9 @@ describe('Nuova pratica e modifica', () => {
   test('salvataggio completo: numero, stato e data automatici, i dati arrivano nel database e la scheda li mostra', async () => {
     const p = app.pagina;
     await scegliZona('Centro');
-    await L('Tipo di immobile').selectOption({ label: 'Appartamento' });
     await L('Prezzo di vendita').fill('185.000,00');
+    await apriAltre();
+    await L('Tipo di immobile').selectOption({ label: 'Appartamento' });
     await L('Prezzo di acquisto').fill('150.000,00');
     await L('Venditore (nome', { exact: false }).fill('Mario Rossi');
     await L('Acquirente (nome', { exact: false }).fill('Anna Bianchi');
@@ -295,7 +319,7 @@ describe('Nuova pratica e modifica', () => {
     assert.match(t, /Data 16\/10\/2026/);
     assert.doesNotMatch(t, /Tempo di lavorazione|Rogito|Indirizzo/);
     assert.match(t, /Totale compenso senza IVA 7\.400,00 €/);
-    assert.match(t, /IVA 22% compresa in bonifico e assegno 1\.628,00 €/);
+    assert.match(t, /IVA 22% compresa in quanto pagato 1\.628,00 €/);
     assert.match(t, /Totale pagato dalle parti 9\.028,00 €/);
     assert.match(t, /Incassato 9\.028,00 € Saldata/);
     assert.match(t, /Atto presso il notaio secondo piano/);
@@ -306,7 +330,7 @@ describe('Nuova pratica e modifica', () => {
     assert.deepEqual(righe.map((r) => [r[0], r[1], r[2], r[4]]), [['Luca', '100%', '7.400,00 €', '814,00 €']]);
     // con "Come è stata calcolata" i passaggi spiegano anche i pagamenti
     await p.locator('#come-calcolato summary').click();
-    assert.match(rimuoviSpazi(await p.locator('#come-calcolato').innerText()), /Compenso della pratica: 3\.700,00 € dal venditore \+ 3\.700,00 € dall'acquirente = 7\.400,00 € \(senza IVA: i contanti sono già senza IVA, da bonifico e assegno l'IVA è stata tolta\)/);
+    assert.match(rimuoviSpazi(await p.locator('#come-calcolato').innerText()), /Compenso della pratica: 3\.700,00 € dal venditore \+ 3\.700,00 € dall'acquirente = 7\.400,00 € \(senza IVA: l'IVA è stata tolta da quanto hanno pagato\)/);
   });
 
   test('"Salva e inserisci un\'altra" salva e riapre un modulo vuoto con il numero successivo', async () => {
@@ -319,7 +343,7 @@ describe('Nuova pratica e modifica', () => {
     assert.equal(await p.evaluate(() => location.hash), '#/nuova');
     assert.equal(await L(ZONA).inputValue(), '');
     assert.equal(await P('venditore', 'Contanti').inputValue(), '');
-    assert.match(rimuoviSpazi(await p.locator('.stato-mod').innerText()), /Compila i dati della pratica/);
+    assert.match(rimuoviSpazi(await p.locator('.stato-mod').innerText()), /Compila i tre passi/);
     assert.equal(await p.evaluate(() => document.activeElement.labels?.[0]?.textContent.replace('*', '').trim()), 'Zona');
     assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM pratiche'), 2);
     assert.deepEqual(await sql(p, "SELECT codice, stato, data_pratica, data_rogito FROM pratiche WHERE codice = '2026/002'"), [{ codice: '2026/002', stato: 'conclusa', data_pratica: '2026-10-16', data_rogito: '2026-10-16' }]);
@@ -392,7 +416,7 @@ describe('Nuova pratica e modifica', () => {
     assert.equal(await P('acquirente', 'Assegno').inputValue(), '4.514,00');
     assert.equal(await P('venditore', 'Contanti').inputValue(), '');
     assert.equal(await L(ZONA).locator('option:checked').innerText(), 'Centro');
-    assert.match(await ripartizione(), /Luca 100%.*Ripartizione già registrata per questa pratica/);
+    assert.match(await ripartizione(), /Luca 100%.*Divisione già registrata per questa pratica/);
     assert.match(await riepilogo(), /Già incassato \(con eventuali incassi successivi\) 9\.028,00 €/);
     assert.match(rimuoviSpazi(await p.locator('.stato-mod').innerText()), /Nessuna modifica/);
     assert.equal(await p.locator('#salva-e-nuova').count(), 0);
@@ -415,7 +439,7 @@ describe('Nuova pratica e modifica', () => {
     await scegliZona('Lungomare');
     assert.deepEqual((await p.locator('#ripartizione-automatica .ripartizione-elenco li').allInnerTexts()).map(rimuoviSpazi), ['Giuseppe 100%']);
     await scegliZona('Centro');
-    assert.match(await ripartizione(), /Luca 100%.*Ripartizione già registrata/);
+    assert.match(await ripartizione(), /Luca 100%.*Divisione già registrata/);
     await scegliZona('Lungomare');
     await p.click('#salva-pratica');
     await attendiNotifica(p, /Pratica 2026\/001 aggiornata/);
@@ -449,7 +473,7 @@ describe('Nuova pratica e modifica', () => {
     assert.equal(await P('acquirente', 'Bonifico').inputValue(), '2.440,00');
     assert.equal(await testoDi('#riep-imponibile'), '5.000,00 €');
     assert.equal(await testoDi('#riep-iva'), '1.100,00 €');
-    assert.match(await ripartizione(), /Luca 70%.*Giuseppe 30%.*Ripartizione già registrata/, 'la ripartizione di allora resta');
+    assert.match(await ripartizione(), /Luca 70%.*Giuseppe 30%.*Divisione già registrata/, 'la ripartizione di allora resta');
     await p.click('#salva-pratica');
     await attendiNotifica(p, /Pratica V\/1 aggiornata/);
     await p.waitForSelector('#contenuto h1:has-text("Via Vecchia 5")');

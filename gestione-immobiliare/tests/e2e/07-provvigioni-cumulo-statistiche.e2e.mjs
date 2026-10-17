@@ -135,7 +135,7 @@ describe('Provvigioni e liquidazioni', () => {
     await p.waitForFunction(() => /2 liquidazioni · 4\.885,00/.test(document.querySelector('#pannello-prov').innerText.replace(/ /g, ' ')));
     // la dashboard segue: da liquidare 21.671 + 1.680
     await vai(p, '#/');
-    await p.waitForFunction(() => /Liquidate 4\.885\s€ su 28\.236\s€/.test(document.body.innerText));
+    await p.waitForFunction(() => /Già pagati 4\.885\s€ su 28\.236\s€/.test(document.body.innerText));
   });
 
   test('liquidazioni: "Registra liquidazione" dall\'elenco, anche per un anticipo su una pratica in corso', async () => {
@@ -362,18 +362,17 @@ describe('Statistiche e grafici', () => {
   test('indicatori del periodo calcolati a mano', async () => {
     const p = app.pagina;
     const kpi = await p.locator('.kpi').evaluateAll((a) => a.map((x) => x.innerText.replace(/ /g, ' ').replace(/\s+/g, ' ').trim()));
-    assert.match(kpi[0], /^Tempo medio di chiusura 40 giorni/);
+    assert.equal(kpi.length, 3, 'tre indicatori');
+    assert.match(kpi[0], /^Compenso medio per pratica 6\.763 €/);
     assert.match(kpi[1], /^Prezzo medio di vendita 181\.500 €/);
-    assert.match(kpi[2], /^Compenso medio per pratica 6\.763 €/);
-    assert.match(kpi[3], /^Compenso sul prezzo di vendita 4%/);
-    assert.match(kpi[4], /^Margine di agenzia 59\.684 € 67,9% dei compensi, prima dei costi/);
+    assert.match(kpi[2], /^Margine dell'agenzia 59\.684 € 67,9% dei compensi, prima dei costi/);
   });
 
-  test('sette grafici con valori e tabella equivalente', async () => {
+  test('tre grafici con valori e tabella equivalente', async () => {
     const p = app.pagina;
     const titoli = await p.$$eval('.grafico-card h3', (a) => a.map((x) => x.textContent.trim()));
-    assert.deepEqual(titoli, ['Compensi e incassi', 'Compravendite concluse', 'Valore degli immobili venduti', 'Provvigioni e margine di agenzia', 'Compensi per zona', 'Compensi per collaboratore', 'Pratiche per tipo di immobile']);
-    for (const id of ['compensi-incassi', 'concluse', 'valore', 'margine', 'per-zona', 'per-collaboratore', 'per-tipo']) {
+    assert.deepEqual(titoli, ['Compensi e incassi', 'Compensi per zona', 'Compensi per collaboratore']);
+    for (const id of ['compensi-incassi', 'per-zona', 'per-collaboratore']) {
       const g = p.locator(`#grafico-${id}`);
       assert.equal(await g.locator('svg.g-svg').count(), 1, id);
       await g.locator('button:has-text("Tabella")').click();
@@ -389,10 +388,6 @@ describe('Statistiche e grafici', () => {
     await coll.locator('button:has-text("Tabella")').click();
     const rc = await celle(p, '#grafico-per-collaboratore .grafico-tab tbody tr');
     assert.deepEqual(Object.fromEntries(rc.map((r) => [r[0].split(' ·')[0].toLowerCase(), centesimi(r[1])])), { luca: 42340 * E, giuseppe: 45580 * E });
-    const tipo = p.locator('#grafico-per-tipo');
-    await tipo.locator('button:has-text("Tabella")').click();
-    const rt = await celle(p, '#grafico-per-tipo .grafico-tab tbody tr');
-    assert.deepEqual(Object.fromEntries(rt.map((r) => [r[0].split(' ·')[0].toLowerCase(), Number(r[1])])), { appartamento: 12, 'box / garage': 1 });
   });
 
   test('compensi e incassi: due serie con totali separati e nota sul confronto', async () => {
@@ -400,7 +395,7 @@ describe('Statistiche e grafici', () => {
     const g = p.locator('#grafico-compensi-incassi');
     assert.equal(await g.locator('.g-legenda-voce').count(), 2);
     assert.match(rimuoviSpazi(await g.locator('.grafico-cifre').innerText()), /Compensi 87\.920,00 € Incassi nel periodo 25\.376,00 €/);
-    assert.match(rimuoviSpazi(await g.locator('.grafico-nota').innerText()), /Le due serie non sono confrontabili riga per riga/);
+    assert.match(rimuoviSpazi(await g.locator('.grafico-nota').innerText()), /I compensi sono senza IVA e seguono il giorno della pratica/);
     // il grafico a linee ha un'unica area sensibile: il mese si sceglie con la posizione (marzo = 3° di 12)
     await g.scrollIntoViewIfNeeded();
     const area = await g.locator('.g-hit').boundingBox();
@@ -442,7 +437,7 @@ describe('Statistiche e grafici', () => {
     await p.click('.striscia-filtri .segmenti button:has-text("Mensile")');
     await scegliCollaboratore(p, 'Luca');
     const kpi = await p.locator('.kpi').evaluateAll((a) => a.map((x) => x.innerText.replace(/ /g, ' ').replace(/\s+/g, ' ').trim()));
-    assert.match(kpi[4], /^Margine di agenzia 28\.938 €/); // 42.340 − 13.402
+    assert.match(kpi[2], /^Margine dell'agenzia 28\.938 €/); // 42.340 − 13.402
     const tot = (await celle(p, '#tabella-statistiche tfoot tr'))[0];
     assert.equal(tot[1], '8');
     assert.equal(tot[2], '42.340,00 €');

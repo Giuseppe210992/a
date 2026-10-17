@@ -1,4 +1,5 @@
-// Le otto operazioni rapide della dashboard, una per una, con il loro effetto reale sui dati.
+// Le quattro operazioni rapide della dashboard (nuova pratica, incasso, liquidazione, backup) e le esportazioni e importazioni
+// della schermata «Backup e archivio storico», una per una, con il loro effetto reale sui dati.
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -11,10 +12,12 @@ import { inserisciDatiProva } from './dati-prova.mjs';
 
 const E = 100;
 
-describe('Dashboard: operazioni rapide', () => {
+describe('Dashboard: operazioni rapide, esportazioni e importazioni', () => {
   let app;
   let baseline; // archivio completo esportato prima delle modifiche
   let prima; // riquadri prima delle modifiche
+  // esportazione e importazione si fanno dalla schermata «Backup e archivio storico»
+  const apriEsporta = async (p) => { await vai(p, '#/backup'); await p.click('#bk-csv'); };
   const cartella = cartellaTemp('gi-ops-');
   before(async () => { app = await avvia(); await inserisciDatiProva(app.pagina); await vai(app.pagina, '#/'); prima = await riquadri(app.pagina); });
   after(async () => { await app.chiudi(); fs.rmSync(cartella, { recursive: true, force: true }); });
@@ -26,20 +29,17 @@ describe('Dashboard: operazioni rapide', () => {
     await vai(p, '#/');
   });
 
-  test('ci sono esattamente otto operazioni rapide, con nome e descrizione', async () => {
+  test('ci sono esattamente quattro operazioni rapide, con nome e descrizione', async () => {
     const p = app.pagina;
     const titoli = await p.$$eval('.ops-griglia .op b', (a) => a.map((x) => x.textContent.trim()));
-    assert.deepEqual(titoli, [
-      'Inserisci nuova compravendita', 'Cerca una pratica', 'Registra un incasso', 'Registra una liquidazione',
-      'Consulta il cumulo mensile', 'Esporta i dati', 'Crea un backup', 'Importa un backup precedente',
-    ]);
-    assert.equal(await p.locator('.ops-griglia .op small').count(), 8);
+    assert.deepEqual(titoli, ['Nuova pratica', 'Registra un incasso', 'Paga un collaboratore', 'Crea un backup']);
+    assert.equal(await p.locator('.ops-griglia .op small').count(), 4);
     // archivio mai salvato: lo dice, senza inventare una data
     await p.waitForFunction(() => /Nessun backup ancora/.test(document.querySelector('#op-backup small')?.textContent ?? '')); // la data dell'ultimo backup si legge dall'archivio
     assert.match(rimuoviSpazi(await p.locator('#op-backup small').innerText()), /Nessun backup ancora/);
   });
 
-  test('1. Inserisci nuova compravendita apre il modulo vuoto', async () => {
+  test('1. Nuova pratica apre il modulo vuoto', async () => {
     const p = app.pagina;
     await p.click('#op-nuova');
     await p.waitForSelector('#contenuto h1:has-text("Nuova pratica")');
@@ -47,28 +47,9 @@ describe('Dashboard: operazioni rapide', () => {
     await vai(p, '#/');
   });
 
-  test('2. Cerca una pratica porta il cursore nella ricerca e mostra le pratiche recenti', async () => {
-    const p = app.pagina;
-    await p.click('#op-cerca');
-    assert.equal(await p.evaluate(() => document.activeElement.id), 'ricerca-rapida');
-    await p.waitForSelector('.risultati-ricerca .ris-voce');
-    assert.equal(await p.locator('.risultati-ricerca .ris-voce').count(), 5);
-    assert.match(await p.locator('.risultati-ricerca').innerText(), /Pratiche recenti/);
-    await p.keyboard.press('Escape');
-    await p.keyboard.press('Escape');
-  });
-
-  test('5. Consulta il cumulo mensile apre la schermata del cumulo', async () => {
-    const p = app.pagina;
-    await p.click('#op-cumulo');
-    await p.waitForSelector('#contenuto h1:has-text("Cumulo mensile per zona")');
-    assert.equal(await p.evaluate(() => location.hash), '#/cumulo');
-    await vai(p, '#/');
-  });
-
   test('6a. Esporta i dati: elenco delle pratiche in CSV (Excel italiano)', async () => {
     const p = app.pagina;
-    await p.click('#op-esporta');
+    await apriEsporta(p);
     await finestra(p).waitFor();
     assert.equal(await finestra(p).locator('input[name="esp"]').count(), 5);
     assert.equal(await finestra(p).locator('input[name="esp"]:checked').getAttribute('value'), 'pratiche');
@@ -105,7 +86,7 @@ describe('Dashboard: operazioni rapide', () => {
   test('6b. Esporta: provvigioni, incassi e liquidazioni', async () => {
     const p = app.pagina;
     const esporta = async (valore) => {
-      await p.click('#op-esporta');
+      await apriEsporta(p);
       await finestra(p).locator(`input[name="esp"][value="${valore}"]`).check();
       return scarica(p, () => bottoneFinestra(p, 'Esporta').click());
     };
@@ -127,16 +108,17 @@ describe('Dashboard: operazioni rapide', () => {
   test('6c. Esporta: la spunta "solo periodo e filtri" limita i dati', async () => {
     const p = app.pagina;
     await scegliPeriodo(p, 'Mese scorso');
-    await p.click('#op-esporta');
+    await apriEsporta(p);
     await finestra(p).locator('#esp-filtri').check();
     const csv = leggiCsv((await scarica(p, () => bottoneFinestra(p, 'Esporta').click())).bytes);
     assert.deepEqual(csv.righe.map((r) => r[0]).sort(), ['2026/009', '2026/015']);
+    await vai(p, '#/');
     await azzeraFiltri(p);
   });
 
   test('6d. Esporta: archivio completo, un file SQLite che contiene tutti i dati', async () => {
     const p = app.pagina;
-    await p.click('#op-esporta');
+    await apriEsporta(p);
     await finestra(p).locator('input[name="esp"][value="completo"]').check();
     assert.equal(await finestra(p).locator('#esp-filtri').isVisible(), false, 'i filtri non hanno senso per l\'archivio completo');
     const file = await scarica(p, () => bottoneFinestra(p, 'Esporta').click());
@@ -156,7 +138,7 @@ describe('Dashboard: operazioni rapide', () => {
 
   test('6e. Esporta si può annullare senza scaricare nulla', async () => {
     const p = app.pagina;
-    await p.click('#op-esporta');
+    await apriEsporta(p);
     let scaricato = false;
     p.once('download', () => { scaricato = true; });
     await bottoneFinestra(p, 'Annulla').click();
@@ -184,8 +166,8 @@ describe('Dashboard: operazioni rapide', () => {
   test('3. Registra un incasso: controlli, importo residuo, salvataggio e aggiornamento dei numeri', async () => {
     const p = app.pagina;
     await vai(p, '#/');
-    const incassati = async () => rimuoviSpazi(await p.locator('.kpi', { has: p.locator('.kpi-etichetta', { hasText: /^Totale compensi registrati$/ }) }).locator('.kpi-nota').innerText());
-    assert.match(await incassati(), /incassati 25\.376 €/);
+    const incassati = () => valoreSql(p, 'SELECT SUM(importo_cent) FROM incassi');
+    assert.equal(await incassati(), 25376 * E);
     await p.click('#op-incasso');
     const f = finestra(p);
     await f.waitFor();
@@ -219,8 +201,7 @@ describe('Dashboard: operazioni rapide', () => {
     assert.equal(await f.count(), 0);
     const riga = (await sql(p, "SELECT i.* FROM incassi i JOIN pratiche p ON p.id = i.pratica_id WHERE p.codice = '2026/011'"))[0];
     assert.deepEqual([riga.importo_cent, riga.data, riga.pagante, riga.metodo, riga.note], [100000, '2026-10-16', 'Acquirente', 'Bonifico', 'Acconto di prova']);
-    await p.waitForFunction(() => [...document.querySelectorAll('.kpi-nota')].some((n) => /incassati 26\.376\s€/.test(n.textContent)));
-    assert.match(await incassati(), /incassati 26\.376 €/);
+    assert.equal(await incassati(), 26376 * E);
     assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM incassi'), 5);
   });
 
@@ -285,7 +266,7 @@ describe('Dashboard: operazioni rapide', () => {
     const rr = await sql(p, 'SELECT r.importo_cent, p.codice FROM liquidazioni_righe r JOIN pratiche p ON p.id = r.pratica_id WHERE r.liquidazione_id = ?', [l.id]);
     assert.deepEqual(rr, [{ importo_cent: 448000, codice: '2026/008' }]);
     // i riquadri si sono aggiornati: da liquidare 21.671 − 4.480 = 17.191 €
-    await p.waitForFunction(() => /Liquidate 11\.045\s€ su 28\.236\s€/.test(document.body.textContent));
+    await p.waitForFunction(() => /Già pagati 11\.045\s€ su 28\.236\s€/.test(document.body.textContent));
     const dopo = await riquadri(p);
     assert.equal(dopo.daLiquidare, 17191 * E);
     assert.equal(dopo.maturate, prima.maturate);
@@ -293,11 +274,11 @@ describe('Dashboard: operazioni rapide', () => {
 
   test('8. Importa un backup: un file sbagliato viene rifiutato spiegando perché, senza toccare i dati', async () => {
     const p = app.pagina;
-    await vai(p, '#/');
+    await vai(p, '#/backup');
     const falso = path.join(cartella, 'non-un-archivio.txt');
     fs.writeFileSync(falso, 'Questo non è un database.\n'.repeat(20));
     const pratiche0 = await valoreSql(p, 'SELECT COUNT(*) FROM pratiche');
-    const [sceltaFile] = await Promise.all([p.waitForEvent('filechooser'), p.click('#op-importa')]);
+    const [sceltaFile] = await Promise.all([p.waitForEvent('filechooser'), p.click('#bk-importa')]);
     await sceltaFile.setFiles(falso);
     const f = finestra(p);
     await f.waitFor();
@@ -314,7 +295,7 @@ describe('Dashboard: operazioni rapide', () => {
     const d = new SQL.Database();
     d.run('CREATE TABLE x (a); INSERT INTO x VALUES (1); CREATE TABLE y (b); ');
     fs.writeFileSync(altro, Buffer.from(d.export()));
-    const [scelta2] = await Promise.all([p.waitForEvent('filechooser'), p.click('#op-importa')]);
+    const [scelta2] = await Promise.all([p.waitForEvent('filechooser'), p.click('#bk-importa')]);
     await scelta2.setFiles(altro);
     await f.waitFor();
     assert.match(rimuoviSpazi(await f.innerText()), /non appartiene a Gestione Immobiliare|non ha la struttura attesa/);
@@ -324,10 +305,10 @@ describe('Dashboard: operazioni rapide', () => {
 
   test('8b. Importa un backup valido: anteprima del contenuto, Annulla non cambia nulla, conferma sostituisce i dati', async () => {
     const p = app.pagina;
-    await vai(p, '#/');
+    await vai(p, '#/backup');
     assert.ok(baseline && fs.existsSync(baseline), 'serve il file esportato in precedenza');
     // prima si annulla
-    let [sceltaFile] = await Promise.all([p.waitForEvent('filechooser'), p.click('#op-importa')]);
+    let [sceltaFile] = await Promise.all([p.waitForEvent('filechooser'), p.click('#bk-importa')]);
     await sceltaFile.setFiles(baseline);
     const f = finestra(p);
     await f.waitFor();
@@ -341,7 +322,7 @@ describe('Dashboard: operazioni rapide', () => {
     assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM incassi'), 5, 'Annulla: i dati attuali restano');
     // poi si conferma
     const copie0 = await p.evaluate(async () => (await window.__gi.app.driver.elencaCopie()).length);
-    [sceltaFile] = await Promise.all([p.waitForEvent('filechooser'), p.click('#op-importa')]);
+    [sceltaFile] = await Promise.all([p.waitForEvent('filechooser'), p.click('#bk-importa')]);
     await sceltaFile.setFiles(baseline);
     await f.waitFor();
     await bottoneFinestra(p, 'Sostituisci i dati').click();
@@ -352,7 +333,8 @@ describe('Dashboard: operazioni rapide', () => {
     assert.equal(copie.length, copie0 + 1);
     assert.ok(copie.includes('pre-importazione'), 'prima dell\'importazione è stata salvata una copia di sicurezza');
     // la dashboard è tornata ai valori di partenza, senza ricaricare
-    await p.waitForFunction(() => /Liquidate 6\.565\s€ su 28\.236\s€/.test(document.body.textContent));
+    await vai(p, '#/');
+    await p.waitForFunction(() => /Già pagati 6\.565\s€ su 28\.236\s€/.test(document.body.textContent));
     assert.deepEqual(await riquadri(p), prima);
   });
 

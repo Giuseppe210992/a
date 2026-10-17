@@ -80,9 +80,3 @@ button.g-legenda-voce[aria-pressed="false"] .g-legenda-chiave { opacity: .35; }
 .grafico-card .tabella-wrap { max-height: 360px; overflow: auto; }
 .grafico-tab { font-size: 12.5px; }
 
-/* sparkline dei riquadri */
-.spark { display: block; overflow: visible; }
-.spark-linea { fill: none; stroke: var(--muto); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-.spark-punto { fill: var(--accent); }
-.spark-anello { fill: var(--surface); }
-.spark-hit { fill: transparent; }

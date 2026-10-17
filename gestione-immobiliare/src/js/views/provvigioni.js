@@ -178,7 +178,7 @@ export const provvigioni = {
       const elenco = [...m.incassi, ...daConclusione].filter((i) => nelPeriodoData(i.data, ctx) && i.pratica && (ctx.zonaId == null || i.pratica.zona_id === ctx.zonaId) && (ctx.collaboratoreId == null || i.pratica.voci.some((v) => v.collaboratoreId === ctx.collaboratoreId)))
         .sort((a, b) => (a.data < b.data ? 1 : a.data > b.data ? -1 : (b.id ?? 0) - (a.id ?? 0)));
       const barra = h('div', { class: 'riga-azioni', style: { justifyContent: 'space-between', marginBottom: '12px' } },
-        h('span', { class: 'sottotesto' }, `${elenco.length} ${elenco.length === 1 ? 'incasso' : 'incassi'} · ${eur(elenco.reduce((s, i) => s + i.importo_cent, 0))} nel periodo ${elenco.some((i) => i.daConclusione) ? '(contanti senza IVA, bonifico e assegno con IVA)' : '(IVA inclusa)'}`),
+        h('span', { class: 'sottotesto' }, `${elenco.length} ${elenco.length === 1 ? 'incasso' : 'incassi'} · ${eur(elenco.reduce((s, i) => s + i.importo_cent, 0))} nel periodo ${elenco.some((i) => i.daConclusione) ? '(IVA inclusa)' : '(IVA inclusa)'}`),
         h('span', { class: 'riga-azioni' },
           h('button', { type: 'button', class: 'btn btn-secondario btn-sm', onclick: async () => { const r = await app.driver.esportaFile(codificaTesto(csvIncassi(m)), nomeFile('Incassi', 'csv'), 'text/csv;charset=utf-8'); if (r && r.salvato !== false) notificaOk('Incassi esportati in CSV.'); } }, icona('download', { dimensione: 15 }), 'Esporta in CSV'),
           h('button', { type: 'button', class: 'btn btn-primario btn-sm', id: 'btn-nuovo-incasso', onclick: () => apriDialogoIncasso() }, icona('plus', { dimensione: 16 }), 'Registra incasso')));

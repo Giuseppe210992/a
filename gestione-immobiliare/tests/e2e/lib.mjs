@@ -236,22 +236,27 @@ export async function azzeraFiltri(pagina) {
   await attendiQuiete(pagina, 80);
 }
 
-/** Valori numerici dei sei riquadri come centesimi (o numero intero per i conteggi). */
+/** Valori numerici dei quattro riquadri come centesimi (o numero intero per le pratiche concluse). */
 export async function riquadri(pagina) {
   const nomi = {
-    concluse: 'Compravendite concluse',
-    compensi: 'Totale compensi registrati',
-    maturate: 'Provvigioni maturate',
-    daLiquidare: 'Provvigioni ancora da liquidare',
-    valore: 'Valore complessivo immobili venduti',
-    inCorso: 'Pratiche in corso',
+    concluse: 'Pratiche concluse',
+    compensi: 'Compensi dell\'agenzia',
+    maturate: 'Provvigioni dei collaboratori',
+    daLiquidare: 'Ancora da pagare ai collaboratori',
   };
   const out = {};
   for (const [k, etichetta] of Object.entries(nomi)) {
     const t = await kpi(pagina, etichetta);
-    out[k] = k === 'concluse' || k === 'inCorso' ? Number(t.replace(/\./g, '')) : centesimi(t);
+    out[k] = k === 'concluse' ? Number(t.replace(/\./g, '')) : centesimi(t);
   }
   return out;
+}
+
+/** Riga dei totali della tabella delle Statistiche: concluse, compensi, incassi, provvigioni, margine, valore venduto (centesimi). */
+export async function totaliStatistiche(pagina) {
+  const celle = await pagina.locator('#tabella-statistiche tfoot td').allInnerTexts();
+  const [concluse, compensi, incassi, provvigioni, margine, valore] = celle.slice(1).map((t) => (t.includes('€') ? centesimi(t) : Number(rimuoviSpazi(t).replace(/\./g, ''))));
+  return { concluse, compensi, incassi, provvigioni, margine, valore };
 }
 
 // ------------------------------------------------------------ database, file scaricati, finestre

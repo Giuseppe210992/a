@@ -16,8 +16,8 @@ export function csvPratiche(modello, pratiche = modello.pratiche) {
   const intestazioni = [
     'Codice', 'Stato', 'Data apertura', 'Data rogito', 'Zona', 'Indirizzo', 'Comune', 'Tipo immobile',
     'Prezzo di vendita', 'Prezzo di acquisto', 'Venditore', 'Acquirente',
-    'Venditore: contanti (senza IVA)', 'Venditore: bonifico (IVA compresa)', 'Venditore: assegno (IVA compresa)',
-    'Acquirente: contanti (senza IVA)', 'Acquirente: bonifico (IVA compresa)', 'Acquirente: assegno (IVA compresa)',
+    'Venditore: contanti (IVA compresa)', 'Venditore: bonifico (IVA compresa)', 'Venditore: assegno (IVA compresa)',
+    'Acquirente: contanti (IVA compresa)', 'Acquirente: bonifico (IVA compresa)', 'Acquirente: assegno (IVA compresa)',
     'Compenso venditore', 'Compenso acquirente', 'Totale compensi (imponibile)', 'Aliquota IVA %', 'IVA', 'Totale con IVA',
     'Incassato', 'Da incassare', 'Collaboratori e quote', 'Provvigioni calcolate', 'Provvigioni maturate',
     'Provvigioni liquidate', 'Provvigioni da liquidare', 'Dati mancanti', 'Note',
@@ -50,10 +50,10 @@ export function csvProvvigioni(modello, voci) {
 
 export function csvIncassi(modello) {
   // Tutto quello che le parti hanno pagato: gli importi dati alla conclusione (nel modulo della pratica) e gli incassi registrati dopo.
-  // Contanti: già senza IVA. Bonifico e assegno: IVA compresa. Gli incassi registrati a parte sono sempre indicati IVA compresa.
+  // Contanti, bonifico e assegno: tutti con IVA compresa, come gli incassi registrati a parte.
   const intestazioni = ['Data', 'Codice pratica', 'Pratica', 'Importo', 'IVA', 'Pagante', 'Metodo', 'Note'];
   const alla = (modello.pagamenti || []).map((x) => ({
-    data: x.data, riga: [dataIt(x.data), x.pratica?.codice ?? '', x.pratica?.descrizione ?? '', csvEuro(x.importo_cent), x.conIva ? 'compresa' : 'esclusa (già senza IVA)', x.parte, x.modalita, 'Pagato alla conclusione'],
+    data: x.data, riga: [dataIt(x.data), x.pratica?.codice ?? '', x.pratica?.descrizione ?? '', csvEuro(x.importo_cent), 'compresa', x.parte, x.modalita, 'Pagato alla conclusione'],
   }));
   const dopo = modello.incassi.map((i) => ({
     data: i.data, riga: [dataIt(i.data), i.pratica?.codice ?? '', i.pratica?.descrizione ?? '', csvEuro(i.importo_cent), 'compresa', i.pagante ?? '', i.metodo ?? '', i.note ?? ''],

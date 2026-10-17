@@ -169,7 +169,7 @@ describe('Adattamento agli schermi', () => {
         await vai(p, '#/');
         await p.waitForSelector('.kpi');
         const kpi = await p.locator('.kpi').evaluateAll((a) => a.map((x) => { const r = x.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; }));
-        assert.equal(kpi.length, 6);
+        assert.equal(kpi.length, 4);
         // nessuna sovrapposizione tra riquadri
         for (let i = 0; i < kpi.length; i++) for (let j = i + 1; j < kpi.length; j++) {
           const a = kpi[i]; const b = kpi[j];

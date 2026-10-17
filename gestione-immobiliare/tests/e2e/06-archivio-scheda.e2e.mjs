@@ -348,7 +348,7 @@ describe('Scheda della pratica', () => {
     ]);
     assert.match(t, /Liquidazioni collegate/);
     assert.match(t, /10\/05\/2026 Luca 285,00 €/);
-    assert.match(t, /Cronologia Inserita/);
+    assert.doesNotMatch(t, /Cronologia/);
     // pulsanti d'azione
     for (const id of ['#btn-modifica', '#btn-incasso', '#btn-liquida']) assert.ok(await p.locator(id).isVisible(), id);
   });

@@ -1,8 +1,8 @@
 // Inserimento e modifica di una pratica (compravendita conclusa), con calcolo dei compensi e stima delle provvigioni in tempo reale.
 //
-// Il modulo chiede poco: la zona, quanto ha pagato ciascuna parte e come (contanti già senza IVA; bonifico e assegno
-// con IVA compresa). Il resto è automatico: numero della pratica, stato «conclusa», data di oggi e ripartizione tra i
-// collaboratori a seconda della zona.
+// Il modulo chiede solo l'essenziale, in tre passi: la zona, il prezzo e quanto ha pagato ciascuna parte (contanti,
+// bonifico e assegno: tutti con IVA compresa). Il resto è automatico: numero della pratica, stato «conclusa», data di
+// oggi e ripartizione tra i collaboratori a seconda della zona. Le informazioni facoltative stanno in una sezione chiusa.
 import { h, monta, ritarda } from '../core/dom.js';
 import { icona } from '../core/icone.js';
 import { app, modello, impostazioni } from '../core/app.js';
@@ -51,21 +51,21 @@ function montaForm(contenitore, { pratica = null }) {
 
   // ----------------------------------------------------------- campi
   const f = {
-    zona_id: campoSelezione({ etichetta: 'Zona', valore: pratica?.zona_id ?? '', vuoto: 'Scegli la zona', obbligatorio: true, opzioni: [], aiuto: 'Decide la ripartizione tra i collaboratori e gli scaglioni.' }),
+    zona_id: campoSelezione({ etichetta: 'Zona', valore: pratica?.zona_id ?? '', vuoto: 'Scegli la zona', obbligatorio: true, opzioni: [] }),
     immobile_tipo: campoSelezione({ etichetta: 'Tipo di immobile (facoltativo)', valore: pratica?.immobile_tipo ?? '', vuoto: 'Non indicato', opzioni: TIPI_IMMOBILE.map((t) => ({ valore: t, etichetta: t })) }),
     prezzo_vendita_cent: campoImporto({ etichetta: 'Prezzo di vendita', centesimi: pratica?.prezzo_vendita_cent ?? null }),
-    prezzo_acquisto_cent: campoImporto({ etichetta: 'Prezzo di acquisto (se noto)', centesimi: pratica?.prezzo_acquisto_cent ?? null, aiuto: 'Quanto aveva pagato l\'attuale proprietario. Serve al confronto acquisto/vendita.' }),
+    prezzo_acquisto_cent: campoImporto({ etichetta: 'Prezzo di acquisto (se noto)', centesimi: pratica?.prezzo_acquisto_cent ?? null }),
     venditore: campoTesto({ etichetta: 'Venditore (nome, facoltativo)', valore: pratica?.venditore ?? '', maxlength: 120 }),
     acquirente: campoTesto({ etichetta: 'Acquirente (nome, facoltativo)', valore: pratica?.acquirente ?? '', maxlength: 120 }),
-    aliquota_iva: campoSelezione({ etichetta: 'Aliquota IVA', valore: String(aliquotaIniziale), opzioni: [], aiuto: 'Serve a togliere l\'IVA da bonifico e assegno.' }),
+    aliquota_iva: campoSelezione({ etichetta: 'Aliquota IVA', valore: String(aliquotaIniziale), opzioni: [], aiuto: 'Serve a togliere l\'IVA da quanto hanno pagato.' }),
     note: campoAreaTesto({ etichetta: 'Note', valore: pratica?.note ?? '', righe: 3 }),
   };
-  // gli importi pagati: due parti × tre modi (contanti già senza IVA, bonifico e assegno con IVA compresa)
+  // gli importi pagati: due parti × tre modi (contanti, bonifico e assegno, tutti con IVA compresa)
   for (const parte of PARTI) {
     for (const modo of MODALITA) {
       const nome = campoPagamento(parte.id, modo.id);
-      f[nome] = campoImporto({ etichetta: `${modo.etichetta} (${modo.nota})`, centesimi: iniziali.valori[nome] });
-      f[nome].input.setAttribute('aria-label', `${parte.etichetta}: ${modo.etichetta.toLowerCase()} (${modo.nota})`);
+      f[nome] = campoImporto({ etichetta: modo.etichetta, centesimi: iniziali.valori[nome] });
+      f[nome].input.setAttribute('aria-label', `${parte.etichetta}: ${modo.etichetta.toLowerCase()}`);
     }
   }
 
@@ -96,20 +96,20 @@ function montaForm(contenitore, { pratica = null }) {
     const elenco = modello().collaboratori;
     const bottoneZona = (etichetta) => (zona ? h('button', { type: 'button', class: 'btn btn-secondario btn-sm', id: 'imposta-ripartizione-zona', onclick: () => apriDialogoRipartizione(zona, { dopo: () => { calcolaRipartizione(); disegnaRipartizione(); ricalcola(); } }) }, icona('handshake', { dimensione: 15 }), etichetta) : null);
     if (origine === 'senza_zona') {
-      monta(boxRipartizione, h('p', { class: 'sottotesto' }, 'Scegli la zona: i compensi si dividono tra i collaboratori a seconda della zona.'));
+      monta(boxRipartizione, h('p', { class: 'sottotesto' }, 'Scegli la zona: i compensi si dividono da soli tra i collaboratori.'));
       return;
     }
     if (!quote.length) {
       monta(boxRipartizione, h('div', { class: 'nota attenzione', id: 'ripartizione-mancante' }, icona('triangle-alert', { dimensione: 18 }),
-        h('div', null, h('strong', null, `La zona “${zona?.nome ?? ''}” non ha una ripartizione. `), 'Senza, i compensi non vengono assegnati a nessun collaboratore e le provvigioni restano a zero. Imposta come si divide una pratica di questa zona: si fa una volta sola.')),
-      h('div', { class: 'riga-azioni', style: { marginTop: '10px' } }, bottoneZona('Imposta la ripartizione della zona')));
+        h('div', null, h('strong', null, `Per la zona “${zona?.nome ?? ''}” non è ancora stabilito come dividere. `), 'Dì chi prende quanto: si fa una volta sola e vale per tutte le pratiche della zona.')),
+      h('div', { class: 'riga-azioni', style: { marginTop: '10px' } }, bottoneZona('Stabilisci la divisione della zona')));
       return;
     }
     const spiegazione = {
-      zona: `Ripartizione impostata per la zona “${zona?.nome ?? ''}”.`,
-      predefinita: `La zona “${zona?.nome ?? ''}” non ha una ripartizione propria: si usa quella predefinita.`,
-      unico: 'C\'è un solo collaboratore attivo: tutto a lui.',
-      registrata: 'Ripartizione già registrata per questa pratica: cambia solo se cambi la zona.',
+      zona: `Si divide come stabilito per la zona “${zona?.nome ?? ''}”.`,
+      predefinita: `La zona “${zona?.nome ?? ''}” non ha una divisione sua: si usa quella predefinita.`,
+      unico: 'C\'è un solo collaboratore: tutto a lui.',
+      registrata: 'Divisione già registrata per questa pratica: cambia solo se cambi la zona.',
     }[origine];
     monta(boxRipartizione,
       h('ul', { class: 'ripartizione-elenco', style: { display: 'grid', gap: '6px', listStyle: 'none', padding: 0, margin: 0 } }, quote.map((q) => {
@@ -117,7 +117,7 @@ function montaForm(contenitore, { pratica = null }) {
         return h('li', { class: 'nome', style: { display: 'flex', alignItems: 'center', gap: '8px' } }, h('span', { class: `punto-col col-${c?.colore ?? 1}`, style: { width: '12px', height: '12px' }, 'aria-hidden': 'true' }), h('b', null, c?.nome ?? 'Collaboratore'), h('span', null, pct(q.percentuale)));
       })),
       h('p', { class: 'sottotesto', style: { marginTop: '8px' } }, spiegazione),
-      origine === 'zona' || origine === 'predefinita' ? h('div', { class: 'riga-azioni', style: { marginTop: '8px' } }, bottoneZona('Cambia la ripartizione della zona')) : null);
+      origine === 'zona' || origine === 'predefinita' ? h('div', { class: 'riga-azioni', style: { marginTop: '8px' } }, bottoneZona('Cambia la divisione della zona')) : null);
   }
 
   // ----------------------------------------------------------- riepilogo e stima
@@ -152,18 +152,14 @@ function montaForm(contenitore, { pratica = null }) {
   function ricalcola() {
     const b = leggiBozza();
     const c = calcolaCompensi(b);
-    const prezzo = b.prezzo_vendita_cent;
-    for (const parte of PARTI) {
+        for (const parte of PARTI) {
       const x = c[parte.id];
-      nettoParte[parte.id].textContent = x.pagatoCent > 0 ? `Compenso senza IVA ${parte.dal}: ${eur(x.imponibileCent)}${x.ivaCent > 0 ? ` (IVA compresa nei pagamenti: ${eur(x.ivaCent)})` : ''}` : '';
+      nettoParte[parte.id].textContent = x.pagatoCent > 0 ? `Compenso senza IVA ${parte.dal}: ${eur(x.imponibileCent)} (IVA compresa: ${eur(x.ivaCent)})` : '';
     }
     monta(riepilogo,
-      h('div', { class: 'riga' }, h('span', null, 'Compenso dal venditore (senza IVA)'), h('span', { class: 'valore', id: 'riep-venditore' }, eur(c.venditore.imponibileCent))),
-      h('div', { class: 'riga' }, h('span', null, 'Compenso dall\'acquirente (senza IVA)'), h('span', { class: 'valore', id: 'riep-acquirente' }, eur(c.acquirente.imponibileCent))),
-      h('div', { class: 'riga' }, h('span', null, 'Totale compenso senza IVA'), h('span', { class: 'valore', id: 'riep-imponibile' }, eur(c.imponibileCent))),
-      h('div', { class: 'riga' }, h('span', null, `IVA ${String(b.aliquota_iva).replace('.', ',')}% compresa in bonifico e assegno`), h('span', { class: 'valore', id: 'riep-iva' }, eur(c.ivaCent))),
-      h('div', { class: 'riga totale' }, h('span', null, 'Totale pagato dalle parti'), h('span', { class: 'valore', id: 'riep-pagato' }, eur(c.pagatoCent))),
-      prezzo && c.imponibileCent > 0 ? h('div', { class: 'riga' }, h('span', null, 'Compenso sul prezzo di vendita'), h('span', { class: 'valore' }, pct(Math.round((c.imponibileCent / prezzo) * 10000) / 100))) : null,
+      h('div', { class: 'riga' }, h('span', null, 'Compenso dell\'agenzia (senza IVA)'), h('span', { class: 'valore', id: 'riep-imponibile' }, eur(c.imponibileCent))),
+      h('div', { class: 'riga' }, h('span', null, `IVA ${String(b.aliquota_iva).replace('.', ',')}% (già dentro quanto pagato)`), h('span', { class: 'valore', id: 'riep-iva' }, eur(c.ivaCent))),
+      h('div', { class: 'riga totale' }, h('span', null, 'Totale pagato dai clienti'), h('span', { class: 'valore', id: 'riep-pagato' }, eur(c.pagatoCent))),
       pratica ? h('div', { class: 'riga' }, h('span', null, 'Già incassato (con eventuali incassi successivi)'), h('span', { class: 'valore' }, eur(pratica.incassatoCent))) : null,
     );
     // stima delle provvigioni
@@ -174,7 +170,7 @@ function montaForm(contenitore, { pratica = null }) {
     const nomi = new Map(mm.collaboratori.map((x) => [x.id, x.nome]));
     const righe = [];
     if (!quote.length) {
-      righe.push(h('div', { class: 'stima-riga' }, h('div', { class: 'dettaglio' }, 'Scegli una zona con una ripartizione per vedere la stima delle provvigioni.')));
+      righe.push(h('div', { class: 'stima-riga' }, h('div', { class: 'dettaglio' }, 'Scegli una zona con la sua divisione per vedere quanto spetta a ciascuno.')));
     } else if (!mm.tabellaPredefinita.length && !mm.tabellePerZona.size) {
       righe.push(h('div', { class: 'nota attenzione' }, icona('triangle-alert', { dimensione: 18 }), h('span', null, 'Gli scaglioni non sono ancora impostati: le provvigioni risultano a zero.'), h('a', { href: '#/impostazioni?sezione=scaglioni' }, 'Imposta')));
     } else {
@@ -188,9 +184,9 @@ function montaForm(contenitore, { pratica = null }) {
       }
     }
     monta(stima,
-      h('h3', { style: { fontSize: '14px', fontWeight: 700 } }, 'Stima delle provvigioni'),
+      h('h3', { style: { fontSize: '14px', fontWeight: 700 } }, 'Quanto spetta ai collaboratori (stima)'),
       ...righe,
-      h('p', { class: 'sottotesto' }, 'La stima si aggiorna se cambiano le altre pratiche del mese (gli scaglioni dipendono dal cumulo).'));
+      h('p', { class: 'sottotesto' }, 'Può cambiare se nel mese arrivano altre pratiche.'));
   }
   const ricalcolaRitardato = ritarda(ricalcola, 120);
 
@@ -230,9 +226,9 @@ function montaForm(contenitore, { pratica = null }) {
   } }, icona('plus', { dimensione: 15 }), 'Nuova zona');
 
   // ----------------------------------------------------------- salvataggio
-  const stato = h('span', { class: 'stato-mod' }, modifica ? 'Nessuna modifica' : 'Compila i dati della pratica');
+  const stato = h('span', { class: 'stato-mod' }, modifica ? 'Nessuna modifica' : 'Compila i tre passi');
   function aggiornaBarra() {
-    stato.textContent = sporco ? 'Modifiche non ancora salvate' : (modifica ? 'Nessuna modifica' : 'Compila i dati della pratica');
+    stato.textContent = sporco ? 'Modifiche non ancora salvate' : (modifica ? 'Nessuna modifica' : 'Compila i tre passi');
   }
 
   function raccogli() {
@@ -242,6 +238,7 @@ function montaForm(contenitore, { pratica = null }) {
       if (!f[campo].valido()) errori[campo] = 'Scrivi un importo valido, ad esempio 1.500,00';
     }
     if (b.zona_id === null) errori.zona_id = 'Scegli la zona: serve per dividere i compensi tra i collaboratori.';
+    if (CAMPI_FACOLTATIVI.some((k) => errori[k])) altreInfo.open = true;
     return { b, errori };
   }
 
@@ -270,6 +267,7 @@ function montaForm(contenitore, { pratica = null }) {
       }
     } catch (e) {
       if (e.campi) {
+        if (CAMPI_FACOLTATIVI.some((k) => e.campi[k])) altreInfo.open = true;
         const primo = mostraErrori(f, e.campi);
         focusPrimo(e.campi, primo);
         notificaErrore(e.campi.quote || 'Controlla i campi evidenziati.');
@@ -288,33 +286,38 @@ function montaForm(contenitore, { pratica = null }) {
   }
 
   const gruppoParte = (parte) => h('fieldset', { class: 'gruppo-pagamenti', id: `pagamenti-${parte.id}`, style: { border: 0, padding: 0, margin: '0 0 18px' } },
-    h('legend', { class: 'sezione-titolo', style: { padding: 0, marginBottom: '8px' } }, `Pagato ${parte.dal}`),
+    h('legend', { class: 'sezione-titolo', style: { padding: 0, marginBottom: '8px' } }, `Quanto ha pagato ${parte.id === 'venditore' ? 'il venditore' : 'l\'acquirente'}?`),
     h('div', { class: 'griglia-campi' }, MODALITA.map((modo) => h('div', { class: 'c-4' }, f[campoPagamento(parte.id, modo.id)].el))),
     nettoParte[parte.id]);
+
+  // informazioni che non servono per i conti: stanno in una sezione chiusa
+  const CAMPI_FACOLTATIVI = ['immobile_tipo', 'prezzo_acquisto_cent', 'venditore', 'acquirente', 'aliquota_iva', 'note'];
+  const altreInfo = h('details', { class: 'card sezione-modulo altre-info', id: 'altre-info' },
+    h('summary', { style: { cursor: 'pointer', fontWeight: 650 } }, 'Altre informazioni (facoltative)'),
+    h('div', { class: 'griglia-campi', style: { marginTop: '14px' } },
+      h('div', { class: 'c-6' }, f.immobile_tipo.el), h('div', { class: 'c-6' }, f.prezzo_acquisto_cent.el),
+      h('div', { class: 'c-6' }, f.venditore.el), h('div', { class: 'c-6' }, f.acquirente.el),
+      h('div', { class: 'c-6' }, f.aliquota_iva.el),
+      h('div', { class: 'c-12' }, f.note.el)));
+  if (modifica && CAMPI_FACOLTATIVI.some((k) => { const v = f[k].get(); return v !== null && v !== '' && !(k === 'aliquota_iva'); })) altreInfo.open = true;
 
   const form = h('form', { novalidate: true, id: 'form-pratica', onsubmit: (e) => { e.preventDefault(); salva('scheda'); } },
     h('div', { class: 'form-layout' },
       h('div', { class: 'form-colonna' },
-        h('section', { class: 'card sezione-modulo' }, h('h2', null, 'Zona e immobile'),
-          h('p', { class: 'descrizione', id: 'data-pratica' }, modifica ? `Data della pratica: ${dataIt(dataPratica)}.` : `Data della pratica: ${dataIt(dataPratica)} (quella di oggi, assegnata in automatico).`),
+        h('section', { class: 'card sezione-modulo' }, h('h2', null, '1. In che zona?'),
           h('div', { class: 'griglia-campi' },
-            h('div', { class: 'c-6' }, f.zona_id.el, h('div', { style: { marginTop: '4px' } }, btnZona)),
-            h('div', { class: 'c-6' }, f.immobile_tipo.el),
-            h('div', { class: 'c-6' }, f.prezzo_vendita_cent.el), h('div', { class: 'c-6' }, f.prezzo_acquisto_cent.el))),
-        h('section', { class: 'card sezione-modulo' }, h('h2', null, 'Parti'),
-          h('div', { class: 'griglia-campi' }, h('div', { class: 'c-6' }, f.venditore.el), h('div', { class: 'c-6' }, f.acquirente.el))),
-        h('section', { class: 'card sezione-modulo' }, h('h2', null, 'Compensi di agenzia'),
-          h('p', { class: 'descrizione' }, 'Scrivi quanto ha pagato ciascuna parte e come. I contanti sono già senza IVA; bonifico e assegno comprendono l\'IVA, che il programma toglie per calcolare il compenso su cui si fanno scaglioni e provvigioni.'),
+            h('div', { class: 'c-8' }, f.zona_id.el), h('div', { class: 'c-4', style: { alignSelf: 'end' } }, btnZona)),
+          h('div', { style: { marginTop: '14px' } }, h('div', { class: 'sottotesto forte', style: { marginBottom: '6px' } }, 'Come si divide tra i collaboratori'), boxRipartizione)),
+        h('section', { class: 'card sezione-modulo' }, h('h2', null, '2. A che prezzo è stata venduta?'),
+          h('div', { class: 'griglia-campi' }, h('div', { class: 'c-6' }, f.prezzo_vendita_cent.el))),
+        h('section', { class: 'card sezione-modulo' }, h('h2', null, '3. Quanto hanno pagato?'),
+          h('p', { class: 'descrizione' }, 'Scrivi le cifre come le hai ricevute: contanti, bonifico e assegno comprendono l\'IVA, la toglie il programma.'),
           iniziali.daConvertire ? h('div', { class: 'nota', id: 'nota-pratica-vecchia', style: { marginBottom: '14px' } }, icona('info', { dimensione: 18 }), h('span', null, 'Questa pratica era stata inserita con il solo compenso senza IVA: qui è riportata come bonifico con IVA compresa. Correggi il modo di pagamento se serve e salva.')) : null,
-          gruppoParte(PARTI[0]), gruppoParte(PARTI[1]),
-          h('div', { class: 'griglia-campi' }, h('div', { class: 'c-4' }, f.aliquota_iva.el))),
-        h('section', { class: 'card sezione-modulo' }, h('h2', null, 'Ripartizione tra i collaboratori'),
-          h('p', { class: 'descrizione' }, 'Automatica: segue la zona, non c\'è niente da scegliere. Da qui si calcolano fatturato e provvigioni di ciascuno.'),
-          boxRipartizione),
-        h('section', { class: 'card sezione-modulo' }, h('h2', null, 'Note'), f.note.el),
+          gruppoParte(PARTI[0]), gruppoParte(PARTI[1])),
+        altreInfo,
       ),
-      h('aside', { class: 'form-riepilogo', 'aria-label': 'Riepilogo' },
-        h('section', { class: 'card sezione-modulo' }, h('h2', null, 'Riepilogo compensi'), riepilogo),
+      h('aside', { class: 'form-riepilogo', 'aria-label': 'Il conto' },
+        h('section', { class: 'card sezione-modulo' }, h('h2', null, 'Il conto'), riepilogo),
         h('section', { class: 'card sezione-modulo' }, stima)),
     ),
     h('div', { class: 'barra-salvataggio' }, stato,
@@ -327,7 +330,8 @@ function montaForm(contenitore, { pratica = null }) {
     h('div', { class: 'pagina-testa' },
       h('div', null,
         h('h1', null, modifica ? `Modifica pratica ${pratica.codice}` : 'Nuova pratica'),
-        h('p', null, modifica ? 'Cambia i dati e salva: provvigioni, cumulo e grafici si aggiornano subito.' : 'Inserisci la compravendita conclusa: scegli la zona e scrivi quanto ha pagato ciascuna parte. Numero, data e ripartizione tra i collaboratori sono automatici.'))),
+        h('p', null, modifica ? 'Cambia i dati e salva: i conti si aggiornano subito.' : 'Tre passi: la zona, il prezzo e quanto hanno pagato. Numero e data li mette il programma.'),
+        h('p', { class: 'sottotesto', id: 'data-pratica' }, modifica ? `Data della pratica: ${dataIt(dataPratica)}.` : `Data della pratica: ${dataIt(dataPratica)} (oggi).`))),
     form);
   calcolaRipartizione();
   disegnaRipartizione();

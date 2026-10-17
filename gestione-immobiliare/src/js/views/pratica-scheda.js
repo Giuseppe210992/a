@@ -3,7 +3,7 @@ import { h, monta } from '../core/dom.js';
 import { icona } from '../core/icone.js';
 import { app, modello, impostazioni } from '../core/app.js';
 import { naviga } from '../core/router.js';
-import { eur, eurSegno, pct, pctSegno, dataIt, dataOra, meseAnno, num } from '../core/format.js';
+import { eur, eurSegno, pct, pctSegno, dataIt, meseAnno, num } from '../core/format.js';
 import { giorniTra } from '../core/dates.js';
 import { apriModale, conferma, menuAzioni, ok as notificaOk, segnalaErrore } from '../core/ui.js';
 import { campoData, campoImporto, campoSelezione, campoTesto, mostraErrori } from '../components/campi.js';
@@ -51,7 +51,7 @@ function passaggiCalcolo(m, p, v, nome) {
   const metodo = m.opzioni.metodo;
   const passi = [];
   passi.push(p.compensi.daPagamenti
-    ? `Compenso della pratica: ${eur(p.compenso_venditore_cent)} dal venditore + ${eur(p.compenso_acquirente_cent)} dall'acquirente = ${eur(p.compensoTotaleCent)} (senza IVA: i contanti sono già senza IVA, da bonifico e assegno l'IVA è stata tolta).`
+    ? `Compenso della pratica: ${eur(p.compenso_venditore_cent)} dal venditore + ${eur(p.compenso_acquirente_cent)} dall'acquirente = ${eur(p.compensoTotaleCent)} (senza IVA: l'IVA è stata tolta da quanto hanno pagato).`
     : `Compenso della pratica: ${eur(p.compenso_venditore_cent)} dal venditore + ${eur(p.compenso_acquirente_cent)} dall'acquirente = ${eur(p.compensoTotaleCent)} (imponibile, IVA esclusa).`);
   passi.push(`Quota di ${nome}: ${pct(v.quotaPct)} → fatturato attribuito ${eur(v.fatturatoCent)}.`);
   if (!p.conclusa) return passi.concat(['La provvigione si calcola quando la pratica risulta conclusa.']);
@@ -140,12 +140,12 @@ export const scheda = {
         h('thead', null, h('tr', null, h('th', null, 'Pagato da'), h('th', null, 'Come'), h('th', { class: 'num' }, 'Importo'), h('th', null, 'IVA'))),
         h('tbody', null, m.pagamenti.filter((x) => x.praticaId === p.id).map((x) => h('tr', null,
           h('td', null, x.parte), h('td', null, x.modalita), h('td', { class: 'num forte' }, eur(x.importo_cent)),
-          h('td', { class: 'sottotesto' }, x.conIva ? 'compresa' : 'già senza IVA')))))) : null,
+          h('td', { class: 'sottotesto' }, 'compresa')))))) : null,
       h('div', { class: 'riepilogo-calcolo', style: { marginTop: '12px' } },
         h('div', { class: 'riga' }, h('span', null, p.compensi.daPagamenti ? 'Dal venditore (senza IVA)' : 'Dal venditore'), h('span', { class: 'valore' }, eur(p.compenso_venditore_cent))),
         h('div', { class: 'riga' }, h('span', null, p.compensi.daPagamenti ? 'Dall\'acquirente (senza IVA)' : 'Dall\'acquirente'), h('span', { class: 'valore' }, eur(p.compenso_acquirente_cent))),
         h('div', { class: 'riga' }, h('span', null, p.compensi.daPagamenti ? 'Totale compenso senza IVA' : 'Totale imponibile'), h('span', { class: 'valore' }, eur(p.compensoTotaleCent))),
-        h('div', { class: 'riga' }, h('span', null, p.compensi.daPagamenti ? `IVA ${String(p.aliquota_iva).replace('.', ',')}% compresa in bonifico e assegno` : `IVA ${String(p.aliquota_iva).replace('.', ',')}%`), h('span', { class: 'valore' }, eur(p.ivaCent))),
+        h('div', { class: 'riga' }, h('span', null, p.compensi.daPagamenti ? `IVA ${String(p.aliquota_iva).replace('.', ',')}% compresa in quanto pagato` : `IVA ${String(p.aliquota_iva).replace('.', ',')}%`), h('span', { class: 'valore' }, eur(p.ivaCent))),
         h('div', { class: 'riga totale' }, h('span', null, p.compensi.daPagamenti ? 'Totale pagato dalle parti' : 'Totale con IVA'), h('span', { class: 'valore' }, eur(p.totaleLordoCent)))),
       h('div', { style: { margin: '14px 0 6px' } },
         h('div', { class: 'riga-azioni', style: { justifyContent: 'space-between' } }, h('span', { class: 'forte' }, `Incassato ${eur(p.incassatoCent)}`), h('span', { class: p.daIncassareCent > 0 ? 'attenuato' : 'positivo' }, p.daIncassareCent > 0 ? `Da incassare ${eur(p.daIncassareCent)}` : (p.totaleLordoCent > 0 ? 'Saldata' : ''))),
@@ -201,11 +201,9 @@ export const scheda = {
         h('tbody', null, righeLiq.map(({ l, r }) => h('tr', null, h('td', { class: 'num' }, dataIt(l.data)), h('td', null, l.collaboratoreNome), h('td', { class: 'num forte' }, eur(r.importo_cent)), h('td', { class: 'sottotesto' }, l.metodo ?? '—'))))))
         : h('p', { class: 'sottotesto', style: { marginTop: '8px' } }, 'Nessuna liquidazione registrata su questa pratica.'),
       h('p', { style: { marginTop: '10px' } }, h('a', { href: '#/provvigioni?tab=liquidazioni' }, 'Tutte le liquidazioni →')));
-    const cardStoria = h('section', { class: 'card sezione-modulo' }, h('h2', null, 'Cronologia'),
-      h('dl', { class: 'elenco-dati', style: { marginTop: '12px' } }, h('dt', null, 'Inserita'), h('dd', null, dataOra(p.creato_il)), h('dt', null, 'Ultima modifica'), h('dd', null, dataOra(p.aggiornato_il))));
 
     monta(contenitore, testa, avvisoMancanti,
-      h('div', { class: 'scheda-griglia' }, cardDati, cardCompensi, h('div', { class: 'intera' }, cardRip), dettaglioCalcolo, cardLiq, cardStoria));
+      h('div', { class: 'scheda-griglia' }, cardDati, cardCompensi, h('div', { class: 'intera' }, cardRip), dettaglioCalcolo, cardLiq));
     return {};
   },
 };

@@ -1,5 +1,5 @@
 // Ultimi controlli rimasti scoperti: grafici e menu usati con la tastiera, campo data (scrittura, calendario), filtri su schermo stretto,
-// grafico con tante zone ("Altri"), pulsante dentro la notifica dopo un ripristino, copia danneggiata, errori nei moduli della scheda.
+// pulsante dentro la notifica dopo un ripristino, copia danneggiata, errori nei moduli della scheda.
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { avvia, vai, rimuoviSpazi, sql, valoreSql, idPratica, finestra, bottoneFinestra, attendiNotifica, attendiQuiete, testoSospetto } from './lib.mjs';
@@ -35,22 +35,10 @@ describe('Grafici usati con la tastiera', () => {
     await tt.waitFor({ state: 'hidden' });
   }
 
-  test('Dashboard › Andamento dei compensi (colonne): frecce, Home, Fine ed Esc', async () => {
+  test('Dashboard › Compensi mese per mese (colonne): frecce, Home, Fine ed Esc', async () => {
     const p = app.pagina;
     await vai(p, '#/');
     await provaGrafico(p, '#grafico-compensi', { avanti: 'ArrowRight', indietro: 'ArrowLeft' });
-  });
-
-  test('Dashboard › Provvigioni maturate e liquidate (barre): frecce su e giù, Home, Fine ed Esc', async () => {
-    const p = app.pagina;
-    await vai(p, '#/');
-    await provaGrafico(p, '#grafico-provvigioni', { avanti: 'ArrowDown', indietro: 'ArrowUp' });
-  });
-
-  test('Dashboard › Prezzo di acquisto e di vendita (confronto): frecce su e giù, Home, Fine ed Esc', async () => {
-    const p = app.pagina;
-    await vai(p, '#/');
-    await provaGrafico(p, '#grafico-prezzi', { avanti: 'ArrowDown', indietro: 'ArrowUp' });
   });
 
   test('Statistiche › Compensi e incassi (linee): frecce destra e sinistra, Home, Fine ed Esc', async () => {
@@ -232,7 +220,7 @@ describe('Schermo stretto, tante zone e scheda senza scaglioni', () => {
     const app = await avvia({ viewport: { width: 390, height: 844 } });
     try {
       const p = app.pagina;
-      await vai(p, '#/');
+      await vai(p, '#/statistiche');
       const toggle = p.locator('.filtri-toggle');
       await toggle.waitFor();
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
@@ -243,45 +231,6 @@ describe('Schermo stretto, tante zone e scheda senza scaglioni', () => {
       await toggle.click();
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
       assert.equal(await p.locator('#filtro-zona').isVisible(), false);
-    } finally { await app.chiudi(); }
-  });
-
-  test('Dashboard: con più di cinque zone le più piccole confluiscono in "Altri" e il totale non cambia', async () => {
-    const app = await avvia();
-    try {
-      const p = app.pagina;
-      await inserisciDatiProva(p);
-      await p.evaluate(async () => {
-        const { api, app: a } = window.__gi;
-        const [luca] = api.elencoCollaboratori(a.archivio);
-        for (let i = 1; i <= 4; i++) {
-          const z = await api.creaZona(a.archivio, { nome: `Zona extra ${i}` });
-          await api.salvaPratica(a.archivio, {
-            codice: `X/${i}`, stato: 'conclusa', data_pratica: '2026-09-01', data_rogito: '2026-09-20', zona_id: z,
-            immobile_indirizzo: `Via Extra ${i}`, prezzo_vendita_cent: 5000000, compenso_venditore_cent: 100000 * i, compenso_acquirente_cent: 0, aliquota_iva: 22,
-          }, [{ collaboratore_id: luca.id, percentuale: 100 }]);
-        }
-      });
-      await vai(p, '#/');
-      const grafico = p.locator('#grafico-zone');
-      await grafico.waitFor();
-      await grafico.getByRole('button', { name: /Tabella/ }).click();
-      const tabella = grafico.locator('.grafico-tab');
-      await tabella.waitFor({ state: 'visible' });
-      const testo = rimuoviSpazi(await tabella.innerText());
-      assert.match(testo, /Altri/i); // i titoli della tabella sono in maiuscolo nello stile
-      const intestazioni = (await tabella.locator('thead th').allInnerTexts()).map((x) => x.trim());
-      assert.equal(intestazioni.filter((x) => x.toLowerCase() === 'altri').length, 1);
-      assert.equal(intestazioni.length - 1 <= 6, true, 'al massimo cinque zone più "Altri"');
-      // le colonne delle zone (compreso "Altri") sommano esattamente il totale di ogni mese, e i mesi sommano le provvigioni maturate
-      const { perColonne, perTotale } = await tabella.evaluate((t) => {
-        const num = (s) => Number(s.replace(/[^\d,-]/g, '').replace(/\./g, '').replace(',', '.')) || 0;
-        const righe = [...t.querySelectorAll('tbody tr')].map((r) => [...r.querySelectorAll('td')].map((c) => num(c.textContent.replace(/\./g, ''))));
-        return { perColonne: righe.reduce((s, r) => s + r.slice(0, -1).reduce((x, v) => x + v, 0), 0), perTotale: righe.reduce((s, r) => s + r[r.length - 1], 0) };
-      });
-      const maturate = await p.evaluate(() => window.__gi.modello().collaboratori.reduce((s, c) => s + c.maturateCent, 0)) / 100;
-      assert.ok(Math.abs(perColonne - perTotale) < 0.5, `zone + Altri = totali dei mesi (${perColonne} / ${perTotale})`);
-      assert.ok(Math.abs(perTotale - maturate) < 1, `totali dei mesi ${perTotale} = provvigioni maturate ${maturate}`);
     } finally { await app.chiudi(); }
   });
 

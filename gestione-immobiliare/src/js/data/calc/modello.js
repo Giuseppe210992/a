@@ -100,7 +100,7 @@ export function calcolaModello(dati, opzioniIn = {}) {
     const conclusa = riga.stato === 'conclusa';
     const inCorso = riga.stato === 'in_corso';
     const annullata = riga.stato === 'annullata';
-    // Compensi: dai pagamenti delle parti (contanti senza IVA, bonifico e assegno con IVA compresa) oppure, per le
+    // Compensi: dai pagamenti delle parti (contanti, bonifico e assegno: tutti con IVA compresa) oppure, per le
     // pratiche vecchie, dal solo compenso senza IVA con l'IVA in cima. Quanto le parti hanno pagato alla
     // conclusione conta come già incassato; gli incassi registrati dopo si sommano.
     const compensi = calcolaCompensi(riga);

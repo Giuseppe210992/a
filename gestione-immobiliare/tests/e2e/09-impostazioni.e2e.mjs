@@ -2,7 +2,7 @@
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  avvia, vai, conNavigazione, rimuoviSpazi, sql, valoreSql, idPratica, finestra, bottoneFinestra, attendiNotifica, testoSospetto, riquadri, scegliZona, azzeraFiltri,
+  avvia, vai, conNavigazione, rimuoviSpazi, sql, valoreSql, idPratica, finestra, bottoneFinestra, attendiNotifica, testoSospetto, riquadri, totaliStatistiche, scegliZona, azzeraFiltri,
 } from './lib.mjs';
 import { inserisciDatiProva } from './dati-prova.mjs';
 
@@ -246,11 +246,11 @@ describe('Impostazioni', () => {
     await attendiNotifica(p, /Scaglioni della zona “Collina” salvati/);
     assert.equal(await valoreSql(p, "SELECT usa_scaglioni_propri FROM zone WHERE nome = 'Collina'"), 1);
     // Collina: 004 (7.200 €) e 009 (3.520 €), entrambe di Luca e sotto soglia → 50%: 3.600 + 1.760 = 5.360 €
-    await vai(p, '#/');
+    await vai(p, '#/statistiche');
     await scegliZona(p, 'Collina');
-    assert.equal((await riquadri(p)).maturate, 5360 * E);
+    assert.equal((await totaliStatistiche(p)).provvigioni, 5360 * E);
     await scegliZona(p, null);
-    assert.equal((await riquadri(p)).maturate, (28236 - 3216 + 5360) * E);
+    assert.equal((await totaliStatistiche(p)).provvigioni, (28236 - 3216 + 5360) * E);
     // ritorno ai predefiniti con conferma
     await apri('scaglioni');
     await p.getByLabel('Tabella da modificare').selectOption({ label: 'Zona Collina — scaglioni propri' });
@@ -337,7 +337,7 @@ describe('Impostazioni', () => {
     await p.locator('#form-pratica').getByLabel(/^Zona\*?$/).selectOption({ label: 'Darsena' });
     const righeRip = async () => (await p.locator('#ripartizione-automatica .ripartizione-elenco li').allInnerTexts()).map(rimuoviSpazi);
     assert.deepEqual(await righeRip(), ['Luca 60%', 'Giuseppe 40%']);
-    assert.match(rimuoviSpazi(await p.locator('#ripartizione-automatica').innerText()), /La zona “Darsena” non ha una ripartizione propria: si usa quella predefinita/);
+    assert.match(rimuoviSpazi(await p.locator('#ripartizione-automatica').innerText()), /La zona “Darsena” non ha una divisione sua: si usa quella predefinita/);
     await p.locator('#form-pratica').getByLabel(/^Zona\*?$/).selectOption({ label: 'Centro' });
     assert.deepEqual(await righeRip(), ['Luca 100%']);
     await p.evaluate(() => { location.hash = '#/impostazioni?sezione=zone'; });
@@ -372,6 +372,7 @@ describe('Impostazioni', () => {
     await p.getByLabel('Aliquota proposta per le nuove pratiche').selectOption('10');
     await attendiNotifica(p, /Aliquota predefinita salvata/);
     await vai(p, '#/nuova');
+    await p.click('#altre-info summary'); // l'aliquota sta tra le informazioni facoltative
     assert.equal(await p.locator('#form-pratica').getByLabel('Aliquota IVA').inputValue(), '10');
     assert.ok((await p.locator('#form-pratica').getByLabel('Aliquota IVA').locator('option').allInnerTexts()).some((x) => x.trim() === '5%'));
     await apri('iva');

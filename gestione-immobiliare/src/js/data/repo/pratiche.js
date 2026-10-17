@@ -62,7 +62,7 @@ export function prossimoCodice(db, dataPratica = oggi()) {
  * a conclusione, nello stesso giorno). Per i dati passati esplicitamente come vuoti (null) non si inventa nulla.
  *
  * I compensi si indicano in due modi:
- *   - a pagamenti (come nel modulo): importi di ciascuna parte in contanti, bonifico e assegno
+ *   - a pagamenti (come nel modulo): importi di ciascuna parte in contanti, bonifico e assegno, tutti con IVA compresa
  *     (venditore_contanti_cent, ..., acquirente_assegno_cent); il compenso senza IVA si ricava da lì;
  *   - il solo compenso senza IVA (compenso_venditore_cent, compenso_acquirente_cent), con l'IVA in cima.
  */

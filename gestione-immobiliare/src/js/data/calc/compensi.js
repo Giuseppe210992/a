@@ -1,12 +1,10 @@
 // Compensi di una pratica: da quanto ha pagato ciascuna parte (venditore e acquirente) e come, al compenso
 // senza IVA su cui si calcolano scaglioni e provvigioni.
 //
-//   contanti   l'importo è GIÀ senza IVA: entra così com'è.
-//   bonifico   l'importo COMPRENDE l'IVA: l'IVA si toglie (scorporo) per ottenere il compenso senza IVA.
-//   assegno    come il bonifico: IVA compresa.
-//
-// Per ogni parte l'IVA si scorpora una sola volta sulla somma di bonifico e assegno, arrotondando al
-// centesimo più vicino (mezzi verso l'alto). Tutta l'aritmetica è intera, in centesimi.
+// Contanti, bonifico e assegno comprendono tutti l'IVA: per ogni parte si sommano i tre importi, si toglie l'IVA
+// (scorporo) una sola volta sul totale, arrotondando al centesimo più vicino (mezzi verso l'alto). Il modo di
+// pagamento si registra solo per sapere come ha pagato il cliente, non cambia il calcolo.
+// Tutta l'aritmetica è intera, in centesimi.
 //
 // Le pratiche vecchie, inserite con il solo compenso senza IVA (compensi_da_pagamenti = 0), restano
 // com'erano: l'IVA si aggiunge in cima al compenso e il totale è compenso + IVA.
@@ -19,7 +17,7 @@ export const PARTI = Object.freeze([
 ]);
 
 export const MODALITA = Object.freeze([
-  { id: 'contanti', etichetta: 'Contanti', etichettaPagante: 'Contanti', conIva: false, nota: 'già senza IVA' },
+  { id: 'contanti', etichetta: 'Contanti', etichettaPagante: 'Contanti', conIva: true, nota: 'IVA compresa' },
   { id: 'bonifico', etichetta: 'Bonifico', etichettaPagante: 'Bonifico', conIva: true, nota: 'IVA compresa' },
   { id: 'assegno', etichetta: 'Assegno', etichettaPagante: 'Assegno', conIva: true, nota: 'IVA compresa' },
 ]);
@@ -40,18 +38,20 @@ export function ivaSuImponibile(imponibileCent, aliquota) {
 
 const intero = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : 0);
 
-/** Una parte: contanti (senza IVA), bonifico e assegno (IVA compresa) → compenso senza IVA, IVA contenuta, totale pagato. */
+/** Una parte: contanti, bonifico e assegno (tutti con IVA compresa) → compenso senza IVA, IVA contenuta, totale pagato. */
 export function compensoParte({ contantiCent = 0, bonificoCent = 0, assegnoCent = 0 }, aliquota) {
   const c = intero(contantiCent);
-  const conIva = intero(bonificoCent) + intero(assegnoCent);
-  const senzaIva = scorporoIva(conIva, aliquota);
+  const b = intero(bonificoCent);
+  const a = intero(assegnoCent);
+  const pagato = c + b + a;
+  const senzaIva = scorporoIva(pagato, aliquota);
   return {
     contantiCent: c,
-    bonificoCent: intero(bonificoCent),
-    assegnoCent: intero(assegnoCent),
-    imponibileCent: c + senzaIva, // compenso senza IVA
-    ivaCent: conIva - senzaIva,   // IVA contenuta in bonifico e assegno
-    pagatoCent: c + conIva,       // quanto la parte ha realmente versato
+    bonificoCent: b,
+    assegnoCent: a,
+    imponibileCent: senzaIva,       // compenso senza IVA
+    ivaCent: pagato - senzaIva,     // IVA contenuta nei pagamenti
+    pagatoCent: pagato,             // quanto la parte ha realmente versato
   };
 }
 

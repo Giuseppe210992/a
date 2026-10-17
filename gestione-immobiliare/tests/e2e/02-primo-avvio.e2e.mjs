@@ -11,21 +11,20 @@ describe('Primo avvio', () => {
   test('la dashboard parte vuota: zeri, nessun dato di esempio', async () => {
     const p = app.pagina;
     await vai(p, '#/');
-    assert.equal(await kpi(p, 'Compravendite concluse'), '0');
-    assert.equal(rimuoviSpazi(await kpi(p, 'Totale compensi registrati')), '0 €');
-    assert.equal(rimuoviSpazi(await kpi(p, 'Provvigioni maturate')), '0 €');
-    assert.equal(rimuoviSpazi(await kpi(p, 'Provvigioni ancora da liquidare')), '0 €');
-    assert.equal(rimuoviSpazi(await kpi(p, 'Valore complessivo immobili venduti')), '0 €');
-    assert.equal(await kpi(p, 'Pratiche in corso'), '0');
+    assert.equal(await kpi(p, 'Pratiche concluse'), '0');
+    assert.equal(rimuoviSpazi(await kpi(p, 'Compensi dell\'agenzia')), '0 €');
+    assert.equal(rimuoviSpazi(await kpi(p, 'Provvigioni dei collaboratori')), '0 €');
+    assert.equal(rimuoviSpazi(await kpi(p, 'Ancora da pagare ai collaboratori')), '0 €');
+    assert.equal(await p.locator('.kpi').count(), 4);
     const stato = await p.evaluate(() => {
       const a = window.__gi.app.archivio;
       return { pratiche: a.valore('SELECT COUNT(*) FROM pratiche'), zone: a.valore('SELECT COUNT(*) FROM zone'), incassi: a.valore('SELECT COUNT(*) FROM incassi'), nomi: a.tutti('SELECT nome FROM collaboratori ORDER BY id').map((r) => r.nome) };
     });
     assert.deepEqual(stato, { pratiche: 0, zone: 0, incassi: 0, nomi: ['Luca', 'Giuseppe'] });
-    // 6 grafici con messaggio di stato vuoto, nessuna barra inventata
-    assert.equal(await p.locator('.grafico-card').count(), 6);
+    // un solo grafico, con messaggio di stato vuoto e nessuna barra inventata
+    assert.equal(await p.locator('.grafico-card').count(), 1);
     assert.equal(await p.locator('.g-barra').count(), 0);
-    assert.equal(await p.locator('.grafico-card .g-vuoto').count(), 6);
+    assert.equal(await p.locator('.grafico-card .g-vuoto').count(), 1);
     // guida ai primi passi
     assert.match(await p.textContent('.primi-passi'), /Per iniziare/);
     assert.equal(await p.locator('.primi-passi .passo').count(), 4);
