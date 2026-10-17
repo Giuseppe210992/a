@@ -61,7 +61,7 @@ function rigaCumulo(m, cu) {
         h('thead', null, h('tr', null, h('th', null, 'Pratica'), h('th', null, 'Rogito'), h('th', null, 'Zona'), h('th', { class: 'num' }, 'Fatturato attribuito'), h('th', { class: 'num' }, 'Provvigione'))),
         h('tbody', null, cu.voci.map((v) => {
           const p = m.perId.get(v.praticaId);
-          return h('tr', null, h('td', null, h('a', { href: `#/pratiche/${p.id}`, class: 'forte', style: { color: 'var(--text)' } }, p.codice), h('span', { class: 'sottotesto' }, p.immobile_indirizzo)),
+          return h('tr', null, h('td', null, h('a', { href: `#/pratiche/${p.id}`, class: 'forte', style: { color: 'var(--text)' } }, p.codice), h('span', { class: 'sottotesto' }, p.descrizione)),
             h('td', { class: 'num' }, dataIt(p.dataRif)), h('td', null, p.zonaNome ?? '—'), h('td', { class: 'num' }, eur(v.fatturatoCent)), h('td', { class: 'num forte' }, eur(v.provvigioneCent)));
         }))))) : null);
 }

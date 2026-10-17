@@ -36,7 +36,7 @@ export function aggiungiPratica(dati, id, campi, quote = []) {
     data_rogito: '2026-10-05',
     zona_id: 1,
     immobile_indirizzo: `Via Prova ${id}`,
-    immobile_comune: 'Minturno',
+    immobile_comune: 'Roccaverde',
     immobile_tipo: 'Appartamento',
     prezzo_vendita_cent: 150000 * EURO,
     prezzo_acquisto_cent: null,

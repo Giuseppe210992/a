@@ -37,6 +37,11 @@ describe('Persistenza dopo chiusura e riapertura', () => {
     await p.getByLabel('Nome della zona').fill('Centro');
     await p.click('#aggiungi-zona');
     await attendiNotifica(p, /Zona “Centro” aggiunta/);
+    // come si divide ogni pratica della zona: tutto a Luca (si imposta una volta sola)
+    await p.locator('.riga-elenco[data-nome="Centro"]').getByRole('button', { name: 'Ripartizione' }).click();
+    await finestra(p).getByRole('button', { name: 'Tutto a Luca' }).click();
+    await bottoneFinestra(p, 'Salva la ripartizione').click();
+    await attendiNotifica(p, /Ripartizione della zona “Centro” salvata/);
     // scaglioni: al primo avvio ci sono già quelli dell'agenzia (5% fino a 2.600 €, 8% fino a 5.200 €, 11% fino a 7.800 €, 15% fino a 13.000 €, 20% oltre)
     await vai(p, '#/impostazioni?sezione=scaglioni');
     assert.deepEqual(await p.locator('#tabella-editor-scaglioni tbody tr').evaluateAll((tr) => tr.map((r) => [...r.querySelectorAll('input')].map((i) => i.value).join('/'))), ['0,00/5', '2.600,01/8', '5.200,01/11', '7.800,01/15', '13.000,01/20']);
@@ -47,16 +52,11 @@ describe('Persistenza dopo chiusura e riapertura', () => {
     // pratica
     await vai(p, '#/nuova');
     const F = (e, o = {}) => p.locator('#form-pratica').getByLabel(e, o);
-    await F('Indirizzo dell\'immobile').fill('Via Persistente 1');
-    await F('Comune').fill('Minturno');
-    await F(/^Zona$/).selectOption({ label: 'Centro' });
-    await F(/^Stato/).selectOption('conclusa');
-    await F('Data di apertura').fill('01/10/2026');
-    await F('Data del rogito').fill('14/10/2026');
+    await F(/^Zona\*?$/).selectOption({ label: 'Centro' });
     await F('Prezzo di vendita').fill('200.000');
-    await F('Compenso dal venditore').fill('3.000');
-    await F('Compenso dall\'acquirente').fill('3.000');
-    await p.getByRole('button', { name: 'Tutto a Luca' }).click();
+    // 3.660 con bonifico = 3.000 + 660 di IVA (22%) da ciascuna parte: 6.000 € di compenso senza IVA
+    await p.locator('#pagamenti-venditore').getByLabel('Bonifico').fill('3.660');
+    await p.locator('#pagamenti-acquirente').getByLabel('Bonifico').fill('3.660');
     await p.click('#salva-pratica');
     await attendiNotifica(p, /Pratica 2026\/001 salvata/);
     // incasso e liquidazione dalla dashboard
@@ -103,14 +103,14 @@ describe('Persistenza dopo chiusura e riapertura', () => {
       [{ pratiche: 1, zone: 1, incassi: 2, liq: 1, scaglioni: 5, quote: 1 }]);
     assert.deepEqual((await sql(p, 'SELECT percentuale FROM scaglioni WHERE zona_id IS NULL ORDER BY da_cent')).map((r) => r.percentuale), [5, 8, 11, 15, 22], 'anche lo scaglione modificato');
     const pr = (await sql(p, 'SELECT * FROM pratiche'))[0];
-    assert.deepEqual([pr.codice, pr.stato, pr.immobile_indirizzo, pr.immobile_comune, pr.data_rogito, pr.prezzo_vendita_cent, pr.compenso_venditore_cent, pr.compenso_acquirente_cent],
-      ['2026/001', 'conclusa', 'Via Persistente 1', 'Minturno', '2026-10-14', 20000000, 300000, 300000]);
+    assert.deepEqual([pr.codice, pr.stato, pr.immobile_indirizzo, pr.data_pratica, pr.data_rogito, pr.prezzo_vendita_cent, pr.compensi_da_pagamenti, pr.venditore_bonifico_cent, pr.acquirente_bonifico_cent, pr.compenso_venditore_cent, pr.compenso_acquirente_cent],
+      ['2026/001', 'conclusa', null, '2026-10-16', '2026-10-16', 20000000, 1, 366000, 366000, 300000, 300000]);
     assert.deepEqual((await sql(p, 'SELECT importo_cent FROM incassi ORDER BY id')).map((r) => r.importo_cent), [200000, 12345], 'anche l\'incasso inserito subito prima di chiudere');
     // impostazioni, tema e barra laterale
     assert.equal(await valoreSql(p, "SELECT valore FROM impostazioni WHERE chiave = 'calcolo.metodo'"), '"progressivo"');
     assert.equal(await p.evaluate(() => document.documentElement.dataset.theme), 'dark');
     assert.equal(await p.evaluate(() => document.body.dataset.sidebar), 'ridotta');
-    // numeri (incassato 2.123,45 € di 7.320 €)
+    // numeri (7.320 € pagati alla conclusione + 2.123,45 € di incassi registrati dopo)
     assert.deepEqual(await riquadri(p), { concluse: 1, compensi: 6000 * E, maturate: 426 * E, daLiquidare: 226 * E, valore: 200000 * E, inCorso: 0 });
     // il backup manuale di prima è nell'archivio storico, e all'avvio è stata fatta la copia automatica del giorno
     await vai(p, '#/backup');
@@ -169,7 +169,7 @@ describe('Persistenza dopo chiusura e riapertura', () => {
     await p.waitForSelector('.sidebar', { timeout: 20000 });
     await p.waitForFunction(() => window.__gi?.app?.archivio);
     assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM pratiche'), 1);
-    assert.equal(await valoreSql(p, 'SELECT immobile_indirizzo FROM pratiche'), 'Via Persistente 1');
+    assert.equal(await valoreSql(p, 'SELECT codice FROM pratiche'), '2026/001');
     // il file danneggiato è stato conservato tra le copie
     const copie = await p.evaluate(async () => (await window.__gi.app.driver.elencaCopie()).map((c) => ({ tipo: c.tipo, dimensione: c.dimensione })));
     assert.ok(copie.some((c) => c.tipo === 'pre-ripristino' && c.dimensione === 600), `file danneggiato conservato: ${JSON.stringify(copie)}`);

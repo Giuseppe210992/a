@@ -50,7 +50,9 @@ function passaggiCalcolo(m, p, v, nome) {
   const cu = m.cumuli.find((c) => c.chiave === v.cumuloChiave);
   const metodo = m.opzioni.metodo;
   const passi = [];
-  passi.push(`Compenso della pratica: ${eur(p.compenso_venditore_cent)} dal venditore + ${eur(p.compenso_acquirente_cent)} dall'acquirente = ${eur(p.compensoTotaleCent)} (imponibile, IVA esclusa).`);
+  passi.push(p.compensi.daPagamenti
+    ? `Compenso della pratica: ${eur(p.compenso_venditore_cent)} dal venditore + ${eur(p.compenso_acquirente_cent)} dall'acquirente = ${eur(p.compensoTotaleCent)} (senza IVA: i contanti sono già senza IVA, da bonifico e assegno l'IVA è stata tolta).`
+    : `Compenso della pratica: ${eur(p.compenso_venditore_cent)} dal venditore + ${eur(p.compenso_acquirente_cent)} dall'acquirente = ${eur(p.compensoTotaleCent)} (imponibile, IVA esclusa).`);
   passi.push(`Quota di ${nome}: ${pct(v.quotaPct)} → fatturato attribuito ${eur(v.fatturatoCent)}.`);
   if (!p.conclusa) return passi.concat(['La provvigione si calcola quando la pratica risulta conclusa.']);
   if (cu) {
@@ -95,7 +97,7 @@ export const scheda = {
     const testa = h('div', { class: 'scheda-testa' },
       h('div', null,
         h('a', { href: '#/pratiche', class: 'sottotesto', style: { display: 'inline-flex', alignItems: 'center', gap: '4px', marginBottom: '6px' } }, icona('chevron-left', { dimensione: 15 }), 'Archivio pratiche'),
-        h('h1', null, p.immobile_indirizzo, badgeStato(p.stato)),
+        h('h1', null, p.descrizione, badgeStato(p.stato)),
         h('p', { class: 'sotto' }, `Pratica ${p.codice}${p.immobile_comune ? ` · ${p.immobile_comune}` : ''}${p.immobile_tipo ? ` · ${p.immobile_tipo}` : ''}${p.zonaNome ? ` · Zona ${p.zonaNome}` : ''}`)),
       h('div', { class: 'pagina-azioni' },
         h('a', { class: 'btn btn-primario', href: `#/pratiche/${p.id}/modifica`, id: 'btn-modifica' }, icona('pencil', { dimensione: 16 }), 'Modifica'),
@@ -108,9 +110,11 @@ export const scheda = {
 
     // ---- immobile e parti
     const variaz = p.prezzo_acquisto_cent && p.prezzo_vendita_cent ? p.prezzo_vendita_cent - p.prezzo_acquisto_cent : null;
+    const stessaData = !!p.data_rogito && p.data_rogito === p.data_pratica;
     const cardDati = h('section', { class: 'card sezione-modulo' }, h('h2', null, 'Immobile e parti'),
       h('dl', { class: 'elenco-dati', style: { marginTop: '12px' } },
-        h('dt', null, 'Indirizzo'), h('dd', null, `${p.immobile_indirizzo}${p.immobile_comune ? `, ${p.immobile_comune}` : ''}`),
+        p.immobile_indirizzo ? h('dt', null, 'Indirizzo') : null,
+        p.immobile_indirizzo ? h('dd', null, `${p.immobile_indirizzo}${p.immobile_comune ? `, ${p.immobile_comune}` : ''}`) : null,
         h('dt', null, 'Tipo'), h('dd', null, p.immobile_tipo ?? '—'),
         h('dt', null, 'Zona'), h('dd', null, p.zonaNome ?? 'Da indicare'),
         h('dt', null, 'Prezzo di vendita'), h('dd', { class: 'num' }, p.prezzo_vendita_cent ? eur(p.prezzo_vendita_cent) : '—'),
@@ -119,22 +123,30 @@ export const scheda = {
         variaz !== null ? h('dd', { class: `num ${variaz >= 0 ? 'positivo' : 'negativo'}` }, `${eurSegno(variaz)} (${pctSegno((variaz / p.prezzo_acquisto_cent) * 100)})`) : null,
         h('dt', null, 'Venditore'), h('dd', null, p.venditore ?? '—'),
         h('dt', null, 'Acquirente'), h('dd', null, p.acquirente ?? '—'),
-        h('dt', null, 'Apertura'), h('dd', null, dataIt(p.data_pratica)),
-        h('dt', null, 'Rogito'), h('dd', null, p.data_rogito ? dataIt(p.data_rogito) : '—'),
-        p.data_rogito && p.data_pratica && p.data_rogito >= p.data_pratica ? h('dt', null, 'Tempo di lavorazione') : null,
-        p.data_rogito && p.data_pratica && p.data_rogito >= p.data_pratica ? h('dd', null, `${num(giorniTra(p.data_pratica, p.data_rogito))} giorni`) : null,
+        ...(stessaData
+          ? [h('dt', null, 'Data'), h('dd', null, dataIt(p.data_rogito))]
+          : [h('dt', null, 'Apertura'), h('dd', null, dataIt(p.data_pratica)),
+            h('dt', null, 'Rogito'), h('dd', null, p.data_rogito ? dataIt(p.data_rogito) : '—')]),
+        !stessaData && p.data_rogito && p.data_pratica && p.data_rogito >= p.data_pratica ? h('dt', null, 'Tempo di lavorazione') : null,
+        !stessaData && p.data_rogito && p.data_pratica && p.data_rogito >= p.data_pratica ? h('dd', null, `${num(giorniTra(p.data_pratica, p.data_rogito))} giorni`) : null,
       ),
       p.note ? h('div', { style: { marginTop: '14px' } }, h('div', { class: 'sottotesto forte' }, 'Note'), h('p', { style: { marginTop: '4px', whiteSpace: 'pre-wrap' } }, p.note)) : null);
 
     // ---- compensi e incassi
     const incassoPct = p.totaleLordoCent > 0 ? Math.min(100, (p.incassatoCent / p.totaleLordoCent) * 100) : 0;
     const cardCompensi = h('section', { class: 'card sezione-modulo' }, h('h2', null, 'Compensi e incassi'),
+      p.compensi.daPagamenti ? h('div', { class: 'tabella-wrap', style: { marginTop: '12px' } }, h('table', { class: 'tabella tabella-compatta', id: 'tabella-pagamenti' },
+        h('caption', { class: 'solo-lettori' }, 'Pagamenti ricevuti alla conclusione'),
+        h('thead', null, h('tr', null, h('th', null, 'Pagato da'), h('th', null, 'Come'), h('th', { class: 'num' }, 'Importo'), h('th', null, 'IVA'))),
+        h('tbody', null, m.pagamenti.filter((x) => x.praticaId === p.id).map((x) => h('tr', null,
+          h('td', null, x.parte), h('td', null, x.modalita), h('td', { class: 'num forte' }, eur(x.importo_cent)),
+          h('td', { class: 'sottotesto' }, x.conIva ? 'compresa' : 'già senza IVA')))))) : null,
       h('div', { class: 'riepilogo-calcolo', style: { marginTop: '12px' } },
-        h('div', { class: 'riga' }, h('span', null, 'Dal venditore'), h('span', { class: 'valore' }, eur(p.compenso_venditore_cent))),
-        h('div', { class: 'riga' }, h('span', null, 'Dall\'acquirente'), h('span', { class: 'valore' }, eur(p.compenso_acquirente_cent))),
-        h('div', { class: 'riga' }, h('span', null, 'Totale imponibile'), h('span', { class: 'valore' }, eur(p.compensoTotaleCent))),
-        h('div', { class: 'riga' }, h('span', null, `IVA ${String(p.aliquota_iva).replace('.', ',')}%`), h('span', { class: 'valore' }, eur(p.ivaCent))),
-        h('div', { class: 'riga totale' }, h('span', null, 'Totale con IVA'), h('span', { class: 'valore' }, eur(p.totaleLordoCent)))),
+        h('div', { class: 'riga' }, h('span', null, p.compensi.daPagamenti ? 'Dal venditore (senza IVA)' : 'Dal venditore'), h('span', { class: 'valore' }, eur(p.compenso_venditore_cent))),
+        h('div', { class: 'riga' }, h('span', null, p.compensi.daPagamenti ? 'Dall\'acquirente (senza IVA)' : 'Dall\'acquirente'), h('span', { class: 'valore' }, eur(p.compenso_acquirente_cent))),
+        h('div', { class: 'riga' }, h('span', null, p.compensi.daPagamenti ? 'Totale compenso senza IVA' : 'Totale imponibile'), h('span', { class: 'valore' }, eur(p.compensoTotaleCent))),
+        h('div', { class: 'riga' }, h('span', null, p.compensi.daPagamenti ? `IVA ${String(p.aliquota_iva).replace('.', ',')}% compresa in bonifico e assegno` : `IVA ${String(p.aliquota_iva).replace('.', ',')}%`), h('span', { class: 'valore' }, eur(p.ivaCent))),
+        h('div', { class: 'riga totale' }, h('span', null, p.compensi.daPagamenti ? 'Totale pagato dalle parti' : 'Totale con IVA'), h('span', { class: 'valore' }, eur(p.totaleLordoCent)))),
       h('div', { style: { margin: '14px 0 6px' } },
         h('div', { class: 'riga-azioni', style: { justifyContent: 'space-between' } }, h('span', { class: 'forte' }, `Incassato ${eur(p.incassatoCent)}`), h('span', { class: p.daIncassareCent > 0 ? 'attenuato' : 'positivo' }, p.daIncassareCent > 0 ? `Da incassare ${eur(p.daIncassareCent)}` : (p.totaleLordoCent > 0 ? 'Saldata' : ''))),
         p.totaleLordoCent > 0 ? h('div', { class: 'meter', style: { marginTop: '8px' }, role: 'img', 'aria-label': `Incassato il ${Math.round(incassoPct)}%` }, h('i', { style: { width: `${incassoPct}%` } })) : null),

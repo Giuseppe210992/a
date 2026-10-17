@@ -1,6 +1,7 @@
 // Esportazione in CSV (apribile con Excel italiano: separatore ";", virgola decimale, UTF-8 con BOM).
 import { csvCampo, csvEuro, dataIt } from '../core/format.js';
 import { ETICHETTA_STATO } from './repo/pratiche.js';
+import { PARTI, MODALITA } from './calc/compensi.js';
 
 const BOM = '﻿';
 
@@ -15,14 +16,17 @@ export function csvPratiche(modello, pratiche = modello.pratiche) {
   const intestazioni = [
     'Codice', 'Stato', 'Data apertura', 'Data rogito', 'Zona', 'Indirizzo', 'Comune', 'Tipo immobile',
     'Prezzo di vendita', 'Prezzo di acquisto', 'Venditore', 'Acquirente',
+    'Venditore: contanti (senza IVA)', 'Venditore: bonifico (IVA compresa)', 'Venditore: assegno (IVA compresa)',
+    'Acquirente: contanti (senza IVA)', 'Acquirente: bonifico (IVA compresa)', 'Acquirente: assegno (IVA compresa)',
     'Compenso venditore', 'Compenso acquirente', 'Totale compensi (imponibile)', 'Aliquota IVA %', 'IVA', 'Totale con IVA',
     'Incassato', 'Da incassare', 'Collaboratori e quote', 'Provvigioni calcolate', 'Provvigioni maturate',
     'Provvigioni liquidate', 'Provvigioni da liquidare', 'Dati mancanti', 'Note',
   ];
   const righe = pratiche.map((p) => [
     p.codice, ETICHETTA_STATO[p.stato] ?? p.stato, dataIt(p.data_pratica), p.data_rogito ? dataIt(p.data_rogito) : '',
-    p.zonaNome ?? '', p.immobile_indirizzo, p.immobile_comune ?? '', p.immobile_tipo ?? '',
+    p.zonaNome ?? '', p.immobile_indirizzo ?? '', p.immobile_comune ?? '', p.immobile_tipo ?? '',
     csvEuro(p.prezzo_vendita_cent), csvEuro(p.prezzo_acquisto_cent), p.venditore ?? '', p.acquirente ?? '',
+    ...PARTI.flatMap((parte) => MODALITA.map((modo) => (p.compensi.daPagamenti ? csvEuro(p.compensi[parte.id][`${modo.id}Cent`]) : ''))),
     csvEuro(p.compenso_venditore_cent), csvEuro(p.compenso_acquirente_cent), csvEuro(p.compensoTotaleCent),
     String(p.aliquota_iva).replace('.', ','), csvEuro(p.ivaCent), csvEuro(p.totaleLordoCent),
     csvEuro(p.incassatoCent), csvEuro(p.daIncassareCent),
@@ -45,10 +49,16 @@ export function csvProvvigioni(modello, voci) {
 }
 
 export function csvIncassi(modello) {
-  const intestazioni = ['Data', 'Codice pratica', 'Immobile', 'Importo (IVA inclusa)', 'Pagante', 'Metodo', 'Note'];
-  const righe = modello.incassi.map((i) => [
-    dataIt(i.data), i.pratica?.codice ?? '', i.pratica?.immobile_indirizzo ?? '', csvEuro(i.importo_cent), i.pagante ?? '', i.metodo ?? '', i.note ?? '',
-  ]);
+  // Tutto quello che le parti hanno pagato: gli importi dati alla conclusione (nel modulo della pratica) e gli incassi registrati dopo.
+  // Contanti: già senza IVA. Bonifico e assegno: IVA compresa. Gli incassi registrati a parte sono sempre indicati IVA compresa.
+  const intestazioni = ['Data', 'Codice pratica', 'Pratica', 'Importo', 'IVA', 'Pagante', 'Metodo', 'Note'];
+  const alla = (modello.pagamenti || []).map((x) => ({
+    data: x.data, riga: [dataIt(x.data), x.pratica?.codice ?? '', x.pratica?.descrizione ?? '', csvEuro(x.importo_cent), x.conIva ? 'compresa' : 'esclusa (già senza IVA)', x.parte, x.modalita, 'Pagato alla conclusione'],
+  }));
+  const dopo = modello.incassi.map((i) => ({
+    data: i.data, riga: [dataIt(i.data), i.pratica?.codice ?? '', i.pratica?.descrizione ?? '', csvEuro(i.importo_cent), 'compresa', i.pagante ?? '', i.metodo ?? '', i.note ?? ''],
+  }));
+  const righe = [...alla, ...dopo].sort((a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : 0)).map((x) => x.riga);
   return creaCsv(intestazioni, righe);
 }
 

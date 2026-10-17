@@ -1,6 +1,6 @@
 // Collaboratori, zone e tabelle degli scaglioni.
 import { ErroreValidazione, ErroreOperazione } from './errori.js';
-import { registra } from './impostazioni.js';
+import { registra, leggiImpostazioni } from './impostazioni.js';
 import { creaTabella, controllaTabella } from '../calc/scaglioni.js';
 
 const adesso = () => new Date().toISOString();
@@ -58,6 +58,7 @@ export function usiCollaboratore(db, id) {
   return {
     pratiche: db.valore('SELECT COUNT(*) FROM quote WHERE collaboratore_id = ?', [id]),
     liquidazioni: db.valore('SELECT COUNT(*) FROM liquidazioni WHERE collaboratore_id = ?', [id]),
+    zone: db.valore('SELECT COUNT(*) FROM zone_quote WHERE collaboratore_id = ?', [id]),
   };
 }
 
@@ -66,9 +67,9 @@ export function eliminaCollaboratore(db, id) {
     const c = db.uno('SELECT * FROM collaboratori WHERE id = ?', [id]);
     if (!c) throw new ErroreOperazione('Collaboratore non trovato.');
     const usi = usiCollaboratore(db, id);
-    if (usi.pratiche || usi.liquidazioni) {
+    if (usi.pratiche || usi.liquidazioni || usi.zone) {
       throw new ErroreOperazione(
-        `${c.nome} compare in ${usi.pratiche} pratiche e ha ${usi.liquidazioni} liquidazioni registrate: non si può eliminare. Puoi disattivarlo, così non verrà più proposto.`,
+        `${c.nome} compare in ${usi.pratiche} pratiche e ha ${usi.liquidazioni} liquidazioni registrate${usi.zone ? ` e fa parte della ripartizione di ${usi.zone === 1 ? '1 zona' : `${usi.zone} zone`}` : ''}: non si può eliminare. Puoi disattivarlo, così non verrà più proposto.`,
         usi,
       );
     }
@@ -163,4 +164,65 @@ export function salvaTabellaScaglioni(db, zonaId, righe) {
       db.esegui('INSERT INTO scaglioni (zona_id, da_cent, percentuale) VALUES (?, ?, ?)', [zonaId, s.da, s.percentuale]);
     }
   });
+}
+
+// ------------------------------------------------------------ ripartizione automatica per zona
+
+/** Come si divide una pratica della zona tra i collaboratori: [{ collaboratore_id, percentuale }] (vuoto = non impostata). */
+export function leggiRipartizioneZona(db, zonaId) {
+  return db.tutti('SELECT collaboratore_id, percentuale FROM zone_quote WHERE zona_id = ? ORDER BY collaboratore_id', [zonaId]);
+}
+
+/** Controlla una ripartizione che deve fare esattamente 100%. Restituisce il messaggio del problema, o null. */
+export function problemaRipartizione(db, quote) {
+  const visti = new Set();
+  let sommaBp = 0;
+  for (const q of quote) {
+    if (!db.uno('SELECT id FROM collaboratori WHERE id = ?', [q.collaboratore_id])) return 'Un collaboratore della ripartizione non esiste più.';
+    if (visti.has(q.collaboratore_id)) return 'Lo stesso collaboratore è presente due volte nella ripartizione.';
+    visti.add(q.collaboratore_id);
+    if (!Number.isFinite(q.percentuale) || q.percentuale <= 0 || q.percentuale > 100) return 'Ogni quota deve essere maggiore di 0 e al massimo 100%.';
+    sommaBp += Math.round(q.percentuale * 100);
+  }
+  if (quote.length && sommaBp !== 10000) return 'Le quote devono sommare esattamente 100%.';
+  return null;
+}
+
+/** Sostituisce la ripartizione di una zona. Con un elenco vuoto la zona torna a usare quella predefinita. */
+export function salvaRipartizioneZona(db, zonaId, righe) {
+  return db.transazione(() => {
+    const z = db.uno('SELECT * FROM zone WHERE id = ?', [zonaId]);
+    if (!z) throw new ErroreOperazione('Zona non trovata.');
+    const quote = (righe || []).map((r) => ({ collaboratore_id: r.collaboratore_id, percentuale: Number(r.percentuale) }));
+    const problema = problemaRipartizione(db, quote);
+    if (problema) throw new ErroreValidazione({ quote: problema });
+    db.esegui('DELETE FROM zone_quote WHERE zona_id = ?', [zonaId]);
+    for (const q of quote) {
+      db.esegui('INSERT INTO zone_quote (zona_id, collaboratore_id, percentuale) VALUES (?, ?, ?)', [zonaId, q.collaboratore_id, q.percentuale]);
+    }
+    db.esegui('UPDATE zone SET aggiornato_il = ? WHERE id = ?', [adesso(), zonaId]);
+  });
+}
+
+/**
+ * La ripartizione che si applica a una nuova pratica, a seconda della zona:
+ *   1. quella della zona, se è stata impostata ('zona');
+ *   2. altrimenti la ripartizione predefinita delle Impostazioni ('predefinita');
+ *   3. altrimenti, se c'è un solo collaboratore attivo, tutto a lui ('unico');
+ *   4. altrimenti nessuna ('nessuna'): la pratica si salva ma viene segnalata come priva di ripartizione.
+ * Restituisce { origine, quote: [{ collaboratore_id, percentuale }] }.
+ */
+export function ripartizioneAutomatica(db, zonaId, impostazioni = null) {
+  if (zonaId != null) {
+    const quote = leggiRipartizioneZona(db, zonaId);
+    if (quote.length) return { origine: 'zona', quote };
+  }
+  const imp = impostazioni || leggiImpostazioni(db);
+  const attivi = db.tutti('SELECT id FROM collaboratori WHERE attivo = 1 ORDER BY colore, nome COLLATE NOCASE').map((c) => c.id);
+  const predefinita = (imp['ripartizione.predefinita'] || []).filter((x) => attivi.includes(x.collaboratoreId));
+  if (predefinita.length && predefinita.reduce((somma, x) => somma + Math.round(x.percentuale * 100), 0) === 10000) {
+    return { origine: 'predefinita', quote: predefinita.map((x) => ({ collaboratore_id: x.collaboratoreId, percentuale: x.percentuale })) };
+  }
+  if (attivi.length === 1) return { origine: 'unico', quote: [{ collaboratore_id: attivi[0], percentuale: 100 }] };
+  return { origine: 'nessuna', quote: [] };
 }

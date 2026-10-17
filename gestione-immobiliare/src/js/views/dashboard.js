@@ -95,7 +95,7 @@ export const dashboard = {
     const nScaglioni = m.tabellaPredefinita.length + [...m.tabellePerZona.values()].reduce((a, t) => a + t.length, 0);
     const passi = [
       { fatto: m.collaboratori.length > 0, titolo: 'Controlla i collaboratori', testo: 'Luca e Giuseppe sono già inseriti: modificali o aggiungi gli altri collaboratori.', href: '#/impostazioni?sezione=collaboratori' },
-      { fatto: m.zone.length > 0, titolo: 'Aggiungi le zone di lavoro', testo: 'Servono per il cumulo mensile e per le statistiche per zona.', href: '#/impostazioni?sezione=zone' },
+      { fatto: m.zone.length > 0, titolo: 'Aggiungi le zone di lavoro', testo: 'Servono per il cumulo mensile, per le statistiche e per dividere le pratiche tra i collaboratori: per ogni zona imposta anche la ripartizione.', href: '#/impostazioni?sezione=zone' },
       { fatto: nScaglioni > 0, titolo: nScaglioni > 0 ? 'Controlla scaglioni e percentuali' : 'Imposta scaglioni e percentuali', testo: nScaglioni > 0 ? 'Sono già impostati quelli dell\'agenzia: verifica le soglie di fatturato mensile e le percentuali, o modificale.' : 'Le soglie di fatturato mensile e la percentuale di provvigione di ciascuna.', href: '#/impostazioni?sezione=scaglioni' },
       { fatto: m.pratiche.length > 0, titolo: 'Inserisci la prima pratica', testo: 'Da qui in poi la dashboard si aggiorna da sola.', href: '#/nuova' },
     ];
@@ -155,7 +155,7 @@ export const dashboard = {
     ultimoBackup(app).then((u) => { sottoBackup.textContent = u ? `Ultimo: ${dataOra(u)}` : 'Nessun backup ancora'; }).catch(() => {});
     const OPS = [
       { icona: 'file-plus', titolo: 'Inserisci nuova compravendita', sotto: 'Apri una nuova pratica', href: '#/nuova', principale: true, id: 'op-nuova' },
-      { icona: 'search', titolo: 'Cerca una pratica', sotto: 'Per codice, via, cliente o zona', azione: () => ui.cerca(), id: 'op-cerca' },
+      { icona: 'search', titolo: 'Cerca una pratica', sotto: 'Per codice, zona o cliente', azione: () => ui.cerca(), id: 'op-cerca' },
       { icona: 'banknote', titolo: 'Registra un incasso', sotto: 'Pagamento ricevuto dal cliente', azione: () => apriDialogoIncasso(), id: 'op-incasso' },
       { icona: 'hand-coins', titolo: 'Registra una liquidazione', sotto: 'Pagamento a un collaboratore', azione: () => apriDialogoLiquidazione(), id: 'op-liquidazione' },
       { icona: 'layers', titolo: 'Consulta il cumulo mensile', sotto: 'Scaglioni e percentuali raggiunte', href: '#/cumulo', id: 'op-cumulo' },
@@ -267,7 +267,7 @@ export const dashboard = {
     const spec = {
       titolo: 'Confronto tra prezzo di acquisto e prezzo di vendita', nomi: ['Prezzo di acquisto', 'Prezzo di vendita'], formato: FORMATO_EURO,
       righe: cp.righe.map((x) => ({
-        etichetta: x.pratica.codice, sotto: x.pratica.immobile_indirizzo, etichettaLunga: `${x.pratica.codice} — ${x.pratica.immobile_indirizzo}`,
+        etichetta: x.pratica.codice, sotto: x.pratica.descrizione, etichettaLunga: `${x.pratica.codice} — ${x.pratica.descrizione}`,
         a: x.acquistoCent, b: x.venditaCent, deltaCent: x.deltaCent,
         deltaTesto: `${eurSegno(x.deltaCent)} (${pctSegno(x.deltaPct)})`,
       })),
@@ -280,7 +280,7 @@ export const dashboard = {
       tabella: () => h('div', { class: 'tabella-wrap' }, h('table', { class: 'tabella tabella-compatta' },
         h('caption', { class: 'solo-lettori' }, 'Prezzo di acquisto e di vendita'),
         h('thead', null, h('tr', null, h('th', null, 'Pratica'), h('th', { class: 'num' }, 'Acquisto'), h('th', { class: 'num' }, 'Vendita'), h('th', { class: 'num' }, 'Differenza'))),
-        h('tbody', null, cp.righe.map((x) => h('tr', null, h('th', { scope: 'row' }, `${x.pratica.codice} — ${x.pratica.immobile_indirizzo}`), h('td', { class: 'num' }, eur(x.acquistoCent)), h('td', { class: 'num' }, eur(x.venditaCent)), h('td', { class: 'num' }, `${eurSegno(x.deltaCent)} (${pctSegno(x.deltaPct)})`)))))),
+        h('tbody', null, cp.righe.map((x) => h('tr', null, h('th', { scope: 'row' }, `${x.pratica.codice} — ${x.pratica.descrizione}`), h('td', { class: 'num' }, eur(x.acquistoCent)), h('td', { class: 'num' }, eur(x.venditaCent)), h('td', { class: 'num' }, `${eurSegno(x.deltaCent)} (${pctSegno(x.deltaPct)})`)))))),
     });
 
     const grafici = h('section', { 'aria-labelledby': 'graf-titolo', class: 'grafici-contenitore' },
@@ -292,12 +292,12 @@ export const dashboard = {
     const tabellaUltime = ultime.length
       ? h('div', { class: 'tabella-wrap' }, h('table', { class: 'tabella' },
         h('caption', { class: 'solo-lettori' }, 'Ultime pratiche inserite o modificate'),
-        h('thead', null, h('tr', null, h('th', null, 'Data'), h('th', null, 'Immobile'), h('th', null, 'Zona'), h('th', null, 'Stato'), h('th', { class: 'num' }, 'Compensi'))),
+        h('thead', null, h('tr', null, h('th', null, 'Data'), h('th', null, 'Pratica'), h('th', null, 'Zona'), h('th', null, 'Stato'), h('th', { class: 'num' }, 'Compensi'))),
         h('tbody', null, ultime.map((p) => {
           const vai = () => naviga(`#/pratiche/${p.id}`);
           return h('tr', { class: 'cliccabile', onclick: (ev) => { if (!ev.target.closest('a')) vai(); } },
             h('td', { class: 'num' }, dataIt(p.dataRif)),
-            h('td', null, h('a', { href: `#/pratiche/${p.id}`, class: 'forte', style: { color: 'var(--text)' } }, p.immobile_indirizzo), h('span', { class: 'sottotesto' }, `${p.codice}${p.immobile_comune ? ` · ${p.immobile_comune}` : ''}`)),
+            h('td', null, h('a', { href: `#/pratiche/${p.id}`, class: 'forte', style: { color: 'var(--text)' } }, p.descrizione), h('span', { class: 'sottotesto' }, `${p.codice}${p.immobile_comune ? ` · ${p.immobile_comune}` : ''}`)),
             h('td', null, p.zonaNome ?? h('span', { class: 'badge badge-warn' }, 'Da indicare')),
             h('td', null, badgeStato(p.stato)),
             h('td', { class: 'num forte' }, eur(p.compensoTotaleCent)));

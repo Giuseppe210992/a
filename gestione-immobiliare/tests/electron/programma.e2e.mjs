@@ -72,12 +72,13 @@ describe('Programma Windows (Electron)', { skip: binarioElectron() ? false : 'El
     await p.evaluate(() => { location.hash = '#/nuova'; });
     await p.waitForSelector('#form-pratica');
     const F = (e, o = {}) => p.locator('#form-pratica').getByLabel(e, o);
-    await F('Indirizzo dell\'immobile').fill('Via del Programma 1');
-    await F(/^Zona$/).selectOption({ label: 'Centro' });
-    await F('Compenso dal venditore').fill('1.000');
-    await p.getByRole('button', { name: 'Tutto a Luca' }).click();
+    await F(/^Zona\*?$/).selectOption({ label: 'Centro' });
+    await F('Prezzo di vendita').fill('150.000');
+    await p.locator('#pagamenti-venditore').getByLabel('Bonifico').fill('1.220'); // 1.000 + IVA al 22%
+    await p.waitForSelector('#ripartizione-automatica'); // la ripartizione arriva da sola dalla zona
     await p.click('#salva-pratica');
-    await p.waitForSelector('#contenuto h1:has-text("Via del Programma 1")');
+    await p.waitForSelector('#contenuto h1:has-text("Zona Centro")');
+    assert.match(await p.locator('#contenuto').innerText(), /2026\/016/);
     // il file su disco contiene davvero i dati: lo si apre con un altro processo di lettura
     const SQLmod = await import('../unit/helpers-db.mjs');
     const SQL = await SQLmod.motore();
@@ -100,7 +101,7 @@ describe('Programma Windows (Electron)', { skip: binarioElectron() ? false : 'El
     assert.equal(esportati.length, 1);
     const csv = fs.readFileSync(path.join(datiPercorso, 'Esportazioni', esportati[0]));
     assert.deepEqual([...csv.subarray(0, 3)], [0xef, 0xbb, 0xbf], 'CSV con BOM per Excel');
-    assert.match(csv.toString('utf8'), /Via del Programma 1/);
+    assert.match(csv.toString('utf8'), /2026\/016/);
     // "Backup e archivio storico": i due pulsanti per aprire le cartelle rispondono (in prova Esplora file non si apre davvero)
     await p.evaluate(() => { location.hash = '#/backup'; });
     await p.getByRole('button', { name: 'Apri la cartella dei dati' }).waitFor();
@@ -123,7 +124,7 @@ describe('Programma Windows (Electron)', { skip: binarioElectron() ? false : 'El
     s2 = await avviaProgramma();
     const { finestra: p } = s2;
     assert.equal(await valore(p, 'SELECT COUNT(*) FROM pratiche'), 16);
-    assert.equal(await valore(p, "SELECT COUNT(*) FROM pratiche WHERE immobile_indirizzo = 'Via del Programma 1'"), 1);
+    assert.equal(await valore(p, "SELECT COUNT(*) FROM pratiche WHERE codice = '2026/016' AND immobile_indirizzo IS NULL AND compensi_da_pagamenti = 1 AND venditore_bonifico_cent = 122000"), 1);
     assert.equal(await valore(p, 'SELECT COUNT(*) FROM incassi'), 4);
     assert.equal(await valore(p, 'SELECT COUNT(*) FROM liquidazioni'), 3);
     assert.equal(await valore(p, 'PRAGMA integrity_check'), 'ok');

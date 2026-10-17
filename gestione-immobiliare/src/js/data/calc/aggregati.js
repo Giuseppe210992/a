@@ -150,7 +150,8 @@ export function serieTemporale(modello, ctx, opzioni = {}) {
   };
 
   if (metrica === 'incassi') {
-    for (const inc of modello.incassi) {
+    // incassi registrati + pagamenti fatti dalle parti alla conclusione (nel giorno della pratica)
+    for (const inc of [...modello.incassi, ...(modello.pagamenti || [])]) {
       const p = inc.pratica;
       if (!p || p.annullata || !nelContesto(p, ctx)) continue;
       const i = conta(inc.data);

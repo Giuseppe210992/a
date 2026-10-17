@@ -23,7 +23,12 @@ Dove: cartella `gestione-immobiliare/` del repository `Giuseppe210992/a`, ramo `
 | Base del cumulo (predefinita) | Per **collaboratore e zona** (alternative: per zona; per collaboratore) | Richiesta: «cumulo mensile per zona» con Luca e Giuseppe |
 | Maturazione (predefinita) | **Alla conclusione** (rogito). Alternativa: in proporzione agli incassi | Le pratiche si contano per `data_rogito` (se manca, per `data_pratica`) |
 | Importi lordi | Nessuna ritenuta, contributo o tassa sui compensi dei collaboratori | Non richiesto: da confermare |
-| Dati incompleti | La pratica si salva comunque e viene segnalata come incompleta | Non perdere mai ciò che l'utente ha scritto |
+| Dati incompleti | La pratica si salva comunque e viene segnalata come incompleta (la zona è l'unico dato obbligatorio del modulo) | Non perdere mai ciò che l'utente ha scritto |
+| Modulo «Nuova pratica» | **Corto, a rogito concluso**: zona, tipo di immobile (facoltativo), prezzi, nomi di venditore e acquirente (facoltativi), pagamenti per parte, aliquota IVA, note. **Niente** codice, stato, date, via. Codice automatico `AAAA/NNN` (`prossimoCodice`), stato sempre `conclusa`, `data_pratica = data_rogito = oggi` | Richiesta dell'utente: «i dati li inseriamo sempre a conclusione», «interessa solo la zona» |
+| Compensi dai pagamenti | Per ogni parte: **contanti già senza IVA**; **bonifico e assegno IVA compresa** (scorporo sulla somma dei due, arrotondato al centesimo, mezzi verso l'alto: `src/js/data/calc/compensi.js`). Compenso senza IVA = contanti + (bonifico+assegno scorporati), per le due parti. Flag `pratiche.compensi_da_pagamenti` = 1 | Richiesta dell'utente. `compenso_venditore_cent` e `compenso_acquirente_cent` restano come valore derivato (compenso senza IVA di ciascuna parte), così il resto del programma non cambia |
+| Pagato = incassato | Per le pratiche nuove `totaleLordo` = quanto pagato e `incassato` = pagato alla conclusione + incassi successivi | **Da confermare**: ipotesi che gli importi scritti siano già stati incassati |
+| Pratiche vecchie | Con `compensi_da_pagamenti = 0` restano com'erano (compenso senza IVA + IVA in cima). Il flag **esplicito** vince sempre su quello dedotto: risalvare una pratica vecchia non la trasforma | La migrazione 2 non tocca i dati esistenti |
+| Ripartizione | **Automatica per zona**: tabella `zone_quote`. Ordine: quella della zona (deve fare 100%) → predefinita delle Impostazioni (100%) → unico collaboratore attivo → nessuna (avviso e conferma al salvataggio). Le quote si **copiano sulla pratica al salvataggio**: cambiare la zona dopo non riscrive le pratiche già inserite | Richiesta dell'utente. **Le ripartizioni vere delle zone vanno ancora inserite dall'utente** |
 | Primo avvio | Archivio vuoto, con i soli collaboratori **Luca** e **Giuseppe** (modificabili) | Nessun dato dimostrativo, come richiesto |
 | Una sola finestra | Electron: blocco di istanza singola; browser: Web Locks | Due finestre aperte si sovrascriverebbero i dati |
 | Conferme | Sempre prima di eliminare dati, importare, ripristinare o azzerare; prima di ogni operazione distruttiva viene salvata una copia di sicurezza | Richiesta esplicita |
@@ -39,8 +44,8 @@ src/js/core/                          router (#/percorso), DOM (h, monta), forma
 src/js/components/                    campi, filtri, ricerca, finestre di registrazione incasso/liquidazione, avvisi
 src/js/charts/                        grafici SVG scritti a mano (colonne, barre, linee, dumbbell, sparkline)
 src/js/views/                         una schermata per file (8 + scheda pratica + recupero)
-src/js/data/schema.js, db.js          schema SQLite (user_version 1) e classe Archivio (transazioni, esporta, sostituisci)
-src/js/data/calc/                     MOTORE DI CALCOLO: funzioni pure (scaglioni.js, modello.js, aggregati.js)
+src/js/data/schema.js, db.js          schema SQLite (user_version 2) e classe Archivio (transazioni, esporta, sostituisci)
+src/js/data/calc/                     MOTORE DI CALCOLO: funzioni pure (scaglioni.js, compensi.js, modello.js, aggregati.js)
 src/js/data/repo/                     lettura e scrittura di pratiche, anagrafiche, impostazioni
 src/js/data/drivers/                  dove finiscono i byte: IndexedDB (browser), file (Electron), memoria (test)
 src/js/data/backup.js, integrity.js   copie di sicurezza, ripristino, importazione, verifica di coerenza
@@ -62,7 +67,7 @@ Regole da non rompere:
 ```
 cd gestione-immobiliare
 npm ci
-npm test                  # 97 prove su calcoli, scaglioni dell'agenzia, date, formati, archivio, host file, icone (circa 1 s)
+npm test                  # 125 prove su calcoli, compensi dai pagamenti, migrazione dello schema, scaglioni dell'agenzia, date, formati, archivio, host file, icone (circa 1 s)
 npm run test:e2e          # costruisce e prova ogni schermata nel browser (Chromium + Playwright), circa 4 minuti
 GI_RALLENTA=4 npm run test:e2e   # lo stesso con il browser 4 volte più lento
 GI_RITARDO=150 npm run test:e2e  # lo stesso con eventi e scritture su disco in ritardo di 150 ms (scova le letture troppo presto)

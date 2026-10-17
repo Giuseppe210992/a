@@ -355,7 +355,7 @@ describe('Dashboard: riquadri, filtri e grafici', () => {
     const p = app.pagina;
     await vai(p, '#/');
     const intest = await p.$$eval('section[aria-labelledby="ult-titolo"] thead th', (a) => a.map((x) => x.textContent.trim()));
-    assert.deepEqual(intest, ['Data', 'Immobile', 'Zona', 'Stato', 'Compensi']);
+    assert.deepEqual(intest, ['Data', 'Pratica', 'Zona', 'Stato', 'Compensi']);
     const righe = p.locator('section[aria-labelledby="ult-titolo"] tbody tr');
     assert.equal(await righe.count(), 8);
     // ordine: ultime inserite per prime (015, 014, 013, 012, ...)
@@ -429,7 +429,7 @@ describe('Dashboard: riquadri, filtri e grafici', () => {
       const zona = app.archivio.valore("SELECT id FROM zone WHERE nome = 'Centro'");
       await api.salvaPratica(app.archivio, {
         codice: '2026/016', stato: 'conclusa', data_pratica: '2026-09-01', data_rogito: '2026-10-14', zona_id: zona,
-        immobile_indirizzo: 'Via Aggiunta 1', immobile_comune: 'Minturno', immobile_tipo: 'Appartamento',
+        immobile_indirizzo: 'Via Aggiunta 1', immobile_comune: 'Roccaverde', immobile_tipo: 'Appartamento',
         prezzo_vendita_cent: 100000 * 100, compenso_venditore_cent: 1500 * 100, compenso_acquirente_cent: 1500 * 100, aliquota_iva: 22,
       }, [{ collaboratore_id: luca.id, percentuale: 100 }]);
     });

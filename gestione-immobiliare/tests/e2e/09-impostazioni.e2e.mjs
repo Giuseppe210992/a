@@ -40,8 +40,8 @@ describe('Impostazioni', () => {
   test('collaboratori: elenco con utilizzi, aggiunta, controlli sul nome, modifica, attiva/disattiva', async () => {
     const p = app.pagina;
     await apri('collaboratori');
-    assert.match(rimuoviSpazi(await riga('Luca').innerText()), /Luca 9 pratiche · 2 liquidazioni Attivo/);
-    assert.match(rimuoviSpazi(await riga('Giuseppe').innerText()), /Giuseppe 7 pratiche · 1 liquidazioni Attivo/);
+    assert.match(rimuoviSpazi(await riga('Luca').innerText()), /Luca 9 pratiche · 2 liquidazioni · nella ripartizione di 2 zone Attivo/);
+    assert.match(rimuoviSpazi(await riga('Giuseppe').innerText()), /Giuseppe 7 pratiche · 1 liquidazioni · nella ripartizione di 2 zone Attivo/);
     // nome vuoto e doppione
     await p.click('#aggiungi-collaboratore');
     assert.match(rimuoviSpazi(await p.locator('.imp-corpo .errore').first().innerText()), /Scrivi un nome/);
@@ -104,7 +104,7 @@ describe('Impostazioni', () => {
   test('zone: aggiunta, doppione, modifica, disattivazione; una zona usata non si elimina', async () => {
     const p = app.pagina;
     await apri('zone');
-    assert.match(rimuoviSpazi(await riga('Centro').innerText()), /Centro 6 pratiche \+ ?1|Centro 7 pratiche · scaglioni predefiniti Attivo/);
+    assert.match(rimuoviSpazi(await riga('Centro').innerText()), /Centro 7 pratiche · scaglioni predefiniti · ripartizione: Luca 100% Attivo/);
     await p.getByLabel('Nome della zona').fill('CENTRO');
     await p.click('#aggiungi-zona');
     await p.waitForFunction(() => /Esiste già una voce con questo nome/.test(document.querySelector('.imp-corpo').textContent));
@@ -112,7 +112,19 @@ describe('Impostazioni', () => {
     await p.click('#aggiungi-zona');
     await attendiNotifica(p, /Zona “Porto” aggiunta/);
     await riga('Porto').waitFor();
-    assert.match(rimuoviSpazi(await riga('Porto').innerText()), /Porto 0 pratiche · scaglioni predefiniti Attivo/);
+    assert.match(rimuoviSpazi(await riga('Porto').innerText()), /Porto 0 pratiche · scaglioni predefiniti · ripartizione: NON IMPOSTATA Attivo/);
+    // la ripartizione della zona: quote che non fanno 100% rifiutate, poi «Tutto a Giuseppe»
+    await riga('Porto').getByRole('button', { name: 'Ripartizione' }).click();
+    const rip = finestra(p);
+    assert.match(rimuoviSpazi(await rip.innerText()), /Ripartizione della zona Porto/);
+    await rip.getByLabel('Quota di Luca').fill('30');
+    await bottoneFinestra(p, 'Salva la ripartizione').click();
+    await rip.locator('.errore').getByText(/Le quote sommano 30%: devono fare 100%/).waitFor();
+    await rip.getByRole('button', { name: 'Tutto a Giuseppe' }).click();
+    await bottoneFinestra(p, 'Salva la ripartizione').click();
+    await attendiNotifica(p, /Ripartizione della zona “Porto” salvata/);
+    await p.waitForFunction(() => /Porto 0 pratiche · scaglioni predefiniti · ripartizione: Giuseppe 100%/.test(document.querySelector('.imp-corpo').innerText.replace(/\s+/g, ' ')));
+    assert.deepEqual(await sql(p, "SELECT c.nome, q.percentuale FROM zone_quote q JOIN collaboratori c ON c.id = q.collaboratore_id JOIN zone z ON z.id = q.zona_id WHERE z.nome = 'Porto'"), [{ nome: 'Giuseppe', percentuale: 100 }]);
     // modifica e disattivazione
     await riga('Porto').getByRole('button', { name: 'Modifica' }).click();
     const f = finestra(p);
@@ -123,7 +135,7 @@ describe('Impostazioni', () => {
     assert.deepEqual(await sql(p, "SELECT nome, attiva FROM zone WHERE nome = 'Porto vecchio'"), [{ nome: 'Porto vecchio', attiva: 0 }]);
     // una zona non attiva non si propone nella nuova pratica
     await vai(p, '#/nuova');
-    assert.deepEqual((await p.locator('#form-pratica').getByLabel(/^Zona$/).locator('option').allInnerTexts()).map((x) => x.trim()), ['Da indicare', 'Centro', 'Collina', 'Lungomare']);
+    assert.deepEqual((await p.locator('#form-pratica').getByLabel(/^Zona\*?$/).locator('option').allInnerTexts()).map((x) => x.trim()), ['Scegli la zona', 'Centro', 'Collina', 'Lungomare']);
     await p.evaluate(() => { location.hash = '#/impostazioni?sezione=zone'; });
     await p.waitForSelector('.imp-corpo .card');
     // zona in uso: blocco
@@ -299,10 +311,10 @@ describe('Impostazioni', () => {
     assert.equal((await riquadri(p)).maturate, 28236 * E, 'tornati alle scelte iniziali, i numeri tornano quelli di prima');
   });
 
-  test('ripartizione predefinita: si salva solo se fa 100% e viene proposta nelle nuove pratiche', async () => {
+  test('ripartizione predefinita: si salva solo se fa 100% e vale per le zone che non ne hanno una propria', async () => {
     const p = app.pagina;
     await apri('ripartizione');
-    assert.match(rimuoviSpazi(await p.locator('.imp-corpo').innerText()), /Nessuna ripartizione predefinita: ogni pratica va assegnata a mano/);
+    assert.match(rimuoviSpazi(await p.locator('.imp-corpo').innerText()), /Nessuna ripartizione predefinita: le zone senza una ripartizione propria restano senza assegnazione/);
     await p.getByRole('button', { name: 'Aggiungi collaboratore' }).click();
     assert.equal(await p.getByLabel('Collaboratore 1').locator('option:checked').innerText(), 'Luca');
     assert.equal(await p.getByLabel('Quota 1').inputValue(), '100');
@@ -316,12 +328,25 @@ describe('Impostazioni', () => {
     await p.getByLabel('Quota 2').fill('40');
     await p.click('#salva-ripartizione');
     await attendiNotifica(p, /Ripartizione predefinita salvata/);
-    // la nuova pratica parte con 60/40
+    // una zona senza ripartizione propria usa la predefinita 60/40; una che ce l'ha (Centro: tutto a Luca) tiene la sua
+    await apri('zone');
+    await p.getByLabel('Nome della zona').fill('Darsena');
+    await p.click('#aggiungi-zona');
+    await attendiNotifica(p, /Zona “Darsena” aggiunta/);
     await vai(p, '#/nuova');
-    assert.equal(await p.getByLabel('Collaboratore 1').locator('option:checked').innerText(), 'Luca');
-    assert.equal(await p.getByLabel('Quota del collaboratore 1').inputValue(), '60');
-    assert.equal(await p.getByLabel('Collaboratore 2').locator('option:checked').innerText(), 'Giuseppe');
-    assert.equal(await p.getByLabel('Quota del collaboratore 2').inputValue(), '40');
+    await p.locator('#form-pratica').getByLabel(/^Zona\*?$/).selectOption({ label: 'Darsena' });
+    const righeRip = async () => (await p.locator('#ripartizione-automatica .ripartizione-elenco li').allInnerTexts()).map(rimuoviSpazi);
+    assert.deepEqual(await righeRip(), ['Luca 60%', 'Giuseppe 40%']);
+    assert.match(rimuoviSpazi(await p.locator('#ripartizione-automatica').innerText()), /La zona “Darsena” non ha una ripartizione propria: si usa quella predefinita/);
+    await p.locator('#form-pratica').getByLabel(/^Zona\*?$/).selectOption({ label: 'Centro' });
+    assert.deepEqual(await righeRip(), ['Luca 100%']);
+    await p.evaluate(() => { location.hash = '#/impostazioni?sezione=zone'; });
+    await p.waitForFunction(() => document.querySelector('dialog.modale[open]') || document.querySelector('.imp-corpo .card'));
+    if (await finestra(p).count()) await bottoneFinestra(p, 'Esci senza salvare').click(); // il modulo ha una zona scelta: chiede se uscire
+    await p.waitForSelector('.imp-corpo .card');
+    await riga('Darsena').getByRole('button', { name: 'Elimina' }).click();
+    await bottoneFinestra(p, 'Elimina').click();
+    await attendiNotifica(p, /Zona eliminata/);
     // si toglie
     await apri('ripartizione');
     await p.getByRole('button', { name: 'Nessuna ripartizione predefinita' }).click();
@@ -404,7 +429,7 @@ describe('Impostazioni', () => {
     assert.match(t, /Programma Gestione Immobiliare 1\.0\.0/);
     assert.match(t, /Modalità Browser \(dati nella memoria del browser\)/);
     assert.match(t, /Dove sono i dati IndexedDB del browser/);
-    assert.match(t, /Versione dell'archivio Schema 1/);
+    assert.match(t, /Versione dell'archivio Schema 2/);
     assert.match(t, /Connessione a Internet Non necessaria: tutto funziona offline/);
     assert.match(t, /scorciatoie da tastiera/i);
   });

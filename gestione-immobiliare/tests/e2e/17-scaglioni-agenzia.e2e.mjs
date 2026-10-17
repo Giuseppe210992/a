@@ -53,19 +53,19 @@ describe('Scaglioni dell\'agenzia preimpostati', () => {
 
   test('una pratica vera: stima nel modulo, scheda e dashboard usano le percentuali dell\'agenzia (10.000 € di cumulo → 15%)', async () => {
     const p = app.pagina;
-    await p.evaluate(async () => { const { api, app: a } = window.__gi; await api.creaZona(a.archivio, { nome: 'Centro' }); });
+    await p.evaluate(async () => {
+      const { api, app: a } = window.__gi;
+      const zona = await api.creaZona(a.archivio, { nome: 'Centro' });
+      const [luca] = api.elencoCollaboratori(a.archivio);
+      await api.salvaRipartizioneZona(a.archivio, zona, [{ collaboratore_id: luca.id, percentuale: 100 }]);
+    });
     await vai(p, '#/nuova');
     const L = (e, o = {}) => p.locator('#form-pratica').getByLabel(e, o);
-    await L('Indirizzo dell\'immobile').fill('Via Agenzia 1');
-    await L('Comune').fill('Minturno');
-    await L(/^Zona$/).selectOption({ label: 'Centro' });
-    await L(/^Stato/).selectOption('conclusa');
-    await L('Data di apertura').fill('01/10/2026');
-    await L('Data del rogito').fill('14/10/2026');
+    await L(/^Zona\*?$/).selectOption({ label: 'Centro' });
     await L('Prezzo di vendita').fill('200.000');
-    await L('Compenso dal venditore').fill('5.000,00');
-    await L('Compenso dall\'acquirente').fill('5.000,00');
-    await p.getByRole('button', { name: 'Tutto a Luca' }).click();
+    // 6.100 con bonifico = 5.000 + 1.100 di IVA (22%) da ciascuna parte: 10.000 € di compenso senza IVA
+    await p.locator('#pagamenti-venditore').getByLabel('Bonifico').fill('6.100');
+    await p.locator('#pagamenti-acquirente').getByLabel('Bonifico').fill('6.100');
     await p.waitForFunction(() => /Quota 100% dei compensi: 10\.000,00/.test(document.querySelector('.stima-provvigione')?.textContent ?? ''));
     const s = rimuoviSpazi(await p.locator('.stima-provvigione').innerText());
     assert.match(s, /Luca\s*1\.500,00 €/);                                                  // 10.000 × 15%

@@ -6,6 +6,7 @@ import { leggiPref } from '../core/preferenze.js';
 import { eur, pct, leggiEuro, numDec, dataOra, leggiPercentuale } from '../core/format.js';
 import { apriModale, conferma, ok as notificaOk, errore as notificaErrore, segnalaErrore } from '../core/ui.js';
 import { campoTesto, campoImporto, campoPercentuale, campoSelezione, casella, mostraErrori } from '../components/campi.js';
+import { apriDialogoRipartizione, ripartizioneAParole } from '../components/ripartizione-zona.js';
 import {
   elencoCollaboratori, creaCollaboratore, aggiornaCollaboratore, eliminaCollaboratore, usiCollaboratore,
   elencoZone, creaZona, aggiornaZona, eliminaZona, usiZona, leggiTabellaScaglioni, salvaTabellaScaglioni,
@@ -33,6 +34,15 @@ const aParole = (righe) => descriviScaglioni(creaTabella(righe)).map((f) => (f.a
 
 // ------------------------------------------------------------------ collaboratori e zone (stessa struttura)
 
+/** Come si divide una pratica di una zona, a parole (per l'elenco delle zone). */
+function testoRipartizioneZona(zonaId) {
+  const m = modello();
+  const propria = m.zone.find((z) => z.id === zonaId)?.ripartizione ?? [];
+  if (propria.length) return ripartizioneAParole(propria, m.collaboratori);
+  const predefinita = impostazioni()['ripartizione.predefinita'] || [];
+  return predefinita.length ? `predefinita (${ripartizioneAParole(predefinita, m.collaboratori)})` : 'NON IMPOSTATA';
+}
+
 function elencoAnagrafica({ tipo, etichettaSing, etichettaPlur, genere }) {
   const e = tipo === 'collaboratore';
   const nuovoNome = campoTesto({ id: `nuovo-${tipo}`, etichetta: `Nome ${genere === 'f' ? 'della' : 'del'} ${etichettaSing.toLowerCase()}`, maxlength: 60, placeholder: e ? 'Es. Marco' : 'Es. Centro storico' });
@@ -53,9 +63,10 @@ function elencoAnagrafica({ tipo, etichettaSing, etichettaPlur, genere }) {
     const attivo = e ? r.attivo : r.attiva;
     return h('div', { class: 'riga-elenco', dataset: { id: r.id, nome: r.nome } },
       h('div', { class: 'nome' }, h('span', { class: `punto-col col-${r.colore}`, style: { width: '14px', height: '14px' }, title: `Colore nei grafici: ${NOMI_COLORE[r.colore]}` }), h('div', null, r.nome,
-        h('br'), h('small', null, e ? `${usi.pratiche} pratiche · ${usi.liquidazioni} liquidazioni` : `${usi.pratiche} pratiche${r.usa_scaglioni_propri ? ' · scaglioni propri' : ' · scaglioni predefiniti'}`))),
+        h('br'), h('small', null, e ? `${usi.pratiche} pratiche · ${usi.liquidazioni} liquidazioni${usi.zone ? ` · nella ripartizione di ${usi.zone === 1 ? '1 zona' : `${usi.zone} zone`}` : ''}` : `${usi.pratiche} pratiche${r.usa_scaglioni_propri ? ' · scaglioni propri' : ' · scaglioni predefiniti'} · ripartizione: ${testoRipartizioneZona(r.id)}`))),
       attivo ? h('span', { class: 'badge badge-ok' }, 'Attivo') : h('span', { class: 'badge' }, 'Non attivo'),
       h('div', { class: 'riga-azioni' },
+        e ? null : h('button', { type: 'button', class: 'btn btn-secondario btn-sm', id: `ripartizione-zona-${r.id}`, onclick: () => apriDialogoRipartizione(r) }, icona('handshake', { dimensione: 15 }), 'Ripartizione'),
         h('button', { type: 'button', class: 'btn btn-secondario btn-sm', onclick: () => modificaAnagrafica(tipo, r, etichettaSing) }, icona('pencil', { dimensione: 15 }), 'Modifica'),
         h('button', { type: 'button', class: 'btn btn-ghost btn-sm', onclick: async () => {
           try { if (e) await aggiornaCollaboratore(app.archivio, r.id, { attivo: !r.attivo }); else await aggiornaZona(app.archivio, r.id, { attiva: !r.attiva }); notificaOk(`${r.nome}: ${attivo ? 'disattivat' : 'attivat'}${genere === 'f' ? 'a' : 'o'}.`); } catch (err) { segnalaErrore(err); }
@@ -63,7 +74,7 @@ function elencoAnagrafica({ tipo, etichettaSing, etichettaPlur, genere }) {
         h('button', { type: 'button', class: 'btn btn-pericolo-ghost btn-sm', onclick: () => eliminaAnagrafica(tipo, r, usi, etichettaSing, genere) }, icona('trash-2', { dimensione: 15 }), 'Elimina')));
   }) : [h('p', { class: 'sottotesto', style: { padding: '12px 0' } }, `Nessun${genere === 'f' ? 'a' : ''} ${etichettaSing.toLowerCase()} inserit${genere === 'f' ? 'a' : 'o'}.`)];
   void m;
-  return scheda(etichettaPlur, e ? 'Le persone a cui si attribuiscono compensi e provvigioni. Disattiva chi non lavora più con te: resta nello storico ma non viene più proposto.' : 'Le zone di lavoro: servono per il cumulo mensile, per gli scaglioni e per le statistiche. Ogni pratica appartiene a una zona.', form, h('div', null, ...lista));
+  return scheda(etichettaPlur, e ? 'Le persone a cui si attribuiscono compensi e provvigioni. Disattiva chi non lavora più con te: resta nello storico ma non viene più proposto.' : 'Le zone di lavoro: servono per il cumulo mensile, per gli scaglioni e per le statistiche. Ogni pratica appartiene a una zona, e la zona decide come si divide la pratica tra i collaboratori (pulsante «Ripartizione»).', form, h('div', null, ...lista));
 }
 
 function modificaAnagrafica(tipo, r, etichettaSing) {
@@ -87,11 +98,11 @@ function modificaAnagrafica(tipo, r, etichettaSing) {
 
 async function eliminaAnagrafica(tipo, r, usi, etichettaSing, genere) {
   const e = tipo === 'collaboratore';
-  const inUso = e ? (usi.pratiche || usi.liquidazioni) : usi.pratiche;
+  const inUso = e ? (usi.pratiche || usi.liquidazioni || usi.zone) : usi.pratiche;
   if (inUso) {
     await apriModale({
       titolo: `${etichettaSing} in uso: non si può eliminare`, icona: 'triangle-alert', tonoIcona: 'attenzione',
-      contenuto: h('div', null, h('p', null, e ? `${r.nome} compare in ${usi.pratiche} pratiche e ha ${usi.liquidazioni} liquidazioni registrate.` : `La zona “${r.nome}” è usata da ${usi.pratiche} pratiche.`), h('p', { style: { marginTop: '8px' } }, `Eliminarl${genere === 'f' ? 'a' : 'o'} farebbe perdere lo storico. Puoi disattivarl${genere === 'f' ? 'a' : 'o'}: non verrà più proposto${genere === 'f' ? 'a' : ''} ma i dati restano.`)),
+      contenuto: h('div', null, h('p', null, e ? `${r.nome} compare in ${usi.pratiche} pratiche e ha ${usi.liquidazioni} liquidazioni registrate${usi.zone ? ` e fa parte della ripartizione di ${usi.zone} ${usi.zone === 1 ? 'zona' : 'zone'}` : ''}.` : `La zona “${r.nome}” è usata da ${usi.pratiche} pratiche.`), h('p', { style: { marginTop: '8px' } }, `Eliminarl${genere === 'f' ? 'a' : 'o'} farebbe perdere lo storico. Puoi disattivarl${genere === 'f' ? 'a' : 'o'}: non verrà più proposto${genere === 'f' ? 'a' : ''} ma i dati restano.`)),
       azioni: [{ id: 'chiudi', etichetta: 'Chiudi', tipo: 'secondario' }, ...((e ? r.attivo : r.attiva) ? [{ id: 'dis', etichetta: 'Disattiva', tipo: 'primario', onClick: async () => { if (e) await aggiornaCollaboratore(app.archivio, r.id, { attivo: false }); else await aggiornaZona(app.archivio, r.id, { attiva: false }); notificaOk(`${r.nome} disattivat${genere === 'f' ? 'a' : 'o'}.`); } }] : [])],
     }).risultato;
     return;
@@ -289,11 +300,11 @@ function sezioneRipartizione() {
   }
   function aggTot() {
     const t = righe.reduce((s, r) => s + (Number(r.pct) || 0), 0);
-    totale.textContent = righe.length ? `Totale quote: ${pct(Math.round(t * 100) / 100)}` : 'Nessuna ripartizione predefinita: ogni pratica va assegnata a mano.';
+    totale.textContent = righe.length ? `Totale quote: ${pct(Math.round(t * 100) / 100)}` : 'Nessuna ripartizione predefinita: le zone senza una ripartizione propria restano senza assegnazione.';
     totale.style.color = righe.length && Math.abs(t - 100) > 0.005 ? 'var(--crit-text)' : '';
   }
   disegna();
-  return scheda('Ripartizione predefinita', 'Come si dividono di solito le pratiche tra i collaboratori. Viene proposta in automatico quando inserisci una nuova pratica (potrai sempre cambiarla).',
+  return scheda('Ripartizione predefinita', 'Come si dividono le pratiche tra i collaboratori nelle zone che non hanno una ripartizione propria (quella di ogni zona si imposta da Zone → Ripartizione). Si applica da sola a ogni nuova pratica.',
     box, h('div', { style: { marginTop: '12px', display: 'grid', gap: '10px' } }, totale,
       h('div', { class: 'riga-azioni' },
         h('button', { type: 'button', class: 'btn btn-secondario btn-sm', onclick: () => { const rest = attivi.filter((c) => !righe.some((r) => r.id === c.id)); if (!rest.length) { notificaErrore('Hai già aggiunto tutti i collaboratori attivi.'); return; } righe.push({ id: rest[0].id, pct: Math.max(0, Math.round((100 - righe.reduce((s, r) => s + (Number(r.pct) || 0), 0)) * 100) / 100) }); disegna(); } }, icona('plus', { dimensione: 15 }), 'Aggiungi collaboratore'),

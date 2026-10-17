@@ -118,6 +118,21 @@ export async function calcolaAvvisi() {
     });
   }
 
+  // 7) zone senza ripartizione: le nuove pratiche di quelle zone resterebbero senza assegnazione ai collaboratori
+  const attivi = m.collaboratori.filter((c) => c.attivo);
+  const sommaPredefinita = (imp['ripartizione.predefinita'] || []).filter((x) => attivi.some((c) => c.id === x.collaboratoreId)).reduce((s, x) => s + Math.round(x.percentuale * 100), 0);
+  if (attivi.length > 1 && sommaPredefinita !== 10000) {
+    const senza = m.zone.filter((z) => z.attiva && !(z.ripartizione || []).length);
+    if (senza.length) {
+      lista.push({
+        id: 'zone-senza-ripartizione', livello: 'avviso', icona: 'handshake',
+        titolo: senza.length === 1 ? '1 zona senza ripartizione' : `${senza.length} zone senza ripartizione`,
+        testo: `Le nuove pratiche di ${senza.slice(0, 3).map((z) => z.nome).join(', ')}${senza.length > 3 ? ' e altre' : ''} non saprebbero come dividere i compensi tra i collaboratori. Imposta la ripartizione di ogni zona.`,
+        azione: { etichetta: 'Imposta le ripartizioni', href: '#/impostazioni?sezione=zone' },
+      });
+    }
+  }
+
   return lista.sort((a, b) => ORDINE[a.livello] - ORDINE[b.livello]);
 }
 

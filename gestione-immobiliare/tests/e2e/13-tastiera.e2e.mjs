@@ -75,11 +75,13 @@ describe('Tastiera: Invio nei moduli e nelle finestre', () => {
     const p = app.pagina;
     const n0 = await valoreSql(p, 'SELECT COUNT(*) FROM pratiche');
     await vai(p, '#/nuova');
-    await p.getByLabel(/^Indirizzo dell'immobile/).fill('Via Tastiera 1');
-    await conNavigazione(p, () => p.getByLabel(/^Indirizzo dell'immobile/).press('Enter'));
+    await p.locator('#form-pratica').getByLabel(/^Zona\*?$/).selectOption({ label: 'Centro' });
+    const contanti = p.locator('#pagamenti-venditore').getByLabel('Contanti');
+    await contanti.fill('1.000');
+    await conNavigazione(p, () => contanti.press('Enter'));
     assert.match(await p.evaluate(() => location.hash), /^#\/pratiche\/\d+$/);
     assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM pratiche'), n0 + 1);
-    assert.equal(await valoreSql(p, "SELECT immobile_indirizzo FROM pratiche WHERE immobile_indirizzo = 'Via Tastiera 1'"), 'Via Tastiera 1');
+    assert.equal(await valoreSql(p, 'SELECT venditore_contanti_cent FROM pratiche ORDER BY id DESC LIMIT 1'), 100000);
   });
 
   test('Nuova zona dal modulo della pratica: Invio crea la zona e la sceglie', async () => {
@@ -93,7 +95,7 @@ describe('Tastiera: Invio nei moduli e nelle finestre', () => {
     await attendiNotifica(p, /Zona “Zona Tastiera” creata/);
     assert.equal(await finestra(p).count(), 0);
     assert.equal(await valoreSql(p, "SELECT COUNT(*) FROM zone WHERE nome = 'Zona Tastiera'"), 1);
-    assert.equal(await p.locator('#form-pratica').getByLabel(/^Zona$/).locator('option:checked').innerText(), 'Zona Tastiera');
+    assert.equal(await p.locator('#form-pratica').getByLabel(/^Zona\*?$/).locator('option:checked').innerText(), 'Zona Tastiera');
     // il modulo ha ora modifiche non salvate: si esce confermando
     await p.evaluate(() => { location.hash = '#/'; });
     await p.waitForFunction(() => document.querySelector('dialog.modale[open]') || document.querySelector('#contenuto h1')?.textContent === 'Dashboard');

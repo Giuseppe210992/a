@@ -3,6 +3,7 @@ import { ErroreValidazione, ErroreOperazione } from './errori.js';
 import { registra } from './impostazioni.js';
 import { dataValida, oggi } from '../../core/dates.js';
 import { dataIt, eur } from '../../core/format.js';
+import { calcolaCompensi, CAMPI_PAGAMENTO, PARTI, MODALITA, campoPagamento } from '../calc/compensi.js';
 
 export const STATI = Object.freeze([
   { valore: 'in_corso', etichetta: 'In corso' },
@@ -35,6 +36,7 @@ export function leggiDati(db) {
     scaglioni: db.tutti('SELECT * FROM scaglioni ORDER BY zona_id, da_cent'),
     pratiche: db.tutti('SELECT * FROM pratiche ORDER BY id'),
     quote: db.tutti('SELECT * FROM quote ORDER BY pratica_id, collaboratore_id'),
+    zone_quote: db.tutti('SELECT * FROM zone_quote ORDER BY zona_id, collaboratore_id'),
     incassi: db.tutti('SELECT * FROM incassi ORDER BY data, id'),
     liquidazioni: db.tutti('SELECT * FROM liquidazioni ORDER BY data, id'),
     righe: db.tutti('SELECT * FROM liquidazioni_righe ORDER BY id'),
@@ -54,14 +56,32 @@ export function prossimoCodice(db, dataPratica = oggi()) {
   return `${anno}/${String(massimo + 1).padStart(3, '0')}`;
 }
 
+/**
+ * Rende uniforme una pratica in ingresso. Quello che non viene indicato prende un valore proposto:
+ * stato «conclusa», data della pratica = oggi, data del rogito = data della pratica (le pratiche si inseriscono
+ * a conclusione, nello stesso giorno). Per i dati passati esplicitamente come vuoti (null) non si inventa nulla.
+ *
+ * I compensi si indicano in due modi:
+ *   - a pagamenti (come nel modulo): importi di ciascuna parte in contanti, bonifico e assegno
+ *     (venditore_contanti_cent, ..., acquirente_assegno_cent); il compenso senza IVA si ricava da lì;
+ *   - il solo compenso senza IVA (compenso_venditore_cent, compenso_acquirente_cent), con l'IVA in cima.
+ */
 export function normalizzaPratica(input) {
   const cent = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
-  return {
+  const stato = input.stato === undefined ? 'conclusa' : input.stato;
+  const data_pratica = input.data_pratica === undefined ? oggi() : testo(input.data_pratica);
+  const data_rogito = input.data_rogito === undefined ? (stato === 'conclusa' ? data_pratica : null) : testo(input.data_rogito);
+  // il segno esplicito vince (una pratica vecchia riletta dal database ha i sei importi a zero ma NON è a pagamenti);
+  // se manca, si deduce dalla presenza degli importi pagati
+  const aPagamenti = input.compensi_da_pagamenti !== undefined && input.compensi_da_pagamenti !== null
+    ? !!Number(input.compensi_da_pagamenti)
+    : CAMPI_PAGAMENTO.some((c) => input[c] !== undefined && input[c] !== null && input[c] !== '');
+  const d = {
     id: input.id ?? null,
-    codice: testo(input.codice),
-    stato: input.stato,
-    data_pratica: testo(input.data_pratica),
-    data_rogito: testo(input.data_rogito),
+    codice: input.codice === undefined ? undefined : testo(input.codice),
+    stato,
+    data_pratica,
+    data_rogito,
     zona_id: input.zona_id === '' || input.zona_id === undefined ? null : input.zona_id,
     immobile_indirizzo: testo(input.immobile_indirizzo),
     immobile_comune: testo(input.immobile_comune),
@@ -70,11 +90,20 @@ export function normalizzaPratica(input) {
     prezzo_acquisto_cent: cent(input.prezzo_acquisto_cent),
     venditore: testo(input.venditore),
     acquirente: testo(input.acquirente),
+    compensi_da_pagamenti: aPagamenti ? 1 : 0,
     compenso_venditore_cent: cent(input.compenso_venditore_cent) ?? 0,
     compenso_acquirente_cent: cent(input.compenso_acquirente_cent) ?? 0,
     aliquota_iva: input.aliquota_iva === '' || input.aliquota_iva === undefined || input.aliquota_iva === null ? 22 : Number(input.aliquota_iva),
     note: testo(input.note),
   };
+  for (const c of CAMPI_PAGAMENTO) d[c] = aPagamenti ? (cent(input[c]) ?? 0) : 0;
+  if (aPagamenti) {
+    // il compenso senza IVA di ciascuna parte si ricava dai pagamenti (se i dati sono validi)
+    const c = calcolaCompensi(d);
+    d.compenso_venditore_cent = c.venditore.imponibileCent;
+    d.compenso_acquirente_cent = c.acquirente.imponibileCent;
+  }
+  return d;
 }
 
 /**
@@ -84,7 +113,8 @@ export function normalizzaPratica(input) {
  */
 export function controllaPratica(db, d, quote) {
   const errori = {};
-  if (!d.codice) errori.codice = 'Il codice pratica è obbligatorio.';
+  if (d.codice === undefined) errori.codice = 'Il codice pratica non è stato assegnato.';
+  else if (!d.codice) errori.codice = 'Il codice pratica è obbligatorio.';
   else if (d.codice.length > 30) errori.codice = 'Il codice è troppo lungo (massimo 30 caratteri).';
   else if (db.uno('SELECT id FROM pratiche WHERE codice = ? COLLATE NOCASE AND id <> ?', [d.codice, d.id ?? -1])) {
     errori.codice = 'Esiste già una pratica con questo codice.';
@@ -98,7 +128,6 @@ export function controllaPratica(db, d, quote) {
       errori.data_rogito = 'Il rogito non può essere precedente all\'apertura della pratica.';
     }
   }
-  if (!d.immobile_indirizzo) errori.immobile_indirizzo = 'Scrivi l\'indirizzo dell\'immobile.';
   if (d.zona_id != null && !db.uno('SELECT id FROM zone WHERE id = ?', [d.zona_id])) errori.zona_id = 'La zona scelta non esiste più.';
 
   const importo = (campo, etichetta) => {
@@ -109,8 +138,14 @@ export function controllaPratica(db, d, quote) {
   };
   importo('prezzo_vendita_cent', 'Prezzo di vendita');
   importo('prezzo_acquisto_cent', 'Prezzo di acquisto');
-  importo('compenso_venditore_cent', 'Compenso venditore');
-  importo('compenso_acquirente_cent', 'Compenso acquirente');
+  if (d.compensi_da_pagamenti) {
+    for (const parte of PARTI) {
+      for (const modo of MODALITA) importo(campoPagamento(parte.id, modo.id), `${parte.etichetta}, ${modo.etichetta.toLowerCase()}`);
+    }
+  } else {
+    importo('compenso_venditore_cent', 'Compenso venditore');
+    importo('compenso_acquirente_cent', 'Compenso acquirente');
+  }
   if (!Number.isFinite(d.aliquota_iva) || d.aliquota_iva < 0 || d.aliquota_iva > 100) errori.aliquota_iva = 'L\'aliquota IVA deve essere tra 0 e 100.';
 
   const visti = new Set();
@@ -131,6 +166,7 @@ export function salvaPratica(db, input, quote = []) {
   const d = normalizzaPratica(input);
   const q = quote.map((x) => ({ collaboratore_id: x.collaboratore_id, percentuale: Number(x.percentuale) }));
   return db.transazione(() => {
+    if (d.codice === undefined) d.codice = prossimoCodice(db, d.data_pratica); // numero progressivo automatico, mai chiesto all'utente
     controllaPratica(db, d, q);
     const t = adesso();
     let id = d.id;
@@ -147,20 +183,24 @@ export function salvaPratica(db, input, quote = []) {
       }
       db.esegui(
         `UPDATE pratiche SET codice=?, stato=?, data_pratica=?, data_rogito=?, zona_id=?, immobile_indirizzo=?, immobile_comune=?,
-           immobile_tipo=?, prezzo_vendita_cent=?, prezzo_acquisto_cent=?, venditore=?, acquirente=?, compenso_venditore_cent=?,
+           immobile_tipo=?, prezzo_vendita_cent=?, prezzo_acquisto_cent=?, venditore=?, acquirente=?, compensi_da_pagamenti=?,
+           ${CAMPI_PAGAMENTO.map((c) => `${c}=?`).join(', ')}, compenso_venditore_cent=?,
            compenso_acquirente_cent=?, aliquota_iva=?, note=?, aggiornato_il=? WHERE id=?`,
         [d.codice, d.stato, d.data_pratica, d.data_rogito, d.zona_id, d.immobile_indirizzo, d.immobile_comune, d.immobile_tipo,
-          d.prezzo_vendita_cent, d.prezzo_acquisto_cent, d.venditore, d.acquirente, d.compenso_venditore_cent,
+          d.prezzo_vendita_cent, d.prezzo_acquisto_cent, d.venditore, d.acquirente, d.compensi_da_pagamenti,
+          ...CAMPI_PAGAMENTO.map((c) => d[c]), d.compenso_venditore_cent,
           d.compenso_acquirente_cent, d.aliquota_iva, d.note, t, id],
       );
       db.esegui('DELETE FROM quote WHERE pratica_id = ?', [id]);
     } else {
       db.esegui(
         `INSERT INTO pratiche (codice, stato, data_pratica, data_rogito, zona_id, immobile_indirizzo, immobile_comune, immobile_tipo,
-           prezzo_vendita_cent, prezzo_acquisto_cent, venditore, acquirente, compenso_venditore_cent, compenso_acquirente_cent,
-           aliquota_iva, note, creato_il, aggiornato_il) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           prezzo_vendita_cent, prezzo_acquisto_cent, venditore, acquirente, compensi_da_pagamenti, ${CAMPI_PAGAMENTO.join(', ')},
+           compenso_venditore_cent, compenso_acquirente_cent,
+           aliquota_iva, note, creato_il, aggiornato_il) VALUES (${new Array(12 + 1 + CAMPI_PAGAMENTO.length + 2 + 4).fill('?').join(',')})`,
         [d.codice, d.stato, d.data_pratica, d.data_rogito, d.zona_id, d.immobile_indirizzo, d.immobile_comune, d.immobile_tipo,
-          d.prezzo_vendita_cent, d.prezzo_acquisto_cent, d.venditore, d.acquirente, d.compenso_venditore_cent,
+          d.prezzo_vendita_cent, d.prezzo_acquisto_cent, d.venditore, d.acquirente, d.compensi_da_pagamenti,
+          ...CAMPI_PAGAMENTO.map((c) => d[c]), d.compenso_venditore_cent,
           d.compenso_acquirente_cent, d.aliquota_iva, d.note, t, t],
       );
       id = db.ultimoId();
@@ -193,7 +233,8 @@ export function eliminaPratica(db, id) {
       );
     }
     db.esegui('DELETE FROM pratiche WHERE id = ?', [id]);
-    registra(db, 'pratica_eliminata', `${p.codice} - ${p.immobile_indirizzo} (${dett.incassi} incassi eliminati)`);
+    const zona = p.zona_id != null ? db.valore('SELECT nome FROM zone WHERE id = ?', [p.zona_id]) : null;
+    registra(db, 'pratica_eliminata', `${p.codice} - ${p.immobile_indirizzo || (zona ? `zona ${zona}` : 'senza zona')} (${dett.incassi} incassi eliminati)`);
   });
 }
 

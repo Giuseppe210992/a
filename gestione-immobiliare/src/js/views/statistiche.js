@@ -50,7 +50,7 @@ export const statistiche = {
     gCompInc.aggiorna({
       spec: { titolo: 'Compensi e incassi', categorie: cat(sCo), serie: [{ id: 'co', nome: 'Compensi (imponibile)', colore: 1, valori: sCo.serie[0].valori }, { id: 'in', nome: 'Incassi (IVA inclusa)', colore: 2, valori: sIn.serie[0]?.valori ?? sCo.serie[0].valori.map(() => 0) }], formato: FORMATO_EURO, altezza: 270, nomeCategorie: nomeCat, totali: { co: sCo.serie[0].totale, in: sIn.serie[0]?.totale ?? 0 } },
       cifre: [{ etichetta: 'Compensi', valore: eur(r.compensiCent) }, { etichetta: 'Incassi nel periodo', valore: eur(sIn.serie[0]?.totale ?? 0) }],
-      nota: 'Le due serie non sono confrontabili riga per riga: i compensi sono senza IVA e seguono il rogito, gli incassi sono comprensivi di IVA e seguono la data del pagamento.',
+      nota: 'Le due serie non sono confrontabili riga per riga: i compensi sono senza IVA e seguono il rogito, gli incassi sono quelli ricevuti (contanti già senza IVA, bonifico e assegno con IVA compresa) e seguono la data del pagamento.',
       vuoto: sCo.serie[0].totale === 0 && (sIn.serie[0]?.totale ?? 0) === 0 ? 'Nessun compenso né incasso nel periodo.' : null,
     });
 

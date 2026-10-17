@@ -20,7 +20,6 @@ export function stimaPratica(archivio, bozza, quote, opzioni) {
     stato: 'conclusa',
     data_pratica: n.data_pratica || oggi(),
     data_rogito: n.data_rogito || (simulata ? oggi() : n.data_pratica || oggi()),
-    immobile_indirizzo: n.immobile_indirizzo || '(da indicare)',
     aggiornato_il: new Date().toISOString(),
     creato_il: new Date().toISOString(),
   });

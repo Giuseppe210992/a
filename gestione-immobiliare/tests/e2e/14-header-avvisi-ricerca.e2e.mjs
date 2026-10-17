@@ -228,11 +228,11 @@ describe('Ricerca rapida con la tastiera', () => {
 
   test('con più di otto risultati Invio li mostra tutti nell\'archivio; Maiusc+Invio lo fa sempre', async () => {
     const p = app.pagina;
-    let campo = await cerca(p, 'Minturno');
+    let campo = await cerca(p, 'Roccaverde');
     assert.ok(await voci(p).count() === 8);
     assert.match(rimuoviSpazi(await p.locator('.risultati-ricerca .ris-piede').last().innerText()), /Mostrati 8 su 13\. Premi Invio per vederli tutti nell'archivio/);
     await campo.press('Enter');
-    await p.waitForFunction(() => location.hash === '#/pratiche?q=Minturno');
+    await p.waitForFunction(() => location.hash === '#/pratiche?q=Roccaverde');
     await p.waitForFunction(() => /13 pratiche/.test(document.querySelector('#contenuto').innerText));
     assert.equal(await p.locator('#ricerca-rapida').inputValue(), '');
     await vai(p, '#/');

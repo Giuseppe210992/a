@@ -144,8 +144,12 @@ describe('Menu delle azioni, campo data e notifiche con il pulsante', () => {
 
   test('Campo data: le barre compaiono da sole, le lettere vengono tolte, il calendario si apre e la data scelta compare', async () => {
     const p = app.pagina;
-    await vai(p, '#/nuova');
-    const data = p.locator('#form-pratica').getByLabel('Data di apertura');
+    // il campo data si usa nelle finestre (qui «Registra un incasso»): il modulo della pratica non ha più date, è sempre quella di oggi
+    await vai(p, '#/');
+    await p.click('#op-incasso');
+    const f = finestra(p);
+    await f.waitFor();
+    const data = f.getByLabel('Data dell\'incasso');
     await data.fill('');
     await data.pressSequentially('20102026');
     assert.equal(await data.inputValue(), '20/10/2026');
@@ -161,18 +165,16 @@ describe('Menu delle azioni, campo data e notifiche con il pulsante', () => {
       const orig = HTMLInputElement.prototype.showPicker;
       HTMLInputElement.prototype.showPicker = function () { window.__selettori += 1; return orig.call(this); };
     });
-    await p.locator('#form-pratica').getByRole('button', { name: 'Scegli dal calendario' }).first().click();
+    await f.getByRole('button', { name: 'Scegli dal calendario' }).first().click();
     assert.equal(await p.evaluate(() => window.__selettori), 1);
     // quando nel calendario si sceglie un giorno, il campo mostra la data in italiano
     await p.evaluate(() => {
-      const nativo = document.querySelector('#form-pratica .data-nativa');
+      const nativo = document.querySelector('dialog.modale[open] .data-nativa');
       nativo.value = '2026-11-05';
       nativo.dispatchEvent(new Event('change', { bubbles: true }));
     });
     assert.equal(await data.inputValue(), '05/11/2026');
-    await p.evaluate(() => { location.hash = '#/'; });
-    await p.waitForFunction(() => document.querySelector('dialog.modale[open]') || document.querySelector('#contenuto h1')?.textContent === 'Dashboard');
-    if (await finestra(p).count()) await bottoneFinestra(p, 'Esci senza salvare').click();
+    await bottoneFinestra(p, 'Annulla').click();
   });
 
   test('Ripristino di una copia: la notifica ha il pulsante "Vai alla dashboard"; una copia danneggiata viene rifiutata con una spiegazione', async () => {
@@ -288,14 +290,14 @@ describe('Schermo stretto, tante zone e scheda senza scaglioni', () => {
     try {
       const p = app.pagina;
       await vai(p, '#/nuova');
-      const indirizzo = p.getByLabel(/^Indirizzo dell'immobile/);
+      const indirizzo = p.locator('#pagamenti-venditore').getByLabel('Contanti');
       await indirizzo.click(); // il browser chiede conferma solo se l'utente ha davvero usato la pagina
-      await indirizzo.pressSequentially('Via Non Salvata 1');
+      await indirizzo.pressSequentially('1234');
       const [dialogo] = await Promise.all([p.waitForEvent('dialog'), p.close({ runBeforeUnload: true })]);
       assert.equal(dialogo.type(), 'beforeunload');
       await dialogo.dismiss();
       assert.equal(p.isClosed(), false, 'scegliendo di restare, la pagina resta aperta e il testo scritto c\'è ancora');
-      assert.equal(await indirizzo.inputValue(), 'Via Non Salvata 1');
+      assert.equal(await indirizzo.inputValue(), '1234');
     } finally { await app.chiudi(); }
   });
 

@@ -35,7 +35,7 @@ Si apre un archivio **senza pratiche né zone**: nessun dato dimostrativo. Ci so
 
 Gli scaglioni sono già impostati con quelli che mi hai indicato. Vai in **Impostazioni**, controllali e completa il resto:
 
-1. **Zone** → aggiungi le tue zone di lavoro (ad esempio i comuni o i quartieri in cui operi).
+1. **Zone** → aggiungi le tue zone di lavoro (ad esempio i quartieri o le aree in cui operi) e, per ognuna, premi **Ripartizione**: scrivi quanta parte delle pratiche di quella zona va a Luca e quanta a Giuseppe (la somma deve fare 100%, ad esempio 60 + 40 oppure 100 a uno solo). Da quel momento ogni nuova pratica di quella zona si divide **da sola**.
 2. **Scaglioni e percentuali** → controlla le cinque righe: da 0,00 € il 5%, da 2.600,01 € l'8%, da 5.200,01 € l'11%, da 7.800,01 € il 15%, da 13.000,01 € il 20%. Le soglie partono da un centesimo in più perché «fino a 2.600 €» comprende 2.600,00 €: con quella cifra precisa si è ancora al 5%. Se sono sbagliate le cambi tu; con **Ripristina gli scaglioni dell'agenzia** torni a questi.
 3. **Metodo di calcolo** → scegli le tre cose che incidono sugli importi (ognuna ha una spiegazione e un esempio con i tuoi numeri):
    - *Scaglione raggiunto* oppure *Progressivo (a fasce)*;
@@ -48,22 +48,26 @@ Gli scaglioni sono già impostati con quelli che mi hai indicato. Vai in **Impos
 | 3.1 | Dopo aver cambiato il metodo compare «Impostazione salvata» | |
 | 3.2 | L'esempio in *Metodo di calcolo* coincide con il tuo conto a mano per lo stesso cumulo | |
 | 3.3 | In *Scaglioni e percentuali* le cinque righe sono quelle che hai indicato (5%, 8%, 11%, 15%, 20%) e sotto, in «Come vengono lette le soglie», si legge «da 0,00 € a 2.600,00 € → 5%», … «da 13.000,01 € in su → 20%» | |
+| 3.5 | In *Zone*, accanto a ogni zona si legge la ripartizione («Luca 60% · Giuseppe 40%»); una zona senza ripartizione è segnalata come «NON IMPOSTATA» (o «predefinita» se hai impostato quella generale) | |
 | 3.4 | Scrivendo 10.000 in «Prova con un cumulo mensile di» il programma dà **1.500,00 €** con *scaglione raggiunto* e **954,00 €** con *progressivo* (se il tuo conto a mano è diverso, dimmi qual è) | |
 
 ## 4. Inserisci una pratica (vera o di prova)
 
-**+ Nuova pratica** → compila almeno: data, zona, indirizzo dell'immobile, prezzo di vendita, compensi, ripartizione tra Luca e Giuseppe (la somma deve fare 100%) → **Salva**.
+**+ Nuova pratica** → il modulo è corto: scegli la **zona**, scrivi il **prezzo di vendita** e, per venditore e acquirente, **quanto ha pagato ciascuno** in contanti, bonifico e assegno. Non ci sono codice, stato, date né via dell'immobile: il codice lo dà il programma (`AAAA/001`, `AAAA/002`…), la pratica è sempre «conclusa» e la data è quella di oggi. La ripartizione tra Luca e Giuseppe compare da sola, secondo la zona. → **Salva**.
+
+Come si leggono gli importi: i **contanti** sono già **senza IVA**; **bonifico** e **assegno** sono **IVA compresa** (il programma toglie l'IVA). Esempio con IVA 22%: venditore 3.660 € di bonifico + acquirente 2.000 € in contanti → compenso senza IVA **5.000 €**, IVA **660 €**, pagato **5.660 €**.
 
 | # | Cosa controllare | Esito |
 |---|---|---|
-| 4.1 | Mentre scrivi, il riepilogo (compensi, IVA, totale, provvigioni stimate) si aggiorna da solo | |
-| 4.2 | Se lasci fuori un dato, la pratica si salva lo stesso e viene segnalata come «incompleta» (non perdi mai quello che hai scritto) | |
-| 4.3 | Dopo il salvataggio la pratica compare in **Archivio pratiche** e nella tabella «Ultime pratiche» della dashboard; cliccando la riga si apre la scheda | |
-| 4.4 | I 6 riquadri della dashboard cambiano e coincidono con i tuoi conti | |
-| 4.5 | Dalla scheda: **Registra incasso** (importo precompilato) e **Registra liquidazione** funzionano e i numeri si aggiornano | |
-| 4.6 | **Cumulo mensile per zona** mostra lo scaglione raggiunto e la percentuale; coincide con il tuo conto | |
+| 4.1 | Mentre scrivi, il riepilogo (compenso senza IVA, IVA, totale pagato, provvigioni stimate) si aggiorna da solo; con l'esempio sopra legge 5.000 € / 660 € / 5.660 € | |
+| 4.2 | Scegliendo la zona compare la ripartizione automatica (ad esempio «Luca 60% · Giuseppe 40%»); se la zona non ne ha una, il modulo lo dice e al salvataggio chiede conferma | |
+| 4.3 | Dopo il salvataggio la pratica compare in **Archivio pratiche** e nella tabella «Ultime pratiche» della dashboard; cliccando la riga si apre la scheda, che mostra zona, pagamenti, compenso senza IVA, IVA e provvigioni | |
+| 4.4 | I 6 riquadri della dashboard cambiano e coincidono con i tuoi conti (ricorda: il pagato è già contato come incassato; «Pratiche in corso» resta a zero perché le pratiche si inseriscono a conclusione) | |
+| 4.5 | Dalla scheda: **Registra incasso** (la finestra mostra il residuo da incassare, che è 0 se le parti hanno già pagato tutto) e **Registra liquidazione** funzionano e i numeri si aggiornano | |
+| 4.6 | **Cumulo mensile per zona** mostra lo scaglione raggiunto e la percentuale; coincide con il tuo conto (compenso **senza IVA** di tutte le pratiche del mese nella stessa zona, per collaboratore secondo la ripartizione) | |
 | 4.7 | Nelle finestre semplici (Registra incasso, Nuova zona, modifiche) scrivi il valore e premi **Invio**: fa quello che fa il pulsante principale. Nella liquidazione a più righe Invio **non** registra il pagamento (serve il pulsante) | |
-| 4.8 | **Ricerca rapida** (in alto, oppure premi `/`): scrivi una parola, scorri con le frecce, Invio apre la pratica; Maiusc+Invio mostra tutte le corrispondenze nell'archivio | |
+| 4.8 | **Ricerca rapida** (in alto, oppure premi `/`): scrivi una parola (codice, zona, nome del venditore o dell'acquirente), scorri con le frecce, Invio apre la pratica; Maiusc+Invio mostra tutte le corrispondenze nell'archivio | |
+| 4.9 | Provando a cambiare le percentuali della ripartizione di una zona, le pratiche **già inserite** restano come sono; valgono per quelle nuove | |
 
 ## 5. Chiudi e riapri (la prova più importante)
 

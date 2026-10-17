@@ -13,7 +13,7 @@ import { creaBackup, esportaArchivio, leggiFileDaImportare, applicaImportazione 
 import { csvPratiche, csvProvvigioni, csvIncassi, csvLiquidazioni, codificaTesto, nomeFile } from '../data/esporta.js';
 import { concluseNelContesto } from '../data/calc/aggregati.js';
 
-const etichettaPratica = (p) => `${p.codice} — ${p.immobile_indirizzo}`;
+const etichettaPratica = (p) => `${p.codice} — ${p.descrizione}`;
 
 // ------------------------------------------------------------------ incasso
 
@@ -35,6 +35,9 @@ export function apriDialogoIncasso({ praticaId = null } = {}) {
   const importo = campoImporto({ etichetta: 'Importo incassato (IVA inclusa)', obbligatorio: true });
   const pagante = campoSelezione({ etichetta: 'Pagato da', vuoto: 'Non indicato', opzioni: PAGANTI.map((x) => ({ valore: x, etichetta: x })) });
   const metodo = campoSelezione({ etichetta: 'Metodo di pagamento', vuoto: 'Non indicato', opzioni: METODI_PAGAMENTO.map((x) => ({ valore: x, etichetta: x })) });
+  // I contanti si scrivono già senza IVA; bonifico e assegno con l'IVA compresa.
+  const etichettaImporto = importo.el.querySelector('label');
+  metodo.input.addEventListener('change', () => { etichettaImporto.firstChild.textContent = metodo.get() === 'Contanti' ? 'Importo incassato (contanti, già senza IVA)' : 'Importo incassato (IVA inclusa)'; });
   const note = campoAreaTesto({ etichetta: 'Note', righe: 2, maxlength: 400 });
   const riepilogo = h('div', { class: 'riepilogo-calcolo', 'aria-live': 'polite' });
   const riempiResiduo = h('button', { type: 'button', class: 'btn btn-secondario btn-sm', onclick: () => {
@@ -50,7 +53,7 @@ export function apriDialogoIncasso({ praticaId = null } = {}) {
     const nuovo = importo.get() || 0;
     const residuoDopo = p.totaleLordoCent - p.incassatoCent - nuovo;
     monta(riepilogo,
-      h('div', { class: 'riga' }, h('span', null, 'Totale dovuto (compensi + IVA)'), h('span', { class: 'valore' }, eur(p.totaleLordoCent))),
+      h('div', { class: 'riga' }, h('span', null, p.compensi.daPagamenti ? 'Totale pagato alla conclusione' : 'Totale dovuto (compensi + IVA)'), h('span', { class: 'valore' }, eur(p.totaleLordoCent))),
       h('div', { class: 'riga' }, h('span', null, 'Già incassato'), h('span', { class: 'valore' }, eur(p.incassatoCent))),
       h('div', { class: 'riga totale' }, h('span', null, nuovo > 0 ? 'Residuo dopo questo incasso' : 'Ancora da incassare'), h('span', { class: `valore ${residuoDopo < 0 ? 'negativo' : ''}` }, eur(nuovo > 0 ? residuoDopo : p.daIncassareCent))),
       residuoDopo < 0 ? h('div', { class: 'nota attenzione', style: { marginTop: '6px' } }, icona('triangle-alert', { dimensione: 18 }), h('span', null, `L'importo supera il dovuto di ${eur(-residuoDopo)}. Puoi registrarlo lo stesso (ad esempio un acconto per spese), ma verrà segnalato tra gli avvisi.`)) : null,
@@ -140,7 +143,7 @@ export function apriDialogoLiquidazione({ collaboratoreId = null, praticaId = nu
       righe.push({ v, p, check, campo });
       return h('tr', null,
         h('td', { class: 'centro' }, check),
-        h('td', null, h('span', { class: 'forte' }, p.codice), h('span', { class: 'sottotesto' }, `${p.immobile_indirizzo} · ${dataIt(p.dataRif)}`)),
+        h('td', null, h('span', { class: 'forte' }, p.codice), h('span', { class: 'sottotesto' }, `${p.descrizione} · ${dataIt(p.dataRif)}`)),
         h('td', { class: 'num' }, eur(v.maturataCent)),
         h('td', { class: 'num' }, eur(v.liquidataCent)),
         h('td', { class: 'num forte' }, anticipo ? h('span', { class: 'badge badge-corso' }, 'In corso') : eur(v.daLiquidareCent)),

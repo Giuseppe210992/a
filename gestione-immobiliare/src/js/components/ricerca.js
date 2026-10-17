@@ -101,7 +101,7 @@ export function creaRicerca() {
     }
     totaleTrovate = totale;
     if (!elenco.length) {
-      lista.append(h('div', { class: 'ris-piede', style: { border: 0, margin: 0 } }, q ? `Nessun risultato per “${q}”. Prova con il codice, una via, il nome di un cliente o una zona.` : 'Non ci sono ancora pratiche. Premi “+ Nuova pratica” per inserire la prima.'));
+      lista.append(h('div', { class: 'ris-piede', style: { border: 0, margin: 0 } }, q ? `Nessun risultato per “${q}”. Prova con il codice, la zona o il nome di un cliente.` : 'Non ci sono ancora pratiche. Premi “+ Nuova pratica” per inserire la prima.'));
       apri();
       return;
     }
@@ -111,7 +111,7 @@ export function creaRicerca() {
       const b = h('button', { type: 'button', class: 'ris-voce', role: 'option', 'aria-selected': 'false', onclick: () => vaiAPratica(p) },
         icona('file-plus', { dimensione: 18 }),
         h('span', { class: 'ris-testo' },
-          h('span', { class: 'ris-principale' }, ...evidenzia(`${p.codice} — ${p.immobile_indirizzo}`, termini)),
+          h('span', { class: 'ris-principale' }, ...evidenzia(`${p.codice} — ${p.descrizione}`, termini)),
           h('span', { class: 'ris-secondario' }, sotto),
           trovato ? h('span', { class: 'ris-secondario' }, `${trovato.etichetta}: `, ...evidenzia(trovato.testo, termini)) : null,
         ),

@@ -25,12 +25,12 @@ describe('Archivio pratiche', () => {
     const p = app.pagina;
     assert.match(rimuoviSpazi(await p.locator('#contenuto .pagina-testa p').innerText()), /^15 pratiche$/);
     const intest = await p.$$eval('#tabella-archivio thead th', (a) => a.map((x) => x.textContent.trim()));
-    assert.deepEqual(intest.slice(0, 9).map((x) => x.replace(/[▲▼]/g, '')), ['Codice', 'Data', 'Immobile', 'Zona', 'Stato', 'Collaboratori', 'Prezzo vendita', 'Compensi', 'Incassato']);
+    assert.deepEqual(intest.slice(0, 9).map((x) => x.replace(/[▲▼]/g, '')), ['Codice', 'Data', 'Pratica', 'Zona', 'Stato', 'Collaboratori', 'Prezzo vendita', 'Compensi', 'Incassato']);
     const righe = await celle(p);
     assert.equal(righe.length, 15);
     const r11 = righe.find((r) => r[0].startsWith('2026/011'));
     assert.equal(r11[1], '09/10/2026');
-    assert.match(r11[2], /^Via Mazzini 9 Minturno · Appartamento/);
+    assert.match(r11[2], /^Via Mazzini 9 Roccaverde · Appartamento/);
     assert.match(r11[2], /Ven\. Venditore 11 · Acq\. Acquirente 11/);
     assert.deepEqual([r11[3], r11[4], r11[5]], ['Centro', 'Conclusa', 'Luca']);
     assert.match(r11[2] + r11[6], /200\.000/, 'il prezzo di vendita compare (in colonna o accanto all\'immobile se lo spazio è poco)');
@@ -87,7 +87,7 @@ describe('Archivio pratiche', () => {
     assert.match(rimuoviSpazi(await p.locator('#contenuto .pagina-testa p').innerText()), /^1 pratica su 15$/);
     await cerca.fill('acquirente 11'); // tutte le parole devono comparire: 'acquirente' e '11'
     await attendiCodici('2026/011');
-    await cerca.fill('minturno');
+    await cerca.fill('roccaverde');
     await p.waitForFunction(() => document.querySelectorAll('#tabella-archivio tbody tr').length === 13);
     await cerca.fill('via roma');
     await attendiCodici('2026/001');
@@ -331,7 +331,7 @@ describe('Scheda della pratica', () => {
     await vai(p, `#/pratiche/${await idPratica(p, '2026/003')}`);
     assert.match(rimuoviSpazi(await p.locator('#contenuto h1').innerText()), /^Via Garibaldi 8 Conclusa$/);
     const t = rimuoviSpazi(await p.locator('#contenuto').innerText());
-    assert.match(t, /Pratica 2026\/003 · Minturno · Appartamento · Zona Centro/);
+    assert.match(t, /Pratica 2026\/003 · Roccaverde · Appartamento · Zona Centro/);
     assert.match(t, /Prezzo di vendita 95\.000,00 €/);
     assert.match(t, /Differenza −5\.000,00 € \(−5%\)/);
     assert.match(t, /Venditore Venditore 3/);

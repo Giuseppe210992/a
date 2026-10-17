@@ -35,7 +35,8 @@ describe('Provvigioni: esportazioni CSV di liquidazioni e incassi', () => {
     const file = await scarica(p, () => p.getByRole('button', { name: 'Esporta in CSV' }).click());
     assert.match(file.nome, /Incassi.*\.csv$/);
     const csv = leggiCsv(file.bytes);
-    assert.deepEqual(csv.intestazioni, ['Data', 'Codice pratica', 'Immobile', 'Importo (IVA inclusa)', 'Pagante', 'Metodo', 'Note']);
+    assert.deepEqual(csv.intestazioni, ['Data', 'Codice pratica', 'Pratica', 'Importo', 'IVA', 'Pagante', 'Metodo', 'Note']);
+    assert.ok(csv.righe.every((r) => r[4] === 'compresa'), 'gli incassi registrati a parte sono sempre indicati IVA compresa');
     assert.equal(csv.righe.length, await valoreSql(p, 'SELECT COUNT(*) FROM incassi'));
     assert.equal(csv.righe.reduce((s, r) => s + centesimi(r[3]), 0), await valoreSql(p, 'SELECT SUM(importo_cent) FROM incassi'));
     await attendiNotifica(p, /Incassi esportati in CSV/);
@@ -189,14 +190,14 @@ describe('Ripartizione predefinita, zone e quote nel modulo della pratica', () =
     // "Nessuna ripartizione predefinita" svuota l'elenco
     await p.getByRole('button', { name: 'Nessuna ripartizione predefinita' }).click();
     assert.equal(await p.locator('.quota-riga').count(), 0);
-    assert.match(rimuoviSpazi(await p.locator('.imp-corpo').innerText()), /Nessuna ripartizione predefinita: ogni pratica va assegnata a mano/);
+    assert.match(rimuoviSpazi(await p.locator('.imp-corpo').innerText()), /Nessuna ripartizione predefinita: le zone senza una ripartizione propria restano senza assegnazione/);
     await p.click('#salva-ripartizione');
     await attendiNotifica(p, /Ripartizione predefinita salvata/);
   });
 
-  test('Nuova pratica: i pulsanti delle quote (Tutto a…, Parti uguali, predefinita), il cambio di collaboratore e la riga vuota', async () => {
+  test('Nuova pratica: la ripartizione segue la zona; la predefinita 70/30 vale solo per le zone che non ne hanno una propria', async () => {
     const p = app.pagina;
-    // ripartizione predefinita 70/30 per provare il pulsante dedicato
+    // ripartizione predefinita 70/30 (dalle Impostazioni)
     await apriRipartizione(p);
     await p.getByRole('button', { name: 'Aggiungi collaboratore' }).click();
     await p.getByRole('button', { name: 'Aggiungi collaboratore' }).click();
@@ -204,32 +205,28 @@ describe('Ripartizione predefinita, zone e quote nel modulo della pratica', () =
     await p.getByLabel('Quota 2', { exact: true }).fill('30');
     await p.click('#salva-ripartizione');
     await attendiNotifica(p, /Ripartizione predefinita salvata/);
+    // una zona senza ripartizione propria
+    await vai(p, '#/impostazioni?sezione=zone');
+    await p.getByLabel(/^Nome della zona/).fill('Zona libera');
+    await p.getByRole('button', { name: 'Aggiungi zona' }).click();
+    await attendiNotifica(p, /Zona “Zona libera” aggiunta/);
 
     await vai(p, '#/nuova');
     await p.waitForSelector('#form-pratica');
-    assert.equal(await p.locator('.quota-riga').count(), 2, 'la ripartizione predefinita viene proposta');
-    await p.getByRole('button', { name: 'Tutto a Giuseppe' }).click();
-    assert.equal(await p.locator('.quota-riga').count(), 1);
-    assert.equal(await p.getByLabel('Collaboratore 1', { exact: true }).locator('option:checked').innerText(), 'Giuseppe');
-    assert.equal(await p.getByLabel('Quota del collaboratore 1', { exact: true }).inputValue(), '100');
-    await p.getByRole('button', { name: 'Parti uguali' }).click();
-    assert.equal(await p.locator('.quota-riga').count(), 2);
-    assert.equal(await p.getByLabel('Quota del collaboratore 2', { exact: true }).inputValue(), '50');
-    await p.getByRole('button', { name: 'Ripartizione predefinita' }).click();
-    assert.equal(await p.getByLabel('Quota del collaboratore 1', { exact: true }).inputValue(), '70');
-    assert.equal(await p.getByLabel('Quota del collaboratore 2', { exact: true }).inputValue(), '30');
-    // cambiare il collaboratore di una riga aggiorna la stima delle provvigioni
-    await p.getByLabel('Collaboratore 2', { exact: true }).selectOption('');
-    assert.match(rimuoviSpazi(await p.locator('.stima-provvigione').innerText()), /Luca/);
-    // una riga senza collaboratore impedisce di salvare e lo spiega
-    await p.getByLabel(/^Indirizzo dell'immobile/).fill('Via Quote 1');
-    await p.click('#salva-pratica');
-    await attendiNotifica(p, /C'è una riga della ripartizione senza collaboratore/);
-    assert.equal(await valoreSql(p, "SELECT COUNT(*) FROM pratiche WHERE immobile_indirizzo = 'Via Quote 1'"), 0);
-    // si sceglie un altro collaboratore e si salva
-    await p.getByLabel('Collaboratore 2', { exact: true }).selectOption({ label: 'Giuseppe' });
+    const righe = async () => (await p.locator('#ripartizione-automatica .ripartizione-elenco li').allInnerTexts()).map(rimuoviSpazi);
+    const zona = p.locator('#form-pratica').getByLabel(/^Zona\*?$/);
+    assert.equal(await p.locator('.quote-riga').count(), 0, 'nel modulo non si sceglie la ripartizione');
+    await zona.selectOption({ label: 'Zona libera' });
+    assert.deepEqual(await righe(), ['Luca 70%', 'Giuseppe 30%'], 'la predefinita per la zona senza ripartizione propria');
+    await zona.selectOption({ label: 'Collina' });
+    assert.deepEqual(await righe(), ['Luca 50%', 'Giuseppe 50%'], 'Collina ha la sua (50/50)');
+    await zona.selectOption({ label: 'Lungomare' });
+    assert.deepEqual(await righe(), ['Giuseppe 100%'], 'Lungomare è di Giuseppe');
+    // si salva in una zona senza ripartizione propria: la pratica prende la predefinita 70/30
+    await zona.selectOption({ label: 'Zona libera' });
+    await p.locator('#pagamenti-acquirente').getByLabel('Contanti').fill('2.000');
     await conSalvataggio(p);
-    assert.deepEqual((await sql(p, "SELECT c.nome, q.percentuale FROM quote q JOIN collaboratori c ON c.id = q.collaboratore_id JOIN pratiche pr ON pr.id = q.pratica_id WHERE pr.immobile_indirizzo = 'Via Quote 1' ORDER BY c.id")).map((r) => [r.nome, r.percentuale]), [['Luca', 70], ['Giuseppe', 30]]);
+    assert.deepEqual((await sql(p, "SELECT c.nome, q.percentuale FROM quote q JOIN collaboratori c ON c.id = q.collaboratore_id JOIN pratiche pr ON pr.id = q.pratica_id JOIN zone z ON z.id = pr.zona_id WHERE z.nome = 'Zona libera' ORDER BY c.id")).map((r) => [r.nome, r.percentuale]), [['Luca', 70], ['Giuseppe', 30]]);
     // la ripartizione predefinita non serve più alle prove seguenti
     await apriRipartizione(p);
     await p.getByRole('button', { name: 'Nessuna ripartizione predefinita' }).click();

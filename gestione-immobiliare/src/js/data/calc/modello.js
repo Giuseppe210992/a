@@ -10,6 +10,7 @@ import {
   arrotonda, creaTabella, controllaTabella, indiceScaglione, percentualeRaggiunta,
   prossimoScaglione, descriviScaglioni, distribuisciProvvigione,
 } from './scaglioni.js';
+import { calcolaCompensi, PARTI, MODALITA } from './compensi.js';
 
 export const OPZIONI_PREDEFINITE = Object.freeze({
   metodo: 'raggiunto',            // 'raggiunto' | 'progressivo'
@@ -78,6 +79,11 @@ export function calcolaModello(dati, opzioniIn = {}) {
   for (const i of dati.incassi || []) {
     incassatoPerPratica.set(i.pratica_id, (incassatoPerPratica.get(i.pratica_id) || 0) + i.importo_cent);
   }
+  const ripartizionePerZona = new Map();
+  for (const q of dati.zone_quote || []) {
+    if (!ripartizionePerZona.has(q.zona_id)) ripartizionePerZona.set(q.zona_id, []);
+    ripartizionePerZona.get(q.zona_id).push({ collaboratoreId: q.collaboratore_id, percentuale: q.percentuale });
+  }
   const collabDiLiquidazione = new Map((dati.liquidazioni || []).map((l) => [l.id, l.collaboratore_id]));
   const liquidatoPerVoce = new Map();
   for (const r of dati.righe || []) {
@@ -94,11 +100,15 @@ export function calcolaModello(dati, opzioniIn = {}) {
     const conclusa = riga.stato === 'conclusa';
     const inCorso = riga.stato === 'in_corso';
     const annullata = riga.stato === 'annullata';
-    const compensoTotaleCent = (riga.compenso_venditore_cent || 0) + (riga.compenso_acquirente_cent || 0);
-    const aliquota = riga.aliquota_iva ?? 0;
-    const ivaCent = arrotonda(compensoTotaleCent * Math.round(aliquota * 100), 10000);
-    const totaleLordoCent = compensoTotaleCent + ivaCent;
-    const incassatoCent = incassatoPerPratica.get(riga.id) || 0;
+    // Compensi: dai pagamenti delle parti (contanti senza IVA, bonifico e assegno con IVA compresa) oppure, per le
+    // pratiche vecchie, dal solo compenso senza IVA con l'IVA in cima. Quanto le parti hanno pagato alla
+    // conclusione conta come già incassato; gli incassi registrati dopo si sommano.
+    const compensi = calcolaCompensi(riga);
+    const compensoTotaleCent = compensi.imponibileCent;
+    const ivaCent = compensi.ivaCent;
+    const totaleLordoCent = compensi.totaleCent;
+    const pagatoAllaConclusioneCent = compensi.pagatoCent;
+    const incassatoCent = pagatoAllaConclusioneCent + (incassatoPerPratica.get(riga.id) || 0);
     const daIncassareCent = Math.max(0, totaleLordoCent - incassatoCent);
     const frazioneIncassata = totaleLordoCent > 0 ? Math.min(1, incassatoCent / totaleLordoCent) : 0;
     const dataRif = conclusa ? (riga.data_rogito || riga.data_pratica) : riga.data_pratica;
@@ -131,10 +141,16 @@ export function calcolaModello(dati, opzioniIn = {}) {
     }
     if (quote.length && sommaQuote !== 10000) mancanti.push('ripartizione_somma');
 
+    const zonaNome = riga.zona_id != null ? (zonaPerId.get(riga.zona_id)?.nome ?? null) : null;
     const p = {
       ...riga,
+      compenso_venditore_cent: compensi.venditore.imponibileCent,
+      compenso_acquirente_cent: compensi.acquirente.imponibileCent,
       conclusa, inCorso, annullata,
-      zonaNome: riga.zona_id != null ? (zonaPerId.get(riga.zona_id)?.nome ?? null) : null,
+      zonaNome,
+      // come chiamare la pratica a parole: l'immobile se è stato scritto (pratiche vecchie), altrimenti la zona
+      descrizione: riga.immobile_indirizzo || (zonaNome ? `Zona ${zonaNome}` : 'Zona non indicata'),
+      compensi, pagatoAllaConclusioneCent,
       compensoTotaleCent, ivaCent, totaleLordoCent,
       incassatoCent, daIncassareCent, frazioneIncassata,
       dataRif,
@@ -231,6 +247,7 @@ export function calcolaModello(dati, opzioniIn = {}) {
   }]));
   const riepZona = new Map(zone.map((z) => [z.id, {
     id: z.id, nome: z.nome, colore: z.colore, attiva: !!z.attiva,
+    ripartizione: ripartizionePerZona.get(z.id) || [], // come si divide una pratica della zona (vuota = si usa la predefinita)
     fatturatoCent: 0, provvigioniCent: 0, pratiche: 0,
   }]));
   for (const p of out) {
@@ -263,6 +280,22 @@ export function calcolaModello(dati, opzioniIn = {}) {
   }
 
   const incassi = (dati.incassi || []).map((i) => ({ ...i, pratica: perId.get(i.pratica_id) || null }));
+  // Pagamenti fatti dalle parti alla conclusione (contanti / bonifico / assegno), nel giorno della pratica.
+  const pagamenti = [];
+  for (const p of out) {
+    if (!p.compensi.daPagamenti) continue;
+    for (const parte of PARTI) {
+      for (const modo of MODALITA) {
+        const importoCent = p.compensi[parte.id][`${modo.id}Cent`];
+        if (importoCent > 0) {
+          pagamenti.push({
+            praticaId: p.id, pratica: p, data: p.dataRif, parte: parte.etichetta, parteId: parte.id,
+            modalita: modo.etichetta, modalitaId: modo.id, conIva: modo.conIva, importo_cent: importoCent,
+          });
+        }
+      }
+    }
+  }
   const righePerLiquidazione = new Map();
   for (const r of dati.righe || []) {
     if (!righePerLiquidazione.has(r.liquidazione_id)) righePerLiquidazione.set(r.liquidazione_id, []);
@@ -284,6 +317,7 @@ export function calcolaModello(dati, opzioniIn = {}) {
     perId,
     voci: tutteLeVoci,
     incassi,
+    pagamenti,
     liquidazioni,
     cumuli,
     collaboratori: [...riepCollab.values()],

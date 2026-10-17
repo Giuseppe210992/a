@@ -1,201 +1,185 @@
-// Inserimento e modifica di una pratica (compravendita), con calcolo dei compensi e stima delle provvigioni in tempo reale.
+// Inserimento e modifica di una pratica (compravendita conclusa), con calcolo dei compensi e stima delle provvigioni in tempo reale.
+//
+// Il modulo chiede poco: la zona, quanto ha pagato ciascuna parte e come (contanti già senza IVA; bonifico e assegno
+// con IVA compresa). Il resto è automatico: numero della pratica, stato «conclusa», data di oggi e ripartizione tra i
+// collaboratori a seconda della zona.
 import { h, monta, ritarda } from '../core/dom.js';
 import { icona } from '../core/icone.js';
 import { app, modello, impostazioni } from '../core/app.js';
 import { naviga, rimonta } from '../core/router.js';
 import { oggi } from '../core/dates.js';
-import { eur, eurInt, pct, num, meseAnno, leggiPercentuale, numDec } from '../core/format.js';
+import { eur, pct, meseAnno, dataIt } from '../core/format.js';
 import { apriModale, conferma, ok as notificaOk, segnalaErrore, errore as notificaErrore } from '../core/ui.js';
-import { campoTesto, campoAreaTesto, campoData, campoImporto, campoPercentuale, campoSelezione, mostraErrori } from '../components/campi.js';
-import { salvaPratica, prossimoCodice, STATI, TIPI_IMMOBILE } from '../data/repo/pratiche.js';
-import { creaZona } from '../data/repo/anagrafiche.js';
+import { campoTesto, campoAreaTesto, campoImporto, campoSelezione, mostraErrori } from '../components/campi.js';
+import { editorRipartizione, apriDialogoRipartizione } from '../components/ripartizione-zona.js';
+import { salvaPratica, TIPI_IMMOBILE } from '../data/repo/pratiche.js';
+import { creaZona, salvaRipartizioneZona, ripartizioneAutomatica } from '../data/repo/anagrafiche.js';
 import { opzioniCalcolo } from '../data/repo/impostazioni.js';
+import { calcolaCompensi, ivaSuImponibile, PARTI, MODALITA, CAMPI_PAGAMENTO, campoPagamento } from '../data/calc/compensi.js';
 import { stimaPratica } from '../data/stima.js';
 
-function bozzaVuota() {
-  return { stato: 'in_corso', data_pratica: oggi(), aliquota_iva: impostazioni()['iva.predefinita'] ?? 22 };
+/** Importi iniziali dei sei campi di pagamento: quelli registrati, oppure (pratica vecchia) il compenso riportato come bonifico con IVA. */
+function pagamentiIniziali(pratica) {
+  const out = Object.fromEntries(CAMPI_PAGAMENTO.map((c) => [c, null]));
+  if (!pratica) return { valori: out, daConvertire: false };
+  if (pratica.compensi.daPagamenti) {
+    for (const parte of PARTI) {
+      for (const modo of MODALITA) {
+        const v = pratica.compensi[parte.id][`${modo.id}Cent`];
+        out[campoPagamento(parte.id, modo.id)] = v > 0 ? v : null;
+      }
+    }
+    return { valori: out, daConvertire: false };
+  }
+  for (const parte of PARTI) {
+    const imponibile = pratica.compensi[parte.id].imponibileCent;
+    if (imponibile > 0) out[campoPagamento(parte.id, 'bonifico')] = imponibile + ivaSuImponibile(imponibile, pratica.aliquota_iva);
+  }
+  return { valori: out, daConvertire: true };
 }
 
 function montaForm(contenitore, { pratica = null }) {
   const m = modello();
   const imp = impostazioni();
   const modifica = !!pratica;
-  const base = pratica || bozzaVuota();
-  const collaboratoriAttivi = m.collaboratori.filter((c) => c.attivo || (pratica && pratica.voci.some((v) => v.collaboratoreId === c.id)));
+  const aliquotaIniziale = Number(pratica?.aliquota_iva ?? imp['iva.predefinita'] ?? 22);
+  const iniziali = pagamentiIniziali(pratica);
   let sporco = false;
   let salvataggioInCorso = false;
   const segnaSporco = () => { sporco = true; aggiornaBarra(); };
+  const dataPratica = pratica ? (pratica.data_rogito || pratica.data_pratica) : oggi();
 
   // ----------------------------------------------------------- campi
-  const codiceIniziale = pratica ? pratica.codice : prossimoCodice(app.archivio, base.data_pratica);
-  let codiceModificatoDaUtente = modifica;
   const f = {
-    codice: campoTesto({ etichetta: 'Codice pratica', valore: codiceIniziale, obbligatorio: true, maxlength: 30, aiuto: 'Proposto in automatico; puoi cambiarlo.', onInput: () => { codiceModificatoDaUtente = true; } }),
-    stato: campoSelezione({ etichetta: 'Stato', valore: base.stato, obbligatorio: true, opzioni: STATI.map((s) => ({ valore: s.valore, etichetta: s.etichetta })) }),
-    data_pratica: campoData({ etichetta: 'Data di apertura', valore: base.data_pratica, obbligatorio: true }),
-    data_rogito: campoData({ etichetta: 'Data del rogito', valore: base.data_rogito ?? '', aiuto: 'Il mese del rogito decide in quale cumulo mensile entra la pratica.' }),
-    immobile_indirizzo: campoTesto({ etichetta: 'Indirizzo dell\'immobile', valore: base.immobile_indirizzo ?? '', obbligatorio: true, maxlength: 160, placeholder: 'Via, numero civico' }),
-    immobile_comune: campoTesto({ etichetta: 'Comune', valore: base.immobile_comune ?? '', maxlength: 80 }),
-    immobile_tipo: campoSelezione({ etichetta: 'Tipo di immobile', valore: base.immobile_tipo ?? '', vuoto: 'Non indicato', opzioni: TIPI_IMMOBILE.map((t) => ({ valore: t, etichetta: t })) }),
-    zona_id: campoSelezione({ etichetta: 'Zona', valore: base.zona_id ?? '', vuoto: 'Da indicare', opzioni: [] }),
-    prezzo_vendita_cent: campoImporto({ etichetta: 'Prezzo di vendita', centesimi: base.prezzo_vendita_cent ?? null }),
-    prezzo_acquisto_cent: campoImporto({ etichetta: 'Prezzo di acquisto (se noto)', centesimi: base.prezzo_acquisto_cent ?? null, aiuto: 'Quanto aveva pagato l\'attuale proprietario. Serve al confronto acquisto/vendita.' }),
-    venditore: campoTesto({ etichetta: 'Venditore', valore: base.venditore ?? '', maxlength: 120 }),
-    acquirente: campoTesto({ etichetta: 'Acquirente', valore: base.acquirente ?? '', maxlength: 120 }),
-    compenso_venditore_cent: campoImporto({ etichetta: 'Compenso dal venditore (imponibile)', centesimi: base.compenso_venditore_cent ?? null }),
-    compenso_acquirente_cent: campoImporto({ etichetta: 'Compenso dall\'acquirente (imponibile)', centesimi: base.compenso_acquirente_cent ?? null }),
-    aliquota_iva: campoSelezione({ etichetta: 'Aliquota IVA', valore: String(base.aliquota_iva ?? 22), opzioni: [] }),
-    note: campoAreaTesto({ etichetta: 'Note', valore: base.note ?? '', righe: 3 }),
+    zona_id: campoSelezione({ etichetta: 'Zona', valore: pratica?.zona_id ?? '', vuoto: 'Scegli la zona', obbligatorio: true, opzioni: [], aiuto: 'Decide la ripartizione tra i collaboratori e gli scaglioni.' }),
+    immobile_tipo: campoSelezione({ etichetta: 'Tipo di immobile (facoltativo)', valore: pratica?.immobile_tipo ?? '', vuoto: 'Non indicato', opzioni: TIPI_IMMOBILE.map((t) => ({ valore: t, etichetta: t })) }),
+    prezzo_vendita_cent: campoImporto({ etichetta: 'Prezzo di vendita', centesimi: pratica?.prezzo_vendita_cent ?? null }),
+    prezzo_acquisto_cent: campoImporto({ etichetta: 'Prezzo di acquisto (se noto)', centesimi: pratica?.prezzo_acquisto_cent ?? null, aiuto: 'Quanto aveva pagato l\'attuale proprietario. Serve al confronto acquisto/vendita.' }),
+    venditore: campoTesto({ etichetta: 'Venditore (nome, facoltativo)', valore: pratica?.venditore ?? '', maxlength: 120 }),
+    acquirente: campoTesto({ etichetta: 'Acquirente (nome, facoltativo)', valore: pratica?.acquirente ?? '', maxlength: 120 }),
+    aliquota_iva: campoSelezione({ etichetta: 'Aliquota IVA', valore: String(aliquotaIniziale), opzioni: [], aiuto: 'Serve a togliere l\'IVA da bonifico e assegno.' }),
+    note: campoAreaTesto({ etichetta: 'Note', valore: pratica?.note ?? '', righe: 3 }),
   };
-  const pctVend = campoPercentuale({ etichetta: '% sul prezzo', placeholder: 'es. 3' });
-  const pctAcq = campoPercentuale({ etichetta: '% sul prezzo', placeholder: 'es. 3' });
+  // gli importi pagati: due parti × tre modi (contanti già senza IVA, bonifico e assegno con IVA compresa)
+  for (const parte of PARTI) {
+    for (const modo of MODALITA) {
+      const nome = campoPagamento(parte.id, modo.id);
+      f[nome] = campoImporto({ etichetta: `${modo.etichetta} (${modo.nota})`, centesimi: iniziali.valori[nome] });
+      f[nome].input.setAttribute('aria-label', `${parte.etichetta}: ${modo.etichetta.toLowerCase()} (${modo.nota})`);
+    }
+  }
 
   function riempiZone(selezionata) {
-    const mm = modello();
-    f.zona_id.riempi(mm.zone.filter((z) => z.attiva || z.id === selezionata).map((z) => ({ valore: z.id, etichetta: z.nome })), selezionata ?? '');
+    f.zona_id.riempi(modello().zone.filter((z) => z.attiva || z.id === selezionata).map((z) => ({ valore: z.id, etichetta: z.nome })), selezionata ?? '');
   }
-  riempiZone(base.zona_id);
-  const aliquote = [...new Set([...(imp['iva.aliquote'] || [22]), Number(base.aliquota_iva ?? 22)])].sort((a, b) => b - a);
-  f.aliquota_iva.riempi(aliquote.map((a) => ({ valore: String(a), etichetta: a === 0 ? '0% (esente / non imponibile)' : `${String(a).replace('.', ',')}%` })), String(base.aliquota_iva ?? 22));
+  riempiZone(pratica?.zona_id ?? null);
+  const aliquote = [...new Set([...(imp['iva.aliquote'] || [22]), aliquotaIniziale])].sort((a, b) => b - a);
+  f.aliquota_iva.riempi(aliquote.map((a) => ({ valore: String(a), etichetta: a === 0 ? '0% (esente / non imponibile)' : `${String(a).replace('.', ',')}%` })), String(aliquotaIniziale));
 
-  // la % sul prezzo e l'importo si aggiornano a vicenda
-  const prezzoVend = () => f.prezzo_vendita_cent.get();
-  let blocca = false;
-  const sincronizza = (pctCampo, impCampo) => {
-    pctCampo.input.addEventListener('input', () => {
-      if (blocca) return;
-      const p = pctCampo.get();
-      const pr = prezzoVend();
-      if (p !== null && pr) { blocca = true; impCampo.set(Math.round((pr * p) / 100)); blocca = false; ricalcola(); }
-    });
-    impCampo.input.addEventListener('input', () => {
-      if (blocca) return;
-      const v = impCampo.get();
-      const pr = prezzoVend();
-      if (v !== null && pr) { blocca = true; pctCampo.set(Math.round((v / pr) * 10000) / 100); blocca = false; }
-    });
-  };
-  sincronizza(pctVend, f.compenso_venditore_cent);
-  sincronizza(pctAcq, f.compenso_acquirente_cent);
-  const aggiornaPct = () => {
-    const pr = prezzoVend();
-    for (const [pc, ic] of [[pctVend, f.compenso_venditore_cent], [pctAcq, f.compenso_acquirente_cent]]) {
-      const v = ic.get();
-      if (pr && v) { blocca = true; pc.set(Math.round((v / pr) * 10000) / 100); blocca = false; } else if (!pr) { blocca = true; pc.set(null); blocca = false; }
+  // ----------------------------------------------------------- ripartizione automatica a seconda della zona
+  const quoteRegistrate = pratica ? pratica.voci.filter((v) => v.collaboratoreId != null).map((v) => ({ collaboratore_id: v.collaboratoreId, percentuale: v.quotaPct })) : [];
+  const zonaIniziale = pratica?.zona_id ?? null;
+  let quote = [];
+  let origine = 'senza_zona';
+  const zonaScelta = () => (f.zona_id.get() === '' ? null : +f.zona_id.get());
+  function calcolaRipartizione() {
+    const zonaId = zonaScelta();
+    if (modifica && quoteRegistrate.length && zonaId === zonaIniziale) { quote = quoteRegistrate; origine = 'registrata'; return; }
+    if (zonaId == null) { quote = []; origine = 'senza_zona'; return; }
+    const r = ripartizioneAutomatica(app.archivio, zonaId, imp);
+    quote = r.quote;
+    origine = r.origine;
+  }
+  const boxRipartizione = h('div', { id: 'ripartizione-automatica' });
+  function disegnaRipartizione() {
+    const zona = modello().zone.find((z) => z.id === zonaScelta());
+    const elenco = modello().collaboratori;
+    const bottoneZona = (etichetta) => (zona ? h('button', { type: 'button', class: 'btn btn-secondario btn-sm', id: 'imposta-ripartizione-zona', onclick: () => apriDialogoRipartizione(zona, { dopo: () => { calcolaRipartizione(); disegnaRipartizione(); ricalcola(); } }) }, icona('handshake', { dimensione: 15 }), etichetta) : null);
+    if (origine === 'senza_zona') {
+      monta(boxRipartizione, h('p', { class: 'sottotesto' }, 'Scegli la zona: i compensi si dividono tra i collaboratori a seconda della zona.'));
+      return;
     }
-  };
-  aggiornaPct();
-
-  // ----------------------------------------------------------- ripartizione
-  let quote = pratica ? pratica.voci.filter((v) => v.collaboratoreId != null).map((v) => ({ collaboratore_id: v.collaboratoreId, percentuale: v.quotaPct })) : [];
-  if (!modifica) {
-    const pred = (imp['ripartizione.predefinita'] || []).filter((x) => collaboratoriAttivi.some((c) => c.id === x.collaboratoreId));
-    if (pred.length) quote = pred.map((x) => ({ collaboratore_id: x.collaboratoreId, percentuale: x.percentuale }));
-    else if (collaboratoriAttivi.length === 1) quote = [{ collaboratore_id: collaboratoriAttivi[0].id, percentuale: 100 }];
-  }
-  const boxQuote = h('div', { class: 'quote-righe' });
-  const erroreQuote = h('div', { class: 'campo ha-errore' }, h('div', { class: 'errore', role: 'alert' }));
-  const totaleQuote = h('div', { class: 'sottotesto forte' });
-  const meterQuote = h('div', { class: 'meter', 'aria-hidden': 'true' }, h('i', null));
-  const sommaQuote = () => quote.reduce((s, q) => s + Math.round((Number(q.percentuale) || 0) * 100), 0) / 100;
-
-  function disegnaQuote() {
-    boxQuote.replaceChildren();
-    quote.forEach((q, i) => {
-      const usati = new Set(quote.filter((_, j) => j !== i).map((x) => x.collaboratore_id));
-      const sel = campoSelezione({
-        etichetta: i === 0 ? 'Collaboratore' : null, valore: q.collaboratore_id ?? '', vuoto: 'Scegli…',
-        opzioni: m.collaboratori.filter((c) => (c.attivo || c.id === q.collaboratore_id) && !usati.has(c.id)).map((c) => ({ valore: c.id, etichetta: c.nome })),
-        onChange: (v) => { q.collaboratore_id = v === '' ? null : +v; segnaSporco(); disegnaQuote(); boxQuote.querySelector(`select[aria-label="Collaboratore ${i + 1}"]`)?.focus(); ricalcola(); }, // le altre righe devono vedere subito chi si è liberato
-      });
-      sel.input.setAttribute('aria-label', `Collaboratore ${i + 1}`);
-      const p = campoPercentuale({ etichetta: i === 0 ? 'Quota' : null, valore: q.percentuale ?? null, onInput: (v) => { q.percentuale = v ?? 0; aggiornaTotaleQuote(); segnaSporco(); ricalcola(); } });
-      p.input.setAttribute('aria-label', `Quota del collaboratore ${i + 1}`);
-      boxQuote.append(h('div', { class: 'quota-riga' }, sel.el, p.el,
-        h('button', { type: 'button', class: 'btn btn-ghost btn-icona', 'aria-label': `Togli il collaboratore ${i + 1}`, title: 'Togli', onclick: () => { quote.splice(i, 1); segnaSporco(); disegnaQuote(); ricalcola(); } }, icona('x', { dimensione: 18 }))));
-    });
-    aggiornaTotaleQuote();
-  }
-  function aggiornaTotaleQuote() {
-    const t = sommaQuote();
-    totaleQuote.textContent = quote.length ? `Totale quote: ${pct(t)}` : 'Nessun collaboratore assegnato';
-    totaleQuote.style.color = !quote.length ? '' : Math.abs(t - 100) < 0.005 ? 'var(--ok-text)' : 'var(--crit-text)';
-    meterQuote.firstChild.style.width = `${Math.min(100, t)}%`;
-    meterQuote.firstChild.style.background = Math.abs(t - 100) < 0.005 ? 'var(--ok)' : t > 100 ? 'var(--crit)' : 'var(--warn)';
-    meterQuote.hidden = !quote.length;
-  }
-  const preset = (etichetta, fn) => h('button', { type: 'button', class: 'btn btn-secondario btn-sm', onclick: () => { fn(); segnaSporco(); disegnaQuote(); ricalcola(); } }, etichetta);
-  const boxPreset = h('div', { class: 'riga-azioni' });
-  function disegnaPreset() {
-    const voci = collaboratoriAttivi.slice(0, 4).map((c) => preset(`Tutto a ${c.nome}`, () => { quote = [{ collaboratore_id: c.id, percentuale: 100 }]; }));
-    if (collaboratoriAttivi.length >= 2) {
-      voci.push(preset('Parti uguali', () => {
-        const attivi = collaboratoriAttivi.filter((c) => c.attivo);
-        const n = attivi.length || 1;
-        const base2 = Math.floor(10000 / n) / 100;
-        quote = attivi.map((c, i) => ({ collaboratore_id: c.id, percentuale: i === n - 1 ? Math.round((100 - base2 * (n - 1)) * 100) / 100 : base2 }));
-      }));
+    if (!quote.length) {
+      monta(boxRipartizione, h('div', { class: 'nota attenzione', id: 'ripartizione-mancante' }, icona('triangle-alert', { dimensione: 18 }),
+        h('div', null, h('strong', null, `La zona “${zona?.nome ?? ''}” non ha una ripartizione. `), 'Senza, i compensi non vengono assegnati a nessun collaboratore e le provvigioni restano a zero. Imposta come si divide una pratica di questa zona: si fa una volta sola.')),
+      h('div', { class: 'riga-azioni', style: { marginTop: '10px' } }, bottoneZona('Imposta la ripartizione della zona')));
+      return;
     }
-    if ((imp['ripartizione.predefinita'] || []).length) {
-      voci.push(preset('Ripartizione predefinita', () => { quote = (imp['ripartizione.predefinita'] || []).map((x) => ({ collaboratore_id: x.collaboratoreId, percentuale: x.percentuale })); }));
-    }
-    monta(boxPreset, ...voci);
+    const spiegazione = {
+      zona: `Ripartizione impostata per la zona “${zona?.nome ?? ''}”.`,
+      predefinita: `La zona “${zona?.nome ?? ''}” non ha una ripartizione propria: si usa quella predefinita.`,
+      unico: 'C\'è un solo collaboratore attivo: tutto a lui.',
+      registrata: 'Ripartizione già registrata per questa pratica: cambia solo se cambi la zona.',
+    }[origine];
+    monta(boxRipartizione,
+      h('ul', { class: 'ripartizione-elenco', style: { display: 'grid', gap: '6px', listStyle: 'none', padding: 0, margin: 0 } }, quote.map((q) => {
+        const c = elenco.find((x) => x.id === q.collaboratore_id);
+        return h('li', { class: 'nome', style: { display: 'flex', alignItems: 'center', gap: '8px' } }, h('span', { class: `punto-col col-${c?.colore ?? 1}`, style: { width: '12px', height: '12px' }, 'aria-hidden': 'true' }), h('b', null, c?.nome ?? 'Collaboratore'), h('span', null, pct(q.percentuale)));
+      })),
+      h('p', { class: 'sottotesto', style: { marginTop: '8px' } }, spiegazione),
+      origine === 'zona' || origine === 'predefinita' ? h('div', { class: 'riga-azioni', style: { marginTop: '8px' } }, bottoneZona('Cambia la ripartizione della zona')) : null);
   }
-  const aggiungi = h('button', { type: 'button', class: 'btn btn-secondario btn-sm', onclick: () => {
-    const rest = m.collaboratori.filter((c) => c.attivo && !quote.some((q) => q.collaboratore_id === c.id));
-    if (!rest.length && m.collaboratori.length) { notificaErrore('Hai già aggiunto tutti i collaboratori.'); return; }
-    const resto = Math.max(0, Math.round((100 - sommaQuote()) * 100) / 100);
-    quote.push({ collaboratore_id: rest[0]?.id ?? null, percentuale: quote.length ? resto : 100 });
-    segnaSporco(); disegnaQuote(); ricalcola();
-  } }, icona('plus', { dimensione: 16 }), 'Aggiungi collaboratore');
-  disegnaPreset();
-  disegnaQuote();
 
   // ----------------------------------------------------------- riepilogo e stima
   const riepilogo = h('div', { class: 'riepilogo-calcolo', 'aria-live': 'polite' });
   const stima = h('div', { class: 'stima-provvigione', 'aria-live': 'polite' });
+  const nettoParte = Object.fromEntries(PARTI.map((p) => [p.id, h('div', { class: 'sottotesto forte', id: `compenso-${p.id}`, 'aria-live': 'polite', style: { marginTop: '8px' } })]));
 
   function leggiBozza() {
-    return {
+    const b = {
       id: pratica?.id ?? null,
-      codice: f.codice.get(), stato: f.stato.get(), data_pratica: f.data_pratica.get(), data_rogito: f.data_rogito.get() || null,
-      zona_id: f.zona_id.get() === '' ? null : +f.zona_id.get(),
-      immobile_indirizzo: f.immobile_indirizzo.get(), immobile_comune: f.immobile_comune.get(), immobile_tipo: f.immobile_tipo.get(),
+      zona_id: zonaScelta(),
+      immobile_tipo: f.immobile_tipo.get(),
       prezzo_vendita_cent: f.prezzo_vendita_cent.get(), prezzo_acquisto_cent: f.prezzo_acquisto_cent.get(),
       venditore: f.venditore.get(), acquirente: f.acquirente.get(),
-      compenso_venditore_cent: f.compenso_venditore_cent.get() ?? 0, compenso_acquirente_cent: f.compenso_acquirente_cent.get() ?? 0,
+      compensi_da_pagamenti: 1,
       aliquota_iva: Number(f.aliquota_iva.get()), note: f.note.get(),
     };
+    for (const c of CAMPI_PAGAMENTO) b[c] = f[c].get() ?? 0;
+    if (pratica) {
+      // quello che il modulo non mostra resta com'era
+      Object.assign(b, {
+        codice: pratica.codice, stato: pratica.stato, data_pratica: pratica.data_pratica, data_rogito: pratica.data_rogito,
+        immobile_indirizzo: pratica.immobile_indirizzo, immobile_comune: pratica.immobile_comune,
+      });
+    } else {
+      // pratica nuova: inserita a conclusione, con la data di oggi (il numero lo assegna il programma)
+      Object.assign(b, { stato: 'conclusa', data_pratica: oggi(), data_rogito: oggi() });
+    }
+    return b;
   }
-  const quoteValide = () => quote.filter((q) => q.collaboratore_id && Number(q.percentuale) > 0).map((q) => ({ collaboratore_id: q.collaboratore_id, percentuale: Number(q.percentuale) }));
 
   function ricalcola() {
     const b = leggiBozza();
-    const cv = b.compenso_venditore_cent, ca = b.compenso_acquirente_cent;
-    const tot = cv + ca;
-    const iva = Math.round((tot * Math.round(b.aliquota_iva * 100)) / 10000);
+    const c = calcolaCompensi(b);
+    const prezzo = b.prezzo_vendita_cent;
+    for (const parte of PARTI) {
+      const x = c[parte.id];
+      nettoParte[parte.id].textContent = x.pagatoCent > 0 ? `Compenso senza IVA ${parte.dal}: ${eur(x.imponibileCent)}${x.ivaCent > 0 ? ` (IVA compresa nei pagamenti: ${eur(x.ivaCent)})` : ''}` : '';
+    }
     monta(riepilogo,
-      h('div', { class: 'riga' }, h('span', null, 'Compenso dal venditore'), h('span', { class: 'valore' }, eur(cv))),
-      h('div', { class: 'riga' }, h('span', null, 'Compenso dall\'acquirente'), h('span', { class: 'valore' }, eur(ca))),
-      h('div', { class: 'riga' }, h('span', null, 'Totale imponibile'), h('span', { class: 'valore' }, eur(tot))),
-      h('div', { class: 'riga' }, h('span', null, `IVA ${String(b.aliquota_iva).replace('.', ',')}%`), h('span', { class: 'valore' }, eur(iva))),
-      h('div', { class: 'riga totale' }, h('span', null, 'Totale con IVA'), h('span', { class: 'valore' }, eur(tot + iva))),
-      pratica ? h('div', { class: 'riga' }, h('span', null, 'Già incassato'), h('span', { class: 'valore' }, eur(pratica.incassatoCent))) : null,
+      h('div', { class: 'riga' }, h('span', null, 'Compenso dal venditore (senza IVA)'), h('span', { class: 'valore', id: 'riep-venditore' }, eur(c.venditore.imponibileCent))),
+      h('div', { class: 'riga' }, h('span', null, 'Compenso dall\'acquirente (senza IVA)'), h('span', { class: 'valore', id: 'riep-acquirente' }, eur(c.acquirente.imponibileCent))),
+      h('div', { class: 'riga' }, h('span', null, 'Totale compenso senza IVA'), h('span', { class: 'valore', id: 'riep-imponibile' }, eur(c.imponibileCent))),
+      h('div', { class: 'riga' }, h('span', null, `IVA ${String(b.aliquota_iva).replace('.', ',')}% compresa in bonifico e assegno`), h('span', { class: 'valore', id: 'riep-iva' }, eur(c.ivaCent))),
+      h('div', { class: 'riga totale' }, h('span', null, 'Totale pagato dalle parti'), h('span', { class: 'valore', id: 'riep-pagato' }, eur(c.pagatoCent))),
+      prezzo && c.imponibileCent > 0 ? h('div', { class: 'riga' }, h('span', null, 'Compenso sul prezzo di vendita'), h('span', { class: 'valore' }, pct(Math.round((c.imponibileCent / prezzo) * 10000) / 100))) : null,
+      pratica ? h('div', { class: 'riga' }, h('span', null, 'Già incassato (con eventuali incassi successivi)'), h('span', { class: 'valore' }, eur(pratica.incassatoCent))) : null,
     );
     // stima delle provvigioni
     let s;
-    try { s = stimaPratica(app.archivio, b, quoteValide(), opzioniCalcolo(imp)); } catch (e) { console.error(e); s = null; }
+    try { s = stimaPratica(app.archivio, b, quote, opzioniCalcolo(imp)); } catch (e) { console.error(e); s = null; }
     if (!s) { monta(stima); return; }
     const mm = s.modello;
-    const nomi = new Map(mm.collaboratori.map((c) => [c.id, c.nome]));
+    const nomi = new Map(mm.collaboratori.map((x) => [x.id, x.nome]));
     const righe = [];
-    if (!quoteValide().length) {
-      righe.push(h('div', { class: 'stima-riga' }, h('div', { class: 'dettaglio' }, 'Assegna la pratica ad almeno un collaboratore per vedere la stima delle provvigioni.')));
+    if (!quote.length) {
+      righe.push(h('div', { class: 'stima-riga' }, h('div', { class: 'dettaglio' }, 'Scegli una zona con una ripartizione per vedere la stima delle provvigioni.')));
     } else if (!mm.tabellaPredefinita.length && !mm.tabellePerZona.size) {
       righe.push(h('div', { class: 'nota attenzione' }, icona('triangle-alert', { dimensione: 18 }), h('span', null, 'Gli scaglioni non sono ancora impostati: le provvigioni risultano a zero.'), h('a', { href: '#/impostazioni?sezione=scaglioni' }, 'Imposta')));
     } else {
       for (const v of s.pratica.voci.filter((x) => x.collaboratoreId != null)) {
-        const cu = s.cumuli.find((c) => c.collaboratoreId === v.collaboratoreId || c.collaboratoreId === null);
+        const cu = s.cumuli.find((x) => x.collaboratoreId === v.collaboratoreId || x.collaboratoreId === null);
         righe.push(h('div', { class: 'stima-riga' },
           h('div', { class: 'titolo' }, h('span', null, nomi.get(v.collaboratoreId) ?? 'Collaboratore'), h('span', { class: 'num' }, eur(v.provvigioneCent))),
           h('div', { class: 'dettaglio' }, `Quota ${pct(v.quotaPct)} dei compensi: ${eur(v.fatturatoCent)}`),
@@ -205,46 +189,40 @@ function montaForm(contenitore, { pratica = null }) {
     }
     monta(stima,
       h('h3', { style: { fontSize: '14px', fontWeight: 700 } }, 'Stima delle provvigioni'),
-      s.simulata ? h('p', { class: 'sottotesto' }, `La pratica non è conclusa: la stima la considera conclusa a ${meseAnno(s.mese)}.`) : null,
       ...righe,
       h('p', { class: 'sottotesto' }, 'La stima si aggiorna se cambiano le altre pratiche del mese (gli scaglioni dipendono dal cumulo).'));
   }
   const ricalcolaRitardato = ritarda(ricalcola, 120);
 
   // ----------------------------------------------------------- collegamenti tra campi
+  // Cambiando zona cambia la ripartizione (prima di ricalcolare tutto il resto).
+  f.zona_id.input.addEventListener('change', () => { calcolaRipartizione(); disegnaRipartizione(); });
   for (const c of Object.values(f)) {
     c.input.addEventListener('input', () => { segnaSporco(); ricalcolaRitardato(); });
     c.input.addEventListener('change', () => { segnaSporco(); ricalcola(); });
   }
-  f.prezzo_vendita_cent.input.addEventListener('input', () => { if (!blocca) aggiornaPct(); });
-  f.data_pratica.input.addEventListener('change', () => {
-    if (!codiceModificatoDaUtente) f.codice.set(prossimoCodice(app.archivio, f.data_pratica.get() || oggi()));
-  });
-  f.stato.input.addEventListener('change', () => {
-    if (f.stato.get() === 'conclusa' && !f.data_rogito.get()) f.data_rogito.set(oggi());
-    aggiornaRogito();
-  });
-  const rogitoAiuto = f.data_rogito.el.querySelector('.aiuto');
-  function aggiornaRogito() {
-    const conclusa = f.stato.get() === 'conclusa';
-    if (rogitoAiuto) rogitoAiuto.textContent = conclusa ? 'Obbligatoria per una pratica conclusa: decide in quale cumulo mensile entra.' : 'Compilala quando la pratica si conclude.';
-  }
-  aggiornaRogito();
 
-  const btnZona = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', onclick: () => {
+  const btnZona = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', id: 'nuova-zona', onclick: () => {
     const nome = campoTesto({ etichetta: 'Nome della zona', maxlength: 60, obbligatorio: true });
+    const editor = editorRipartizione({ collaboratori: m.collaboratori.filter((c) => c.attivo) });
     apriModale({
-      titolo: 'Nuova zona', icona: 'map-pin', invioConferma: true, contenuto: h('form', { onsubmit: (e) => e.preventDefault() }, nome.el),
+      titolo: 'Nuova zona', icona: 'map-pin', larghezza: 560, invioConferma: true,
+      descrizione: 'Scrivi il nome e, se già la sai, come si divide ogni pratica della zona tra i collaboratori. Puoi anche farlo dopo.',
+      contenuto: h('form', { onsubmit: (e) => e.preventDefault() }, nome.el, h('h3', { style: { fontSize: '14px', fontWeight: 700, margin: '16px 0 8px' } }, 'Ripartizione tra i collaboratori'), editor.el),
       azioni: [{ id: 'annulla', etichetta: 'Annulla', tipo: 'secondario' }, { id: 'crea', etichetta: 'Crea zona', tipo: 'primario', onClick: async () => {
+        const problema = editor.problema();
+        if (problema) { editor.mostraErrore(problema); return false; }
         try {
           const id = await creaZona(app.archivio, { nome: nome.get() });
+          if (editor.get().length) await salvaRipartizioneZona(app.archivio, id, editor.get());
           riempiZone(id);
           f.zona_id.set(id);
           segnaSporco();
-          notificaOk(`Zona “${nome.get()}” creata. Ricorda di impostarne gli scaglioni se sono diversi dai predefiniti.`);
+          calcolaRipartizione(); disegnaRipartizione();
+          notificaOk(`Zona “${nome.get()}” creata${editor.get().length ? ' con la sua ripartizione' : '. Ricorda di impostarne la ripartizione e, se sono diversi dai predefiniti, gli scaglioni'}.`);
           ricalcola();
         } catch (e) {
-          if (e.campi) { nome.errore(e.campi.nome); return false; }
+          if (e.campi && e.campi.nome) { nome.errore(e.campi.nome); return false; }
           throw e;
         }
       } }],
@@ -260,39 +238,31 @@ function montaForm(contenitore, { pratica = null }) {
   function raccogli() {
     const b = leggiBozza();
     const errori = {};
-    for (const campo of ['prezzo_vendita_cent', 'prezzo_acquisto_cent', 'compenso_venditore_cent', 'compenso_acquirente_cent']) {
+    for (const campo of ['prezzo_vendita_cent', 'prezzo_acquisto_cent', ...CAMPI_PAGAMENTO]) {
       if (!f[campo].valido()) errori[campo] = 'Scrivi un importo valido, ad esempio 1.500,00';
     }
-    for (const campo of ['data_pratica', 'data_rogito']) {
-      if (!f[campo].valido()) errori[campo] = 'Scrivi la data come gg/mm/aaaa, ad esempio 16/10/2026';
-    }
+    if (b.zona_id === null) errori.zona_id = 'Scegli la zona: serve per dividere i compensi tra i collaboratori.';
     return { b, errori };
   }
 
   async function salva(dopo) {
     if (salvataggioInCorso) return;
     const { b, errori } = raccogli();
-    const quoteSalva = quoteValide();
-    if (Object.keys(errori).length) { mostraErrori(f, errori); focusPrimo(errori); return; }
-    erroreQuote.querySelector('.errore').replaceChildren();
-    // coerenza della ripartizione
-    const somma = sommaQuote();
-    if (quoteSalva.length && Math.abs(somma - 100) > 0.005) {
+    if (Object.keys(errori).length) { mostraErrori(f, errori); focusPrimo(errori); notificaErrore('Controlla i campi evidenziati.'); return; }
+    if (!quote.length) {
       const procedi = await conferma({
-        titolo: 'La ripartizione non fa 100%', tipo: 'primario', etichettaConferma: 'Salva comunque', icona: 'triangle-alert',
-        messaggio: `Le quote assegnate sommano ${pct(somma)}. La pratica verrà salvata ma segnalata tra quelle con dati mancanti.`,
+        titolo: 'La zona non ha una ripartizione', tipo: 'primario', etichettaConferma: 'Salva comunque', icona: 'triangle-alert',
+        messaggio: 'Senza ripartizione i compensi non vengono assegnati a nessun collaboratore e le provvigioni restano a zero. La pratica verrà segnalata tra quelle con dati mancanti.',
+        dettagli: ['Puoi impostare la ripartizione della zona (pulsante nel modulo) e poi salvare.'],
       });
       if (!procedi) return;
     }
-    if (quote.some((q) => !q.collaboratore_id && Number(q.percentuale) > 0)) {
-      notificaErrore('C\'è una riga della ripartizione senza collaboratore: sceglilo o toglila.');
-      return;
-    }
     salvataggioInCorso = true;
     try {
-      const id = await salvaPratica(app.archivio, b, quoteSalva);
+      const id = await salvaPratica(app.archivio, b, quote);
+      const codice = app.archivio.valore('SELECT codice FROM pratiche WHERE id = ?', [id]);
       sporco = false;
-      notificaOk(`Pratica ${b.codice} ${modifica ? 'aggiornata' : 'salvata'}.`);
+      notificaOk(`Pratica ${codice} ${modifica ? 'aggiornata' : 'salvata'}.`);
       if (dopo === 'nuova') {
         rimonta(); // modulo vuoto, pronto per la pratica successiva
       } else {
@@ -301,9 +271,8 @@ function montaForm(contenitore, { pratica = null }) {
     } catch (e) {
       if (e.campi) {
         const primo = mostraErrori(f, e.campi);
-        if (e.campi.quote) { erroreQuote.querySelector('.errore').replaceChildren(icona('circle-alert', { dimensione: 15 }), h('span', null, e.campi.quote)); }
         focusPrimo(e.campi, primo);
-        notificaErrore('Controlla i campi evidenziati.');
+        notificaErrore(e.campi.quote || 'Controlla i campi evidenziati.');
       } else {
         segnalaErrore(e, 'Salvataggio pratica');
       }
@@ -318,30 +287,30 @@ function montaForm(contenitore, { pratica = null }) {
     (primo || (chiave && f[chiave]))?.el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }
 
+  const gruppoParte = (parte) => h('fieldset', { class: 'gruppo-pagamenti', id: `pagamenti-${parte.id}`, style: { border: 0, padding: 0, margin: '0 0 18px' } },
+    h('legend', { class: 'sezione-titolo', style: { padding: 0, marginBottom: '8px' } }, `Pagato ${parte.dal}`),
+    h('div', { class: 'griglia-campi' }, MODALITA.map((modo) => h('div', { class: 'c-4' }, f[campoPagamento(parte.id, modo.id)].el))),
+    nettoParte[parte.id]);
+
   const form = h('form', { novalidate: true, id: 'form-pratica', onsubmit: (e) => { e.preventDefault(); salva('scheda'); } },
     h('div', { class: 'form-layout' },
       h('div', { class: 'form-colonna' },
-        h('section', { class: 'card sezione-modulo' }, h('h2', null, 'Dati della pratica'),
-          h('div', { class: 'griglia-campi' }, h('div', { class: 'c-4' }, f.codice.el), h('div', { class: 'c-4' }, f.stato.el), h('div', { class: 'c-4' }),
-            h('div', { class: 'c-4' }, f.data_pratica.el), h('div', { class: 'c-4' }, f.data_rogito.el))),
-        h('section', { class: 'card sezione-modulo' }, h('h2', null, 'Immobile'),
+        h('section', { class: 'card sezione-modulo' }, h('h2', null, 'Zona e immobile'),
+          h('p', { class: 'descrizione', id: 'data-pratica' }, modifica ? `Data della pratica: ${dataIt(dataPratica)}.` : `Data della pratica: ${dataIt(dataPratica)} (quella di oggi, assegnata in automatico).`),
           h('div', { class: 'griglia-campi' },
-            h('div', { class: 'c-8' }, f.immobile_indirizzo.el), h('div', { class: 'c-4' }, f.immobile_comune.el),
-            h('div', { class: 'c-4' }, f.immobile_tipo.el),
-            h('div', { class: 'c-4' }, f.zona_id.el, h('div', { style: { marginTop: '4px' } }, btnZona)),
-            h('div', { class: 'c-4' }),
+            h('div', { class: 'c-6' }, f.zona_id.el, h('div', { style: { marginTop: '4px' } }, btnZona)),
+            h('div', { class: 'c-6' }, f.immobile_tipo.el),
             h('div', { class: 'c-6' }, f.prezzo_vendita_cent.el), h('div', { class: 'c-6' }, f.prezzo_acquisto_cent.el))),
         h('section', { class: 'card sezione-modulo' }, h('h2', null, 'Parti'),
           h('div', { class: 'griglia-campi' }, h('div', { class: 'c-6' }, f.venditore.el), h('div', { class: 'c-6' }, f.acquirente.el))),
         h('section', { class: 'card sezione-modulo' }, h('h2', null, 'Compensi di agenzia'),
-          h('p', { class: 'descrizione' }, 'Importi senza IVA. Puoi scrivere l\'importo oppure la percentuale sul prezzo di vendita: l\'altro valore si calcola da solo.'),
-          h('div', { class: 'griglia-campi' },
-            h('div', { class: 'c-6' }, f.compenso_venditore_cent.el, h('div', { style: { marginTop: '10px', maxWidth: '180px' } }, pctVend.el)),
-            h('div', { class: 'c-6' }, f.compenso_acquirente_cent.el, h('div', { style: { marginTop: '10px', maxWidth: '180px' } }, pctAcq.el)),
-            h('div', { class: 'c-4' }, f.aliquota_iva.el))),
-        h('section', { class: 'card sezione-modulo' }, h('h2', null, 'Ripartizione tra collaboratori'),
-          h('p', { class: 'descrizione' }, 'Come si divide la pratica. Le quote devono fare 100%: da qui si calcolano fatturato e provvigioni di ciascuno.'),
-          boxQuote, erroreQuote, h('div', { style: { marginTop: '12px', display: 'grid', gap: '10px' } }, meterQuote, totaleQuote, h('div', { class: 'riga-azioni' }, aggiungi), boxPreset)),
+          h('p', { class: 'descrizione' }, 'Scrivi quanto ha pagato ciascuna parte e come. I contanti sono già senza IVA; bonifico e assegno comprendono l\'IVA, che il programma toglie per calcolare il compenso su cui si fanno scaglioni e provvigioni.'),
+          iniziali.daConvertire ? h('div', { class: 'nota', id: 'nota-pratica-vecchia', style: { marginBottom: '14px' } }, icona('info', { dimensione: 18 }), h('span', null, 'Questa pratica era stata inserita con il solo compenso senza IVA: qui è riportata come bonifico con IVA compresa. Correggi il modo di pagamento se serve e salva.')) : null,
+          gruppoParte(PARTI[0]), gruppoParte(PARTI[1]),
+          h('div', { class: 'griglia-campi' }, h('div', { class: 'c-4' }, f.aliquota_iva.el))),
+        h('section', { class: 'card sezione-modulo' }, h('h2', null, 'Ripartizione tra i collaboratori'),
+          h('p', { class: 'descrizione' }, 'Automatica: segue la zona, non c\'è niente da scegliere. Da qui si calcolano fatturato e provvigioni di ciascuno.'),
+          boxRipartizione),
         h('section', { class: 'card sezione-modulo' }, h('h2', null, 'Note'), f.note.el),
       ),
       h('aside', { class: 'form-riepilogo', 'aria-label': 'Riepilogo' },
@@ -358,10 +327,12 @@ function montaForm(contenitore, { pratica = null }) {
     h('div', { class: 'pagina-testa' },
       h('div', null,
         h('h1', null, modifica ? `Modifica pratica ${pratica.codice}` : 'Nuova pratica'),
-        h('p', null, modifica ? 'Cambia i dati e salva: provvigioni, cumulo e grafici si aggiornano subito.' : 'Inserisci una nuova compravendita. Puoi salvarla anche incompleta: i dati mancanti vengono segnalati.'))),
+        h('p', null, modifica ? 'Cambia i dati e salva: provvigioni, cumulo e grafici si aggiornano subito.' : 'Inserisci la compravendita conclusa: scegli la zona e scrivi quanto ha pagato ciascuna parte. Numero, data e ripartizione tra i collaboratori sono automatici.'))),
     form);
+  calcolaRipartizione();
+  disegnaRipartizione();
   ricalcola();
-  if (!modifica) f.immobile_indirizzo.input.focus();
+  if (!modifica) f.zona_id.input.focus();
   return {
     haModifiche: () => sporco && !salvataggioInCorso,
     distruggi() { ricalcolaRitardato.annulla(); },
@@ -384,4 +355,3 @@ export const vistaModifica = {
     return montaForm(c, { pratica: p });
   },
 };
-export { eurInt, num, numDec, leggiPercentuale };

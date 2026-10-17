@@ -24,7 +24,7 @@ import { csvPratiche, csvIncassi, csvLiquidazioni, csvProvvigioni } from '../../
 const E = 100;
 const pratica = (extra = {}) => ({
   codice: '2026/001', stato: 'conclusa', data_pratica: '2026-09-01', data_rogito: '2026-10-05', zona_id: null,
-  immobile_indirizzo: 'Via Roma 1', immobile_comune: 'Minturno', immobile_tipo: 'Appartamento',
+  immobile_indirizzo: 'Via Roma 1', immobile_comune: 'Roccaverde', immobile_tipo: 'Appartamento',
   prezzo_vendita_cent: 150000 * E, compenso_venditore_cent: 3000 * E, compenso_acquirente_cent: 3000 * E, aliquota_iva: 22,
   ...extra,
 });
@@ -109,9 +109,12 @@ test('se il salvataggio su disco fallisce l\'errore e\' esplicito', async () => 
 test('i dati non validi vengono rifiutati con messaggi per campo', async () => {
   const { archivio } = await appConDati();
   await assert.rejects(
-    salvaPratica(archivio, pratica({ codice: '', immobile_indirizzo: '  ', data_pratica: '2026-02-30', compenso_venditore_cent: -5 }), []),
-    (e) => e instanceof ErroreValidazione && ['codice', 'immobile_indirizzo', 'data_pratica', 'compenso_venditore_cent'].every((k) => k in e.campi),
+    salvaPratica(archivio, pratica({ codice: '', data_pratica: '2026-02-30', compenso_venditore_cent: -5 }), []),
+    (e) => e instanceof ErroreValidazione && ['codice', 'data_pratica', 'compenso_venditore_cent'].every((k) => k in e.campi),
   );
+  // l'indirizzo dell'immobile non è più obbligatorio: conta la zona
+  await salvaPratica(archivio, pratica({ codice: 'Z/1', immobile_indirizzo: '  ' }), []);
+  assert.equal(archivio.valore("SELECT immobile_indirizzo FROM pratiche WHERE codice = 'Z/1'"), null);
   await assert.rejects(
     salvaPratica(archivio, pratica({ codice: '2026/001' }), []),
     (e) => e instanceof ErroreValidazione && /già una pratica/.test(e.campi.codice),
@@ -399,7 +402,7 @@ test('CSV per Excel italiano', async () => {
   const m = modelloDi(archivio);
   const csv = csvPratiche(m);
   assert.ok(csv.startsWith('﻿Codice;Stato;'));
-  assert.ok(csv.includes('2026/001;Conclusa;01/09/2026;05/10/2026;Centro;Via Roma 1;Minturno;Appartamento;150000,00;'));
+  assert.ok(csv.includes('2026/001;Conclusa;01/09/2026;05/10/2026;Centro;Via Roma 1;Roccaverde;Appartamento;150000,00;'));
   assert.ok(csv.includes('Luca 100%'));
   assert.ok(csvIncassi(m).includes('"ha detto ""ok""; poi"'));
   assert.ok(csvLiquidazioni(m).startsWith('﻿Data;Collaboratore;'));

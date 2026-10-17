@@ -1,5 +1,7 @@
-// Nuova pratica e modifica: compilazione, controlli, totali in tempo reale, ripartizione, stima delle provvigioni,
-// salvataggio sul database, avviso per le modifiche non salvate.
+// Nuova pratica e modifica: il modulo chiede la zona e quanto ha pagato ciascuna parte (contanti già senza IVA; bonifico e
+// assegno con IVA compresa). Numero, stato, data e ripartizione tra i collaboratori sono automatici. Totali in tempo reale,
+// stima delle provvigioni, salvataggio sul database, avviso per le modifiche non salvate.
+// I numeri attesi sono calcolati a mano.
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { avvia, vai, rimuoviSpazi, sql, valoreSql, idPratica, finestra, bottoneFinestra, attendiNotifica, testoSospetto } from './lib.mjs';
@@ -8,7 +10,20 @@ const E = 100;
 
 describe('Nuova pratica e modifica', () => {
   let app;
-  before(async () => { app = await avvia(); });
+  before(async () => {
+    app = await avvia();
+    // zone di prova con le loro ripartizioni (si impostano una volta sola, poi valgono per ogni pratica della zona)
+    await app.pagina.evaluate(async () => {
+      const { api, app: a } = window.__gi;
+      const [luca, giuseppe] = api.elencoCollaboratori(a.archivio);
+      const zona = async (nome, quote) => { const id = await api.creaZona(a.archivio, { nome }); if (quote) await api.salvaRipartizioneZona(a.archivio, id, quote); return id; };
+      await zona('Centro', [{ collaboratore_id: luca.id, percentuale: 100 }]);
+      await zona('Collina', [{ collaboratore_id: luca.id, percentuale: 60 }, { collaboratore_id: giuseppe.id, percentuale: 40 }]);
+      await zona('Lungomare', [{ collaboratore_id: giuseppe.id, percentuale: 100 }]);
+      await zona('Porto', null); // senza ripartizione
+      await zona('Scalo', null); // senza ripartizione (resta così)
+    });
+  });
   after(async () => { await app.chiudi(); });
 
   /** Apre un modulo di nuova pratica pulito, uscendo senza salvare da un'eventuale schermata sporca. */
@@ -25,273 +40,290 @@ describe('Nuova pratica e modifica', () => {
 
   // i campi del modulo (la barra dei filtri, nascosta, ha etichette con lo stesso nome)
   const L = (etichetta, opzioni = {}) => app.pagina.locator('#form-pratica').getByLabel(etichetta, opzioni);
-  const STATO = /^Stato/;
-  const ZONA = /^Zona$/;
-  const errori = (p) => p.locator('#form-pratica .griglia-campi .campo.ha-errore');
+  const ZONA = /^Zona\*?$/;
+  /** Importo pagato da una parte: parte = 'venditore' | 'acquirente', modo = 'Contanti' | 'Bonifico' | 'Assegno'. */
+  const P = (parte, modo) => app.pagina.locator(`#pagamenti-${parte}`).getByLabel(modo);
+  const errori = (p) => p.locator('#form-pratica .campo.ha-errore');
   const riepilogo = async () => rimuoviSpazi(await app.pagina.locator('.form-riepilogo .riepilogo-calcolo').innerText());
   const stima = async () => rimuoviSpazi(await app.pagina.locator('.stima-provvigione').innerText());
+  const ripartizione = async () => rimuoviSpazi(await app.pagina.locator('#ripartizione-automatica').innerText());
+  const scegliZona = async (nome) => { await L(ZONA).selectOption({ label: nome }); };
+  const testoDi = async (selettore) => rimuoviSpazi(await app.pagina.locator(selettore).innerText());
 
-  test('il modulo si apre con valori proposti e senza dati inventati', async () => {
+  test('il modulo si apre con pochi campi: niente codice, stato, date e via; il resto è automatico', async () => {
     const p = app.pagina;
     assert.equal(rimuoviSpazi(await p.locator('#contenuto h1').innerText()), 'Nuova pratica');
-    assert.equal(await L('Codice pratica').inputValue(), '2026/001');
-    assert.equal(await L(STATO).inputValue(), 'in_corso');
-    assert.equal(await L('Data di apertura').inputValue(), '16/10/2026');
-    assert.equal(await L('Aliquota IVA').inputValue(), '22');
+    // quello che non si chiede più
+    for (const etichetta of ['Codice pratica', /^Stato/, 'Data di apertura', 'Data del rogito', 'Indirizzo dell\'immobile', 'Comune']) {
+      assert.equal(await L(etichetta).count(), 0, `non deve esserci il campo ${etichetta}`);
+    }
+    assert.equal(await p.locator('#form-pratica input[type="text"]').evaluateAll((a) => a.filter((i) => /gg\/mm\/aaaa/.test(i.placeholder)).length), 0, 'nessun campo data');
+    assert.match(await testoDi('#data-pratica'), /^Data della pratica: 16\/10\/2026 \(quella di oggi, assegnata in automatico\)\.$/);
+    // zona, tipo, prezzi, parti
+    assert.deepEqual((await L(ZONA).locator('option').allInnerTexts()).map((x) => x.trim()), ['Scegli la zona', 'Centro', 'Collina', 'Lungomare', 'Porto', 'Scalo']);
     assert.equal(await L('Prezzo di vendita').inputValue(), '');
-    assert.equal(await p.locator('.quote-righe .quota-riga').count(), 0);
-    assert.match(rimuoviSpazi(await p.locator('.form-colonna').innerText()), /Nessun collaboratore assegnato/);
-    assert.match(await riepilogo(), /Totale con IVA 0,00 €/);
-    assert.match(await stima(), /Assegna la pratica ad almeno un collaboratore per vedere la stima delle provvigioni/);
-    // il cursore è già nel primo campo da compilare
-    assert.equal(await p.evaluate(() => document.activeElement.labels?.[0]?.textContent.replace('*', '').trim()), 'Indirizzo dell\'immobile');
+    // i sei importi pagati (due parti × tre modi), tutti vuoti, con la dicitura sull'IVA
+    for (const parte of ['venditore', 'acquirente']) {
+      assert.match(await testoDi(`#pagamenti-${parte} legend`), parte === 'venditore' ? /^Pagato dal venditore$/i : /^Pagato dall'acquirente$/i);
+      assert.deepEqual((await p.locator(`#pagamenti-${parte} label`).allInnerTexts()).map(rimuoviSpazi), ['Contanti (già senza IVA)', 'Bonifico (IVA compresa)', 'Assegno (IVA compresa)']);
+      for (const modo of ['Contanti', 'Bonifico', 'Assegno']) assert.equal(await P(parte, modo).inputValue(), '');
+    }
+    assert.equal(await L('Aliquota IVA').inputValue(), '22');
+    const iva = await L('Aliquota IVA').locator('option').allInnerTexts();
+    assert.deepEqual(iva.map((x) => x.replace(/ /g, ' ')), ['22%', '10%', '4%', '0% (esente / non imponibile)']);
+    // la ripartizione non si sceglie: niente righe, niente scorciatoie
+    assert.equal(await p.locator('.quote-righe').count(), 0);
+    assert.equal(await p.locator('#form-pratica').getByRole('button', { name: /^Tutto a / }).count(), 0);
+    assert.equal(await p.locator('#form-pratica').getByRole('button', { name: 'Aggiungi collaboratore' }).count(), 0);
+    assert.match(await ripartizione(), /Scegli la zona: i compensi si dividono tra i collaboratori a seconda della zona/);
+    assert.match(await riepilogo(), /Totale pagato dalle parti 0,00 €/);
+    assert.match(await stima(), /Scegli una zona con una ripartizione per vedere la stima delle provvigioni/);
+    // il cursore è già sulla zona
+    assert.equal(await p.evaluate(() => document.activeElement.labels?.[0]?.textContent.replace('*', '').trim()), 'Zona');
     // pulsanti
     assert.ok(await p.locator('#salva-pratica').isVisible());
     assert.ok(await p.locator('#salva-e-nuova').isVisible());
     assert.ok(await p.locator('#annulla-pratica').isVisible());
     assert.match(rimuoviSpazi(await p.locator('.stato-mod').innerText()), /Compila i dati della pratica/);
-    // tutte le opzioni di tipo, stato, IVA
-    const stati = await L(STATO).locator('option').allInnerTexts();
-    assert.deepEqual(stati, ['In corso', 'Conclusa', 'Annullata']);
-    const iva = await L('Aliquota IVA').locator('option').allInnerTexts();
-    assert.deepEqual(iva.map((x) => x.replace(/ /g, ' ')), ['22%', '10%', '4%', '0% (esente / non imponibile)']);
   });
 
-  test('i campi obbligatori e gli importi o le date non validi vengono segnalati, senza salvare', async () => {
+  test('la zona è obbligatoria e gli importi non validi vengono segnalati, senza salvare', async () => {
     const p = app.pagina;
     await p.click('#salva-pratica');
     await errori(p).first().waitFor();
-    const elenco = await p.$$eval('#form-pratica .griglia-campi .campo.ha-errore .errore', (a) => a.map((x) => x.textContent.trim()));
-    assert.ok(elenco.some((e) => /indirizzo dell'immobile/i.test(e)), `errore sull'indirizzo: ${elenco}`);
+    const elenco = await p.$$eval('#form-pratica .campo.ha-errore .errore', (a) => a.map((x) => x.textContent.trim()));
+    assert.ok(elenco.some((e) => /Scegli la zona/.test(e)), `errore sulla zona: ${elenco}`);
     await attendiNotifica(p, /Controlla i campi evidenziati/);
     assert.equal(await p.evaluate(() => location.hash), '#/nuova', 'si resta sul modulo');
     assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM pratiche'), 0);
     // il cursore va sul primo campo sbagliato
-    assert.equal(await p.evaluate(() => document.activeElement.labels?.[0]?.textContent.replace('*', '').trim()), 'Indirizzo dell\'immobile');
-    // importo e data scritti male
-    await L('Indirizzo dell\'immobile').fill('Via di prova 1');
+    assert.equal(await p.evaluate(() => document.activeElement.labels?.[0]?.textContent.replace('*', '').trim()), 'Zona');
+    // importi scritti male
+    await scegliZona('Centro');
     await L('Prezzo di vendita').fill('abc');
-    await L('Data di apertura').fill('31/02/2026');
+    await P('venditore', 'Bonifico').fill('12x');
     await p.click('#salva-pratica');
-    await p.waitForFunction(() => document.querySelectorAll('#form-pratica .griglia-campi .campo.ha-errore').length >= 2);
-    const testi = (await p.$$eval('#form-pratica .griglia-campi .campo.ha-errore .errore', (a) => a.map((x) => x.textContent.trim()))).join(' | ');
+    await p.waitForFunction(() => document.querySelectorAll('#form-pratica .campo.ha-errore').length >= 2);
+    const testi = (await p.$$eval('#form-pratica .campo.ha-errore .errore', (a) => a.map((x) => x.textContent.trim()))).join(' | ');
     assert.match(testi, /Scrivi un importo valido/);
-    assert.match(testi, /Scrivi la data come gg\/mm\/aaaa/);
     assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM pratiche'), 0);
     // correggendo, l'errore del campo sparisce non appena si scrive
     await L('Prezzo di vendita').fill('100000');
-    await p.waitForFunction(() => document.querySelectorAll('#form-pratica .griglia-campi .campo.ha-errore').length === 1);
-    // il rogito non può precedere l'apertura (controllo del database)
-    await L('Data di apertura').fill('10/10/2026');
-    await L('Data del rogito').fill('01/10/2026');
-    await p.click('#salva-pratica');
-    await p.waitForFunction(() => /precedente all'apertura/.test(document.querySelector('.form-colonna').textContent));
-    assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM pratiche'), 0);
+    await p.waitForFunction(() => document.querySelectorAll('#form-pratica .campo.ha-errore').length === 1);
+    await P('venditore', 'Bonifico').fill('100');
+    await p.waitForFunction(() => document.querySelectorAll('#form-pratica .campo.ha-errore').length === 0);
   });
 
-  test('importi e totali si aggiornano mentre si scrive; la percentuale sul prezzo calcola l\'importo e viceversa', async () => {
+  test('contanti già senza IVA, bonifico e assegno con IVA compresa: compenso, IVA e totale si calcolano mentre si scrive', async () => {
     const p = app.pagina;
+    await scegliZona('Centro');
     await L('Prezzo di vendita').fill('150.000,00');
-    await p.getByLabel('% sul prezzo').nth(0).fill('3');
-    assert.equal(await L('Compenso dal venditore').inputValue(), '4.500,00');
-    await L('Compenso dall\'acquirente').fill('1.500,00');
-    assert.equal(await p.getByLabel('% sul prezzo').nth(1).inputValue(), '1');
-    await p.waitForFunction(() => /Totale con IVA\s+7\.320,00/.test(document.querySelector('.form-riepilogo').innerText.replace(/\s+/g, ' ')));
-    const r = await riepilogo();
-    assert.match(r, /Compenso dal venditore 4\.500,00 €/);
-    assert.match(r, /Compenso dall'acquirente 1\.500,00 €/);
-    assert.match(r, /Totale imponibile 6\.000,00 €/);
-    assert.match(r, /IVA 22% 1\.320,00 €/);
-    assert.match(r, /Totale con IVA 7\.320,00 €/);
-    // cambiando l'aliquota cambia l'IVA
+    await P('venditore', 'Bonifico').fill('3.660');
+    await P('acquirente', 'Contanti').fill('2.000');
+    await p.waitForFunction(() => /Totale pagato dalle parti\s+5\.660,00/.test(document.querySelector('.form-riepilogo').innerText.replace(/\s+/g, ' ')));
+    // venditore: 3.660,00 con IVA 22% = 3.000,00 + 660,00; acquirente: 2.000,00 in contanti, già senza IVA
+    assert.equal(await testoDi('#compenso-venditore'), 'Compenso senza IVA dal venditore: 3.000,00 € (IVA compresa nei pagamenti: 660,00 €)');
+    assert.equal(await testoDi('#compenso-acquirente'), 'Compenso senza IVA dall\'acquirente: 2.000,00 €');
+    assert.equal(await testoDi('#riep-venditore'), '3.000,00 €');
+    assert.equal(await testoDi('#riep-acquirente'), '2.000,00 €');
+    assert.equal(await testoDi('#riep-imponibile'), '5.000,00 €');
+    assert.equal(await testoDi('#riep-iva'), '660,00 €');
+    assert.equal(await testoDi('#riep-pagato'), '5.660,00 €');
+    assert.match(await riepilogo(), /Compenso sul prezzo di vendita 3,33%/);
+    // la stessa parte può pagare in più modi: acquirente 2.000 contanti + 1.220 con assegno (1.000 + 220 di IVA)
+    await P('acquirente', 'Assegno').fill('1.220');
+    await p.waitForFunction(() => /Totale pagato dalle parti\s+6\.880,00/.test(document.querySelector('.form-riepilogo').innerText.replace(/\s+/g, ' ')));
+    assert.equal(await testoDi('#compenso-acquirente'), 'Compenso senza IVA dall\'acquirente: 3.000,00 € (IVA compresa nei pagamenti: 220,00 €)');
+    assert.equal(await testoDi('#riep-imponibile'), '6.000,00 €');
+    assert.equal(await testoDi('#riep-iva'), '880,00 €');
+    // cambiando l'aliquota cambia solo l'IVA contenuta in bonifico e assegno; i contanti restano com'erano
+    // IVA 10%: 3.660 / 1,10 = 3.327,27 (IVA 332,73); 1.220 / 1,10 = 1.109,09 (IVA 110,91); contanti 2.000
     await L('Aliquota IVA').selectOption('10');
-    await p.waitForFunction(() => /IVA 10%\s+600,00/.test(document.querySelector('.form-riepilogo').innerText.replace(/\s+/g, ' ')));
-    assert.match(await riepilogo(), /Totale con IVA 6\.600,00 €/);
-    // scrivendo l'importo si ricalcola la percentuale
-    await L('Compenso dal venditore').fill('3000');
-    assert.equal(await p.getByLabel('% sul prezzo').nth(0).inputValue(), '2');
-    // cambiando il prezzo la percentuale segue l'importo
-    await L('Prezzo di vendita').fill('120.000');
-    await p.waitForFunction(() => document.querySelectorAll('input[aria-describedby]')[0] !== undefined);
-    assert.equal(await p.getByLabel('% sul prezzo').nth(0).inputValue(), '2,5');
+    await p.waitForFunction(() => /IVA 10% compresa in bonifico e assegno\s+443,64/.test(document.querySelector('.form-riepilogo').innerText.replace(/\s+/g, ' ')));
+    assert.equal(await testoDi('#riep-venditore'), '3.327,27 €');
+    assert.equal(await testoDi('#riep-acquirente'), '3.109,09 €');
+    assert.equal(await testoDi('#riep-imponibile'), '6.436,36 €');
+    assert.equal(await testoDi('#riep-pagato'), '6.880,00 €', 'quanto hanno pagato non cambia: cambia come si divide tra compenso e IVA');
     assert.match(rimuoviSpazi(await p.locator('.stato-mod').innerText()), /Modifiche non ancora salvate/);
+    // tutto vuoto di nuovo: zero
+    for (const [parte, modo] of [['venditore', 'Bonifico'], ['acquirente', 'Contanti'], ['acquirente', 'Assegno']]) await P(parte, modo).fill('');
+    await p.waitForFunction(() => /Totale pagato dalle parti\s+0,00/.test(document.querySelector('.form-riepilogo').innerText.replace(/\s+/g, ' ')));
   });
 
-  test('ripartizione tra collaboratori: scorciatoie, righe, totale e avviso se non fa 100%', async () => {
+  test('la ripartizione tra i collaboratori segue la zona, da sola; una zona senza ripartizione si sistema dal modulo', async () => {
     const p = app.pagina;
-    const righe = () => p.locator('.quote-righe .quota-riga');
-    const totale = async () => rimuoviSpazi(await p.locator('.quote-righe').locator('xpath=following-sibling::div').first().innerText());
-    await p.getByRole('button', { name: 'Tutto a Luca' }).click();
-    assert.equal(await righe().count(), 1);
-    assert.equal(await p.getByLabel('Collaboratore 1').locator('option:checked').innerText(), 'Luca');
-    assert.equal(await p.getByLabel('Quota del collaboratore 1').inputValue(), '100');
-    assert.match(rimuoviSpazi(await p.locator('.form-colonna').innerText()), /Totale quote: 100%/);
-    await p.getByRole('button', { name: 'Parti uguali' }).click();
-    assert.equal(await righe().count(), 2);
-    assert.equal(await p.getByLabel('Quota del collaboratore 1').inputValue(), '50');
-    assert.equal(await p.getByLabel('Quota del collaboratore 2').inputValue(), '50');
-    assert.equal(await p.getByLabel('Collaboratore 2').locator('option:checked').innerText(), 'Giuseppe');
-    // tutti i collaboratori sono già nella pratica
-    await p.getByRole('button', { name: 'Aggiungi collaboratore' }).click();
-    await attendiNotifica(p, /Hai già aggiunto tutti i collaboratori/);
-    // togliere una riga
-    await p.getByRole('button', { name: 'Togli il collaboratore 2' }).click();
-    assert.equal(await righe().count(), 1);
-    // aggiungere di nuovo: propone il collaboratore libero con la quota rimanente
-    await p.getByRole('button', { name: 'Aggiungi collaboratore' }).click();
-    assert.equal(await righe().count(), 2);
-    assert.equal(await p.getByLabel('Collaboratore 2').locator('option:checked').innerText(), 'Giuseppe');
-    assert.equal(await p.getByLabel('Quota del collaboratore 2').inputValue(), '50', 'propone la quota che manca per arrivare a 100%');
-    // 60 + 30 = 90%: il totale diventa rosso e il salvataggio chiede conferma
-    await p.getByLabel('Quota del collaboratore 1').fill('60');
-    await p.getByLabel('Quota del collaboratore 2').fill('30');
-    assert.match(rimuoviSpazi(await p.locator('.form-colonna').innerText()), /Totale quote: 90%/);
-    await L('Indirizzo dell\'immobile').fill('Via Quote 1');
-    await p.click('#salva-pratica');
+    const righe = async () => (await p.locator('#ripartizione-automatica .ripartizione-elenco li').allInnerTexts()).map(rimuoviSpazi);
+    await scegliZona('Centro');
+    assert.deepEqual(await righe(), ['Luca 100%']);
+    assert.match(await ripartizione(), /Ripartizione impostata per la zona “Centro”/);
+    await scegliZona('Collina');
+    assert.deepEqual(await righe(), ['Luca 60%', 'Giuseppe 40%']);
+    await scegliZona('Lungomare');
+    assert.deepEqual(await righe(), ['Giuseppe 100%']);
+    // una zona senza ripartizione: avviso e pulsante per impostarla (sono due collaboratori e non c'è una predefinita)
+    await scegliZona('Porto');
+    assert.equal(await p.locator('#ripartizione-mancante').count(), 1);
+    assert.match(await ripartizione(), /La zona “Porto” non ha una ripartizione/);
+    assert.match(await stima(), /Scegli una zona con una ripartizione per vedere la stima/);
+    await p.click('#imposta-ripartizione-zona');
     const f = finestra(p);
     await f.waitFor();
-    assert.match(rimuoviSpazi(await f.innerText()), /La ripartizione non fa 100%/);
-    assert.match(rimuoviSpazi(await f.innerText()), /sommano 90%/);
+    assert.match(rimuoviSpazi(await f.innerText()), /Ripartizione della zona Porto/);
+    await f.getByRole('button', { name: 'Parti uguali' }).click();
+    assert.match(rimuoviSpazi(await f.innerText()), /Totale quote: 100%/);
+    await bottoneFinestra(p, 'Salva la ripartizione').click();
+    await attendiNotifica(p, /Ripartizione della zona “Porto” salvata/);
+    assert.deepEqual(await righe(), ['Luca 50%', 'Giuseppe 50%']);
+    assert.equal(await p.locator('#ripartizione-mancante').count(), 0);
+    assert.deepEqual(await sql(p, "SELECT c.nome, q.percentuale FROM zone_quote q JOIN collaboratori c ON c.id = q.collaboratore_id JOIN zone z ON z.id = q.zona_id WHERE z.nome = 'Porto' ORDER BY c.id"), [{ nome: 'Luca', percentuale: 50 }, { nome: 'Giuseppe', percentuale: 50 }]);
+    // la finestra rifiuta quote che non fanno 100%
+    await p.click('#imposta-ripartizione-zona');
+    await f.getByLabel('Quota di Luca').fill('70');
+    await f.getByLabel('Quota di Giuseppe').fill('20');
+    await bottoneFinestra(p, 'Salva la ripartizione').click();
+    await f.locator('.errore').getByText(/Le quote sommano 90%: devono fare 100%/).waitFor();
     await bottoneFinestra(p, 'Annulla').click();
-    assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM pratiche'), 0, 'Annulla: non viene salvato nulla');
-    // sopra il 100% il database rifiuta
-    await p.getByLabel('Quota del collaboratore 1').fill('80');
-    await p.getByLabel('Quota del collaboratore 2').fill('40');
-    await p.click('#salva-pratica');
-    await bottoneFinestra(p, 'Salva comunque').click();
-    await p.waitForFunction(() => /supera il 100%/.test(document.querySelector('.form-colonna').textContent));
-    assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM pratiche'), 0);
+    assert.deepEqual(await righe(), ['Luca 50%', 'Giuseppe 50%'], 'annullando resta quella di prima');
+    // senza zona non si divide niente
+    await L(ZONA).selectOption('');
+    assert.match(await ripartizione(), /Scegli la zona/);
   });
 
-  test('stima delle provvigioni: senza scaglioni lo dice, con gli scaglioni si aggiorna mentre si scrive', async () => {
+  test('stima delle provvigioni: senza scaglioni lo dice; con gli scaglioni si aggiorna mentre si scrive, per ciascun collaboratore', async () => {
     const p = app.pagina;
     // il programma parte con gli scaglioni dell'agenzia: per provare il caso «senza scaglioni» si svuota la tabella e si riapre il modulo
     await p.evaluate(async () => { const { api, app: a } = window.__gi; await api.salvaTabellaScaglioni(a.archivio, null, []); });
     await apriNuova();
-    await p.getByRole('button', { name: 'Tutto a Luca' }).click();
+    await scegliZona('Centro');
+    await P('acquirente', 'Contanti').fill('1.000');
     await p.waitForFunction(() => /scaglioni non sono ancora impostati/.test(document.querySelector('.stima-provvigione').textContent));
-    // imposto zona e scaglioni (0 € → 30%, 10.000 € → 35%, 20.000 € → 40%) e riapro il modulo
+    // scaglioni dell'agenzia: 5% fino a 2.600, 8% fino a 5.200, 11% fino a 7.800, 15% fino a 13.000, 20% oltre
     await p.evaluate(async () => {
-      const { api, app } = window.__gi;
-      await api.creaZona(app.archivio, { nome: 'Centro' });
-      await api.salvaTabellaScaglioni(app.archivio, null, [{ da_cent: 0, percentuale: 30 }, { da_cent: 1000000, percentuale: 35 }, { da_cent: 2000000, percentuale: 40 }]);
+      const { api, app: a } = window.__gi;
+      await api.salvaTabellaScaglioni(a.archivio, null, [{ da_cent: 0, percentuale: 5 }, { da_cent: 260001, percentuale: 8 }, { da_cent: 520001, percentuale: 11 }, { da_cent: 780001, percentuale: 15 }, { da_cent: 1300001, percentuale: 20 }]);
     });
     await apriNuova();
-    await p.getByRole('button', { name: 'Tutto a Luca' }).click();
-    await L(STATO).selectOption('conclusa'); // il rogito si compila con la data di oggi
-    assert.equal(await L('Data del rogito').inputValue(), '16/10/2026');
-    await L('Data del rogito').fill('14/10/2026');
-    await L(ZONA).selectOption({ label: 'Centro' });
-    await L('Compenso dal venditore').fill('2.500,00');
-    await L('Compenso dall\'acquirente').fill('2.500,00');
+    await scegliZona('Centro');
+    // venditore 3.050 con bonifico (= 2.500 + 550 di IVA) + acquirente 2.500 in contanti = 5.000 senza IVA → 2° scaglione (8%) = 400
+    await P('venditore', 'Bonifico').fill('3.050');
+    await P('acquirente', 'Contanti').fill('2.500');
     await p.waitForFunction(() => /Quota 100% dei compensi: 5\.000,00/.test(document.querySelector('.stima-provvigione').textContent));
     let s = await stima();
-    assert.match(s, /Luca\s*1\.500,00 €/);
-    assert.match(s, /Quota 100% dei compensi: 5\.000,00 €/);
-    assert.match(s, /Cumulo di ottobre 2026 in Centro: 5\.000,00 € → scaglione 1 \(30%\)/);
-    assert.match(s, /Mancano 5\.000,00 € allo scaglione 2 \(35%\)/);
-    await L('Compenso dal venditore').fill('6.000,00');
-    await L('Compenso dall\'acquirente').fill('6.000,00');
+    assert.match(s, /Luca\s*400,00 €/);
+    assert.match(s, /Cumulo di ottobre 2026 in Centro: 5\.000,00 € → scaglione 2 \(8%\)/);
+    assert.match(s, /Mancano 200,01 € allo scaglione 3 \(11%\)/);
+    // 7.320 con bonifico (= 6.000 + 1.320 di IVA) + 6.000 in contanti = 12.000 → 4° scaglione (15%) = 1.800
+    await P('venditore', 'Bonifico').fill('7.320');
+    await P('acquirente', 'Contanti').fill('6.000');
     await p.waitForFunction(() => /Quota 100% dei compensi: 12\.000,00/.test(document.querySelector('.stima-provvigione').textContent));
     s = await stima();
-    assert.match(s, /Luca\s*4\.200,00 €/); // 12.000 × 35%
-    assert.match(s, /Mancano 8\.000,00 € allo scaglione 3 \(40%\)/);
-    // una quota del 50% dimezza il fatturato attribuito e la provvigione
-    await p.getByLabel('Quota del collaboratore 1').fill('50');
-    await p.waitForFunction(() => /Quota 50% dei compensi: 6\.000,00/.test(document.querySelector('.stima-provvigione').textContent));
-    assert.match(await stima(), /Luca\s*1\.800,00 €/); // 6.000 × 30%
+    assert.match(s, /Luca\s*1\.800,00 €/);
+    assert.match(s, /→ scaglione 4 \(15%\)/);
+    assert.match(s, /Mancano 1\.000,01 € allo scaglione 5 \(20%\)/);
+    // in una zona divisa 60/40 ognuno ha il suo cumulo: Luca 7.200 → 3° scaglione (11%) = 792; Giuseppe 4.800 → 2° scaglione (8%) = 384
+    await scegliZona('Collina');
+    await p.waitForFunction(() => /Giuseppe/.test(document.querySelector('.stima-provvigione').textContent));
+    s = await stima();
+    assert.match(s, /Luca\s*792,00 €\s*Quota 60% dei compensi: 7\.200,00 €/);
+    assert.match(s, /Giuseppe\s*384,00 €\s*Quota 40% dei compensi: 4\.800,00 €/);
   });
 
-  test('"Nuova zona" dal modulo crea la zona e la sceglie; un nome già usato viene rifiutato', async () => {
+  test('"Nuova zona" dal modulo crea la zona con la sua ripartizione e la sceglie; un nome già usato viene rifiutato', async () => {
     const p = app.pagina;
-    await p.getByRole('button', { name: 'Nuova zona' }).click();
+    await p.click('#nuova-zona');
     const f = finestra(p);
-    await f.getByLabel('Nome della zona').fill('Collina');
+    await f.getByLabel('Nome della zona').fill('Spiaggia');
+    // quote che non fanno 100%: la finestra non si chiude
+    await f.getByLabel('Quota di Luca').fill('60');
     await bottoneFinestra(p, 'Crea zona').click();
-    await attendiNotifica(p, /Zona “Collina” creata/);
-    assert.equal(await L(ZONA).locator('option:checked').innerText(), 'Collina');
-    assert.equal(await valoreSql(p, "SELECT COUNT(*) FROM zone WHERE nome = 'Collina'"), 1);
-    await p.getByRole('button', { name: 'Nuova zona' }).click();
-    await f.getByLabel('Nome della zona').fill('collina'); // stesso nome in minuscolo
+    await f.locator('.errore').getByText(/Le quote sommano 60%/).waitFor();
+    assert.equal(await valoreSql(p, "SELECT COUNT(*) FROM zone WHERE nome = 'Spiaggia'"), 0);
+    await f.getByRole('button', { name: 'Tutto a Giuseppe' }).click();
+    await bottoneFinestra(p, 'Crea zona').click();
+    await attendiNotifica(p, /Zona “Spiaggia” creata con la sua ripartizione/);
+    assert.equal(await L(ZONA).locator('option:checked').innerText(), 'Spiaggia');
+    assert.deepEqual((await p.locator('#ripartizione-automatica .ripartizione-elenco li').allInnerTexts()).map(rimuoviSpazi), ['Giuseppe 100%']);
+    assert.equal(await valoreSql(p, "SELECT COUNT(*) FROM zone_quote WHERE zona_id = (SELECT id FROM zone WHERE nome = 'Spiaggia')"), 1);
+    // un nome già usato (anche in minuscolo) viene rifiutato
+    await p.click('#nuova-zona');
+    await f.getByLabel('Nome della zona').fill('spiaggia');
     await bottoneFinestra(p, 'Crea zona').click();
     await f.locator('.ha-errore').waitFor();
     assert.match(rimuoviSpazi(await f.innerText()), /esiste già/i);
     await bottoneFinestra(p, 'Annulla').click();
-    assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM zone'), 2);
+    assert.equal(await valoreSql(p, "SELECT COUNT(*) FROM zone WHERE nome = 'Spiaggia'"), 1);
+    // una zona creata senza ripartizione si segnala e si sistema da lì
+    await p.click('#nuova-zona');
+    await f.getByLabel('Nome della zona').fill('Darsena');
+    await bottoneFinestra(p, 'Crea zona').click();
+    await attendiNotifica(p, /Zona “Darsena” creata\. Ricorda di impostarne la ripartizione/);
+    assert.equal(await p.locator('#ripartizione-mancante').count(), 1);
   });
 
-  test('salvataggio completo: i dati arrivano nel database e la scheda li mostra', async () => {
+  test('salvataggio completo: numero, stato e data automatici, i dati arrivano nel database e la scheda li mostra', async () => {
     const p = app.pagina;
-    await L('Indirizzo dell\'immobile').fill('Via del Test 7');
-    await L('Comune').fill('Minturno');
+    await scegliZona('Centro');
     await L('Tipo di immobile').selectOption({ label: 'Appartamento' });
-    await L(ZONA).selectOption({ label: 'Centro' });
-    await L(STATO).selectOption('conclusa');
-    await L('Data di apertura').fill('01/09/2026');
-    await L('Data del rogito').fill('14/10/2026');
     await L('Prezzo di vendita').fill('185.000,00');
     await L('Prezzo di acquisto').fill('150.000,00');
-    await L('Venditore', { exact: true }).fill('Mario Rossi');
-    await L('Acquirente', { exact: true }).fill('Anna Bianchi');
-    await L('Compenso dal venditore').fill('3.700,00');
-    await L('Compenso dall\'acquirente').fill('3.700,00');
+    await L('Venditore (nome', { exact: false }).fill('Mario Rossi');
+    await L('Acquirente (nome', { exact: false }).fill('Anna Bianchi');
+    // 4.514,00 con IVA 22% = 3.700,00 + 814,00 (venditore con bonifico, acquirente con assegno)
+    await P('venditore', 'Bonifico').fill('4.514,00');
+    await P('acquirente', 'Assegno').fill('4.514,00');
     await L('Note', { exact: true }).fill('Atto presso il notaio\nsecondo piano');
-    await p.getByRole('button', { name: 'Parti uguali' }).click();
     await p.click('#salva-pratica');
     await attendiNotifica(p, /Pratica 2026\/001 salvata/);
-    await p.waitForSelector('#contenuto h1:has-text("Via del Test 7")');
+    await p.waitForSelector('#contenuto h1:has-text("Zona Centro")');
     assert.match(await p.evaluate(() => location.hash), /^#\/pratiche\/\d+$/);
     const riga = (await sql(p, 'SELECT * FROM pratiche'))[0];
     assert.deepEqual(
-      [riga.codice, riga.stato, riga.data_pratica, riga.data_rogito, riga.immobile_indirizzo, riga.immobile_comune, riga.immobile_tipo, riga.prezzo_vendita_cent, riga.prezzo_acquisto_cent, riga.venditore, riga.acquirente, riga.compenso_venditore_cent, riga.compenso_acquirente_cent, riga.aliquota_iva, riga.note],
-      ['2026/001', 'conclusa', '2026-09-01', '2026-10-14', 'Via del Test 7', 'Minturno', 'Appartamento', 18500000, 15000000, 'Mario Rossi', 'Anna Bianchi', 370000, 370000, 22, 'Atto presso il notaio\nsecondo piano']);
+      [riga.codice, riga.stato, riga.data_pratica, riga.data_rogito, riga.immobile_indirizzo, riga.immobile_comune, riga.immobile_tipo, riga.prezzo_vendita_cent, riga.prezzo_acquisto_cent, riga.venditore, riga.acquirente, riga.aliquota_iva, riga.note],
+      ['2026/001', 'conclusa', '2026-10-16', '2026-10-16', null, null, 'Appartamento', 18500000, 15000000, 'Mario Rossi', 'Anna Bianchi', 22, 'Atto presso il notaio\nsecondo piano']);
+    assert.deepEqual(
+      [riga.compensi_da_pagamenti, riga.venditore_contanti_cent, riga.venditore_bonifico_cent, riga.venditore_assegno_cent, riga.acquirente_contanti_cent, riga.acquirente_bonifico_cent, riga.acquirente_assegno_cent, riga.compenso_venditore_cent, riga.compenso_acquirente_cent],
+      [1, 0, 451400, 0, 0, 0, 451400, 370000, 370000]);
     assert.equal(await valoreSql(p, 'SELECT nome FROM zone WHERE id = ?', [riga.zona_id]), 'Centro');
     const quote = await sql(p, 'SELECT c.nome, q.percentuale FROM quote q JOIN collaboratori c ON c.id = q.collaboratore_id ORDER BY c.id');
-    assert.deepEqual(quote, [{ nome: 'Luca', percentuale: 50 }, { nome: 'Giuseppe', percentuale: 50 }]);
+    assert.deepEqual(quote, [{ nome: 'Luca', percentuale: 100 }], 'ripartizione presa dalla zona Centro');
     // la scheda
     const t = rimuoviSpazi(await p.locator('#contenuto').innerText());
     assert.match(t, /Conclusa/);
-    assert.match(t, /Pratica 2026\/001 · Minturno · Appartamento · Zona Centro/);
+    assert.match(t, /Pratica 2026\/001 · Appartamento · Zona Centro/);
     assert.match(t, /Prezzo di vendita 185\.000,00 €/);
     assert.match(t, /Differenza \+35\.000,00 € \(\+23,3%\)/);
-    assert.match(t, /Rogito 14\/10\/2026/);
-    assert.match(t, /Tempo di lavorazione 43 giorni/);
-    assert.match(t, /Totale imponibile 7\.400,00 €/);
-    assert.match(t, /Totale con IVA 9\.028,00 €/);
+    assert.match(t, /Data 16\/10\/2026/);
+    assert.doesNotMatch(t, /Tempo di lavorazione|Rogito|Indirizzo/);
+    assert.match(t, /Totale compenso senza IVA 7\.400,00 €/);
+    assert.match(t, /IVA 22% compresa in bonifico e assegno 1\.628,00 €/);
+    assert.match(t, /Totale pagato dalle parti 9\.028,00 €/);
+    assert.match(t, /Incassato 9\.028,00 € Saldata/);
     assert.match(t, /Atto presso il notaio secondo piano/);
-    // 7.400 € nel Centro a ottobre, 50% ciascuno = 3.700 € ciascuno → scaglione 1 (30%) = 1.110 €
-    const righe = await p.locator('#tabella-provvigioni tbody tr').evaluateAll((tr) => tr.map((r) => [...r.children].map((c) => c.textContent.replace(/ /g, ' ').trim())));
-    assert.deepEqual(righe.map((r) => [r[0], r[1], r[2], r[4]]), [['Luca', '50%', '3.700,00 €', '1.110,00 €'], ['Giuseppe', '50%', '3.700,00 €', '1.110,00 €']]);
+    const pagamenti = (await p.locator('#tabella-pagamenti tbody tr').evaluateAll((tr) => tr.map((r) => [...r.children].map((c) => c.textContent)))).map((r) => r.map(rimuoviSpazi));
+    assert.deepEqual(pagamenti, [['Venditore', 'Bonifico', '4.514,00 €', 'compresa'], ['Acquirente', 'Assegno', '4.514,00 €', 'compresa']]);
+    // 7.400 € di Luca nel Centro a ottobre → 3° scaglione (11%) = 814,00 €
+    const righe = (await p.locator('#tabella-provvigioni tbody tr').evaluateAll((tr) => tr.map((r) => [...r.children].map((c) => c.textContent)))).map((r) => r.map(rimuoviSpazi));
+    assert.deepEqual(righe.map((r) => [r[0], r[1], r[2], r[4]]), [['Luca', '100%', '7.400,00 €', '814,00 €']]);
+    // con "Come è stata calcolata" i passaggi spiegano anche i pagamenti
+    await p.locator('#come-calcolato summary').click();
+    assert.match(rimuoviSpazi(await p.locator('#come-calcolato').innerText()), /Compenso della pratica: 3\.700,00 € dal venditore \+ 3\.700,00 € dall'acquirente = 7\.400,00 € \(senza IVA: i contanti sono già senza IVA, da bonifico e assegno l'IVA è stata tolta\)/);
   });
 
-  test('un codice già usato viene rifiutato e non si perde nulla di quanto scritto', async () => {
+  test('"Salva e inserisci un\'altra" salva e riapre un modulo vuoto con il numero successivo', async () => {
     const p = app.pagina;
-    assert.equal(await L('Codice pratica').inputValue(), '2026/002', 'il codice proposto è il successivo');
-    await L('Codice pratica').fill('2026/001');
-    await L('Indirizzo dell\'immobile').fill('Via Doppia 3');
-    await p.click('#salva-pratica');
-    await p.waitForFunction(() => /Esiste già una pratica con questo codice/.test(document.querySelector('.form-colonna').textContent));
-    assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM pratiche'), 1);
-    assert.equal(await L('Indirizzo dell\'immobile').inputValue(), 'Via Doppia 3');
-    // anche in minuscolo/con altre lettere maiuscole è lo stesso codice
-    await L('Codice pratica').fill('2026/001 ');
-    await p.click('#salva-pratica');
-    await p.waitForFunction(() => /Esiste già una pratica con questo codice/.test(document.querySelector('.form-colonna').textContent));
-  });
-
-  test('"Salva e inserisci un\'altra" salva e riapre un modulo vuoto con il codice successivo', async () => {
-    const p = app.pagina;
-    await L('Indirizzo dell\'immobile').fill('Via Serie 1');
-    await L('Compenso dal venditore').fill('1.000');
+    await scegliZona('Lungomare');
+    await P('venditore', 'Contanti').fill('1.000');
     await p.click('#salva-e-nuova');
     await attendiNotifica(p, /Pratica 2026\/002 salvata/);
-    await p.waitForFunction(() => document.querySelector('#form-pratica input[placeholder="Via, numero civico"]')?.value === '');
+    await p.waitForFunction(() => document.querySelector('#form-pratica select')?.value === '');
     assert.equal(await p.evaluate(() => location.hash), '#/nuova');
-    assert.equal(await L('Codice pratica').inputValue(), '2026/003');
-    assert.equal(await L('Compenso dal venditore').inputValue(), '');
+    assert.equal(await L(ZONA).inputValue(), '');
+    assert.equal(await P('venditore', 'Contanti').inputValue(), '');
     assert.match(rimuoviSpazi(await p.locator('.stato-mod').innerText()), /Compila i dati della pratica/);
-    assert.equal(await p.evaluate(() => document.activeElement.labels?.[0]?.textContent.replace('*', '').trim()), 'Indirizzo dell\'immobile');
+    assert.equal(await p.evaluate(() => document.activeElement.labels?.[0]?.textContent.replace('*', '').trim()), 'Zona');
     assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM pratiche'), 2);
+    assert.deepEqual(await sql(p, "SELECT codice, stato, data_pratica, data_rogito FROM pratiche WHERE codice = '2026/002'"), [{ codice: '2026/002', stato: 'conclusa', data_pratica: '2026-10-16', data_rogito: '2026-10-16' }]);
+    assert.deepEqual(await sql(p, "SELECT c.nome, q.percentuale FROM quote q JOIN collaboratori c ON c.id = q.collaboratore_id JOIN pratiche pr ON pr.id = q.pratica_id WHERE pr.codice = '2026/002'"), [{ nome: 'Giuseppe', percentuale: 100 }], 'Lungomare è di Giuseppe');
     // uscendo subito non compare nessun avviso (non ci sono modifiche)
     await p.click('.sidebar .nav-voce[data-id="pratiche"]');
     await p.waitForSelector('#contenuto h1:has-text("Archivio pratiche")');
@@ -300,7 +332,8 @@ describe('Nuova pratica e modifica', () => {
 
   test('uscire con modifiche non salvate chiede conferma ("Resta qui" le conserva)', async () => {
     const p = app.pagina;
-    await L('Indirizzo dell\'immobile').fill('Via Sporca 9');
+    await scegliZona('Collina');
+    await P('acquirente', 'Contanti').fill('777');
     await p.click('.sidebar .nav-voce[data-id="cumulo"]');
     const f = finestra(p);
     await f.waitFor();
@@ -308,12 +341,12 @@ describe('Nuova pratica e modifica', () => {
     assert.match(rimuoviSpazi(await f.innerText()), /modifiche non salvate/);
     await bottoneFinestra(p, 'Resta qui').click();
     assert.equal(await p.evaluate(() => location.hash), '#/nuova');
-    assert.equal(await L('Indirizzo dell\'immobile').inputValue(), 'Via Sporca 9');
+    assert.equal(await P('acquirente', 'Contanti').inputValue(), '777,00');
     // anche il pulsante Annulla è protetto
     await p.click('#annulla-pratica');
     await f.waitFor();
     await bottoneFinestra(p, 'Resta qui').click();
-    assert.equal(await L('Indirizzo dell\'immobile').inputValue(), 'Via Sporca 9');
+    assert.equal(await P('acquirente', 'Contanti').inputValue(), '777,00');
     // poi si esce davvero
     await p.click('.sidebar .nav-voce[data-id="cumulo"]');
     await f.waitFor();
@@ -322,60 +355,111 @@ describe('Nuova pratica e modifica', () => {
     assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM pratiche'), 2, 'nulla è stato salvato');
   });
 
-  test('una pratica incompleta si salva e viene segnalata con cosa manca', async () => {
+  test('una zona senza ripartizione: si può salvare lo stesso dopo conferma, e la pratica viene segnalata', async () => {
     const p = app.pagina;
-    await L('Indirizzo dell\'immobile').fill('Via Incompleta 2');
-    await L(STATO).selectOption('conclusa');
-    await L('Data del rogito').fill('');
+    await scegliZona('Scalo');
+    await P('venditore', 'Contanti').fill('500');
     await p.click('#salva-pratica');
+    const f = finestra(p);
+    await f.waitFor();
+    assert.match(rimuoviSpazi(await f.innerText()), /La zona non ha una ripartizione/);
+    // "Annulla" non salva niente
+    await bottoneFinestra(p, 'Annulla').click();
+    assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM pratiche'), 2);
+    await p.click('#salva-pratica');
+    await bottoneFinestra(p, 'Salva comunque').click();
     await attendiNotifica(p, /Pratica 2026\/003 salvata/);
-    await p.waitForSelector('#contenuto h1:has-text("Via Incompleta 2")');
+    await p.waitForSelector('#contenuto h1:has-text("Zona Scalo")');
     const t = rimuoviSpazi(await p.locator('#contenuto').innerText());
     assert.match(t, /Dati da completare:/);
-    assert.match(t, /zona/i);
+    assert.match(t, /Prezzo di vendita mancante/);
+    assert.match(t, /Ripartizione tra collaboratori mancante/);
     assert.match(t, /Completa i dati/);
     // il collegamento porta al modulo di modifica
     await p.getByRole('link', { name: 'Completa i dati' }).click();
     await p.waitForSelector('#contenuto h1:has-text("Modifica pratica 2026/003")');
   });
 
-  test('modifica: il modulo riporta i dati, salva le differenze e aggiorna la scheda', async () => {
+  test('modifica: il modulo riporta i dati, salva le differenze e aggiorna la scheda; cambiando zona cambia la ripartizione', async () => {
     const p = app.pagina;
     await vai(p, `#/pratiche/${await idPratica(p, '2026/001')}/modifica`);
     assert.equal(rimuoviSpazi(await p.locator('#contenuto h1').innerText()), 'Modifica pratica 2026/001');
-    assert.equal(await L('Codice pratica').inputValue(), '2026/001');
-    assert.equal(await L('Indirizzo dell\'immobile').inputValue(), 'Via del Test 7');
-    assert.equal(await L(STATO).inputValue(), 'conclusa');
-    assert.equal(await L('Data del rogito').inputValue(), '14/10/2026');
+    assert.equal(await L('Codice pratica').count(), 0);
+    assert.equal(await L(/^Stato/).count(), 0);
+    assert.match(await testoDi('#data-pratica'), /^Data della pratica: 16\/10\/2026\.$/);
     assert.equal(await L('Prezzo di vendita').inputValue(), '185.000,00');
-    assert.equal(await L('Compenso dal venditore').inputValue(), '3.700,00');
+    assert.equal(await P('venditore', 'Bonifico').inputValue(), '4.514,00');
+    assert.equal(await P('acquirente', 'Assegno').inputValue(), '4.514,00');
+    assert.equal(await P('venditore', 'Contanti').inputValue(), '');
     assert.equal(await L(ZONA).locator('option:checked').innerText(), 'Centro');
-    assert.equal(await p.getByLabel('Quota del collaboratore 1').inputValue(), '50');
-    assert.match(await riepilogo(), /Già incassato 0,00 €/);
+    assert.match(await ripartizione(), /Luca 100%.*Ripartizione già registrata per questa pratica/);
+    assert.match(await riepilogo(), /Già incassato \(con eventuali incassi successivi\) 9\.028,00 €/);
     assert.match(rimuoviSpazi(await p.locator('.stato-mod').innerText()), /Nessuna modifica/);
     assert.equal(await p.locator('#salva-e-nuova').count(), 0);
-    // cambio il compenso del venditore e la ripartizione
-    await L('Compenso dal venditore').fill('4.300,00');
-    await p.getByRole('button', { name: 'Tutto a Luca' }).click();
+    // il venditore ora ha pagato 5.124,00 con bonifico (= 4.200 + 924 di IVA)
+    await P('venditore', 'Bonifico').fill('5.124');
     assert.match(rimuoviSpazi(await p.locator('.stato-mod').innerText()), /Modifiche non ancora salvate/);
     await p.click('#salva-pratica');
     await attendiNotifica(p, /Pratica 2026\/001 aggiornata/);
-    await p.waitForSelector('#contenuto h1:has-text("Via del Test 7")');
-    const riga = (await sql(p, "SELECT compenso_venditore_cent FROM pratiche WHERE codice = '2026/001'"))[0];
-    assert.equal(riga.compenso_venditore_cent, 430000);
-    assert.deepEqual(await sql(p, "SELECT c.nome, q.percentuale FROM quote q JOIN collaboratori c ON c.id = q.collaboratore_id JOIN pratiche p ON p.id = q.pratica_id WHERE p.codice = '2026/001'"), [{ nome: 'Luca', percentuale: 100 }]);
+    await p.waitForSelector('#contenuto h1:has-text("Zona Centro")');
+    const dopo = (await sql(p, "SELECT * FROM pratiche WHERE codice = '2026/001'"))[0];
+    assert.deepEqual([dopo.venditore_bonifico_cent, dopo.compenso_venditore_cent, dopo.data_pratica, dopo.data_rogito, dopo.stato], [512400, 420000, '2026-10-16', '2026-10-16', 'conclusa'], 'cambiano solo gli importi: numero, data e stato restano');
+    assert.deepEqual(await sql(p, "SELECT c.nome, q.percentuale FROM quote q JOIN collaboratori c ON c.id = q.collaboratore_id JOIN pratiche pr ON pr.id = q.pratica_id WHERE pr.codice = '2026/001'"), [{ nome: 'Luca', percentuale: 100 }]);
     const t = rimuoviSpazi(await p.locator('#contenuto').innerText());
-    assert.match(t, /Totale imponibile 8\.000,00 €/);
-    // 8.000 € di Luca a ottobre nel Centro → scaglione 1 (30%) = 2.400 €
-    const righe = await p.locator('#tabella-provvigioni tbody tr').evaluateAll((tr) => tr.map((r) => [...r.children].map((c) => c.textContent.replace(/ /g, ' ').trim())));
-    assert.deepEqual(righe.map((r) => [r[0], r[1], r[2], r[4]]), [['Luca', '100%', '8.000,00 €', '2.400,00 €']]);
+    assert.match(t, /Totale compenso senza IVA 7\.900,00 €/);
+    // 7.900 € di Luca a ottobre nel Centro → 4° scaglione (15%) = 1.185,00 €
+    const righe = (await p.locator('#tabella-provvigioni tbody tr').evaluateAll((tr) => tr.map((r) => [...r.children].map((c) => c.textContent)))).map((r) => r.map(rimuoviSpazi));
+    assert.deepEqual(righe.map((r) => [r[0], r[1], r[2], r[4]]), [['Luca', '100%', '7.900,00 €', '1.185,00 €']]);
+    // cambiando la zona la ripartizione cambia da sola (Lungomare è di Giuseppe); tornando alla zona di prima torna quella registrata
+    await vai(p, `#/pratiche/${await idPratica(p, '2026/001')}/modifica`);
+    await scegliZona('Lungomare');
+    assert.deepEqual((await p.locator('#ripartizione-automatica .ripartizione-elenco li').allInnerTexts()).map(rimuoviSpazi), ['Giuseppe 100%']);
+    await scegliZona('Centro');
+    assert.match(await ripartizione(), /Luca 100%.*Ripartizione già registrata/);
+    await scegliZona('Lungomare');
+    await p.click('#salva-pratica');
+    await attendiNotifica(p, /Pratica 2026\/001 aggiornata/);
+    await p.waitForSelector('#contenuto h1:has-text("Zona Lungomare")');
+    assert.deepEqual(await sql(p, "SELECT c.nome, q.percentuale FROM quote q JOIN collaboratori c ON c.id = q.collaboratore_id JOIN pratiche pr ON pr.id = q.pratica_id WHERE pr.codice = '2026/001'"), [{ nome: 'Giuseppe', percentuale: 100 }]);
     // l'annullamento della modifica non salva niente
     await vai(p, `#/pratiche/${await idPratica(p, '2026/001')}/modifica`);
-    await L('Compenso dal venditore').fill('1');
+    await P('venditore', 'Contanti').fill('1');
     await p.click('#annulla-pratica');
     await bottoneFinestra(p, 'Esci senza salvare').click();
-    await p.waitForSelector('#contenuto h1:has-text("Via del Test 7")');
-    assert.equal((await sql(p, "SELECT compenso_venditore_cent FROM pratiche WHERE codice = '2026/001'"))[0].compenso_venditore_cent, 430000);
+    await p.waitForSelector('#contenuto h1:has-text("Zona Lungomare")');
+    assert.equal(await valoreSql(p, "SELECT venditore_contanti_cent FROM pratiche WHERE codice = '2026/001'"), 0);
+  });
+
+  test('una pratica vecchia (solo compenso senza IVA) si apre nel nuovo modulo e si salva senza cambiare i numeri', async () => {
+    const p = app.pagina;
+    const id = await p.evaluate(async () => {
+      const { api, app: a } = window.__gi;
+      const zona = api.elencoZone(a.archivio).find((z) => z.nome === 'Collina').id;
+      const [luca, giuseppe] = api.elencoCollaboratori(a.archivio);
+      return api.salvaPratica(a.archivio, {
+        codice: 'V/1', stato: 'conclusa', data_pratica: '2026-09-01', data_rogito: '2026-09-10', zona_id: zona, immobile_indirizzo: 'Via Vecchia 5',
+        prezzo_vendita_cent: 9000000, compenso_venditore_cent: 300000, compenso_acquirente_cent: 200000, aliquota_iva: 22,
+      }, [{ collaboratore_id: luca.id, percentuale: 70 }, { collaboratore_id: giuseppe.id, percentuale: 30 }]);
+    });
+    await vai(p, `#/pratiche/${id}/modifica`);
+    assert.equal(await p.locator('#nota-pratica-vecchia').count(), 1);
+    assert.match(await testoDi('#data-pratica'), /^Data della pratica: 10\/09\/2026\.$/);
+    // compenso riportato come bonifico con IVA compresa: 3.000 × 1,22 = 3.660; 2.000 × 1,22 = 2.440
+    assert.equal(await P('venditore', 'Bonifico').inputValue(), '3.660,00');
+    assert.equal(await P('acquirente', 'Bonifico').inputValue(), '2.440,00');
+    assert.equal(await testoDi('#riep-imponibile'), '5.000,00 €');
+    assert.equal(await testoDi('#riep-iva'), '1.100,00 €');
+    assert.match(await ripartizione(), /Luca 70%.*Giuseppe 30%.*Ripartizione già registrata/, 'la ripartizione di allora resta');
+    await p.click('#salva-pratica');
+    await attendiNotifica(p, /Pratica V\/1 aggiornata/);
+    await p.waitForSelector('#contenuto h1:has-text("Via Vecchia 5")');
+    const r = (await sql(p, "SELECT * FROM pratiche WHERE codice = 'V/1'"))[0];
+    assert.deepEqual([r.compensi_da_pagamenti, r.compenso_venditore_cent, r.compenso_acquirente_cent, r.data_pratica, r.data_rogito, r.immobile_indirizzo], [1, 300000, 200000, '2026-09-01', '2026-09-10', 'Via Vecchia 5'], 'importi, date e indirizzo di allora restano');
+    assert.deepEqual(await sql(p, "SELECT c.nome, q.percentuale FROM quote q JOIN collaboratori c ON c.id = q.collaboratore_id WHERE q.pratica_id = ? ORDER BY c.id", [id]), [{ nome: 'Luca', percentuale: 70 }, { nome: 'Giuseppe', percentuale: 30 }]);
+    const t = rimuoviSpazi(await p.locator('#contenuto').innerText());
+    assert.match(t, /Totale compenso senza IVA 5\.000,00 €/);
+    assert.match(t, /Apertura 01\/09\/2026/);
+    assert.match(t, /Rogito 10\/09\/2026/);
   });
 
   test('una pratica che non esiste più viene spiegata, senza errori', async () => {

@@ -13,13 +13,17 @@ export async function inserisciDatiProva(page) {
       { da_cent: 0, percentuale: 30 }, { da_cent: 10000 * E, percentuale: 35 }, { da_cent: 20000 * E, percentuale: 40 },
     ]);
     const [luca, giuseppe] = api.elencoCollaboratori(a);
+    // come si divide una pratica di ciascuna zona (vale per le pratiche inserite dal modulo; quelle qui sotto hanno la loro)
+    await api.salvaRipartizioneZona(a, zA, [{ collaboratore_id: luca.id, percentuale: 100 }]);
+    await api.salvaRipartizioneZona(a, zB, [{ collaboratore_id: giuseppe.id, percentuale: 100 }]);
+    await api.salvaRipartizioneZona(a, zC, [{ collaboratore_id: luca.id, percentuale: 50 }, { collaboratore_id: giuseppe.id, percentuale: 50 }]);
     const mk = async (n, mese, giorno, zona, indirizzo, prezzo, acquisto, cv, ca, quote, extra = {}) => {
       const anno = 2026;
       const rogito = `${anno}-${String(mese).padStart(2, '0')}-${String(giorno).padStart(2, '0')}`;
       const apertura = new Date(Date.UTC(anno, mese - 1, giorno - 40)).toISOString().slice(0, 10);
       return api.salvaPratica(a, {
         codice: `2026/${String(n).padStart(3, '0')}`, stato: 'conclusa', data_pratica: apertura, data_rogito: rogito, zona_id: zona,
-        immobile_indirizzo: indirizzo, immobile_comune: 'Minturno', immobile_tipo: 'Appartamento',
+        immobile_indirizzo: indirizzo, immobile_comune: 'Roccaverde', immobile_tipo: 'Appartamento',
         prezzo_vendita_cent: prezzo * E, prezzo_acquisto_cent: acquisto ? acquisto * E : null,
         venditore: `Venditore ${n}`, acquirente: `Acquirente ${n}`,
         compenso_venditore_cent: cv * E, compenso_acquirente_cent: ca * E, aliquota_iva: 22, ...extra,
@@ -39,7 +43,7 @@ export async function inserisciDatiProva(page) {
     ids.push(await mk(11, 10, 9, zA, 'Via Mazzini 9', 200000, 170000, 4000, 4000, [{ collaboratore_id: luca.id, percentuale: 100 }]));
     ids.push(await mk(12, 10, 12, zB, 'Via Pergolesi 1', 230000, null, 4600, 4600, [{ collaboratore_id: giuseppe.id, percentuale: 100 }]));
     // pratiche in corso e una incompleta
-    await api.salvaPratica(a, { codice: '2026/013', stato: 'in_corso', data_pratica: '2026-10-05', zona_id: zA, immobile_indirizzo: 'Via Nuova 4', immobile_comune: 'Minturno', immobile_tipo: 'Villa / villetta', prezzo_vendita_cent: 310000 * E, compenso_venditore_cent: 6200 * E, compenso_acquirente_cent: 0, aliquota_iva: 22 }, [{ collaboratore_id: luca.id, percentuale: 100 }]);
+    await api.salvaPratica(a, { codice: '2026/013', stato: 'in_corso', data_pratica: '2026-10-05', zona_id: zA, immobile_indirizzo: 'Via Nuova 4', immobile_comune: 'Roccaverde', immobile_tipo: 'Villa / villetta', prezzo_vendita_cent: 310000 * E, compenso_venditore_cent: 6200 * E, compenso_acquirente_cent: 0, aliquota_iva: 22 }, [{ collaboratore_id: luca.id, percentuale: 100 }]);
     await api.salvaPratica(a, { codice: '2026/014', stato: 'in_corso', data_pratica: '2026-09-20', zona_id: null, immobile_indirizzo: 'Via Senza Zona 1', immobile_comune: 'Formia', immobile_tipo: 'Terreno', compenso_venditore_cent: 0, compenso_acquirente_cent: 0, aliquota_iva: 22 }, []);
     await api.salvaPratica(a, { codice: '2026/015', stato: 'conclusa', data_pratica: '2026-09-01', data_rogito: null, zona_id: zB, immobile_indirizzo: 'Via Incompleta 9', immobile_comune: 'Gaeta', immobile_tipo: 'Box / garage', compenso_venditore_cent: 800 * E, compenso_acquirente_cent: 0, aliquota_iva: 22 }, [{ collaboratore_id: giuseppe.id, percentuale: 100 }]);
     // incassi e liquidazioni

@@ -6,6 +6,7 @@ import { naviga } from '../core/router.js';
 import { eur, eurInt, dataIt, normalizza, pct } from '../core/format.js';
 import { apriModale, conferma, menuAzioni, ok as notificaOk, segnalaErrore } from '../core/ui.js';
 import { ETICHETTA_STATO, dettaglioEliminazionePratica, eliminaPratica, salvaPratica } from '../data/repo/pratiche.js';
+import { CAMPI_PAGAMENTO } from '../data/calc/compensi.js';
 import { csvPratiche, codificaTesto, nomeFile } from '../data/esporta.js';
 import { apriDialogoIncasso } from '../components/dialoghi.js';
 import { badgeStato } from './dashboard.js';
@@ -14,7 +15,7 @@ const PER_PAGINA = 25;
 const COLONNE = [
   { id: 'codice', titolo: 'Codice', ordina: (p) => p.codice },
   { id: 'data', titolo: 'Data', ordina: (p) => p.dataRif },
-  { id: 'immobile', titolo: 'Immobile', ordina: (p) => normalizza(p.immobile_indirizzo) },
+  { id: 'immobile', titolo: 'Pratica', ordina: (p) => normalizza(p.descrizione) },
   { id: 'zona', titolo: 'Zona', ordina: (p) => normalizza(p.zonaNome || 'zzz') },
   { id: 'stato', titolo: 'Stato', ordina: (p) => p.stato },
   { id: 'collaboratori', titolo: 'Collaboratori', senzaOrdine: true },
@@ -34,17 +35,18 @@ export function eliminaPraticaConConferma(p, { dopo = null } = {}) {
       azioni: [
         { id: 'chiudi', etichetta: 'Chiudi', tipo: 'secondario' },
         ...(p.stato !== 'annullata' ? [{ id: 'annulla', etichetta: 'Segna come annullata', tipo: 'primario', onClick: async () => {
-          const { id, codice, stato, data_pratica, data_rogito, zona_id, immobile_indirizzo, immobile_comune, immobile_tipo, prezzo_vendita_cent, prezzo_acquisto_cent, venditore, acquirente, compenso_venditore_cent, compenso_acquirente_cent, aliquota_iva, note } = p;
-          void stato;
-          await salvaPratica(app.archivio, { id, codice, stato: 'annullata', data_pratica, data_rogito, zona_id, immobile_indirizzo, immobile_comune, immobile_tipo, prezzo_vendita_cent, prezzo_acquisto_cent, venditore, acquirente, compenso_venditore_cent, compenso_acquirente_cent, aliquota_iva, note },
+          // si riscrive la pratica identica, cambiando solo lo stato (compresi gli importi pagati e il loro modo)
+          const dati = Object.fromEntries(['id', 'codice', 'data_pratica', 'data_rogito', 'zona_id', 'immobile_indirizzo', 'immobile_comune', 'immobile_tipo', 'prezzo_vendita_cent', 'prezzo_acquisto_cent', 'venditore', 'acquirente',
+            'compensi_da_pagamenti', ...CAMPI_PAGAMENTO, 'compenso_venditore_cent', 'compenso_acquirente_cent', 'aliquota_iva', 'note'].map((c) => [c, p[c]]));
+          await salvaPratica(app.archivio, { ...dati, stato: 'annullata' },
             p.voci.filter((v) => v.collaboratoreId != null).map((v) => ({ collaboratore_id: v.collaboratoreId, percentuale: v.quotaPct })));
-          notificaOk(`Pratica ${codice} segnata come annullata.`);
+          notificaOk(`Pratica ${p.codice} segnata come annullata.`);
           if (dopo) dopo('annullata');
         } }] : []),
       ],
     }).risultato;
   }
-  const dettagli = [`${p.immobile_indirizzo}${p.immobile_comune ? `, ${p.immobile_comune}` : ''} · ${ETICHETTA_STATO[p.stato]}`];
+  const dettagli = [`${p.descrizione}${p.immobile_comune ? `, ${p.immobile_comune}` : ''} · ${ETICHETTA_STATO[p.stato]}`];
   if (det.incassi) dettagli.push(`Verranno eliminati anche ${det.incassi} ${det.incassi === 1 ? 'incasso registrato' : 'incassi registrati'} (${eur(det.incassatoCent)}).`);
   if (det.quote) dettagli.push('Verrà eliminata anche la ripartizione tra collaboratori.');
   dettagli.push('L\'operazione non si può annullare: se non sei sicuro, crea prima un backup.');
@@ -92,7 +94,7 @@ export function filtraPratiche(m, s) {
     if (s.a && (!p.dataRif || p.dataRif > s.a)) return false;
     if (s.incomplete && !p.incompleta) return false;
     if (termini.length) {
-      const testo = normalizza([p.codice, p.immobile_indirizzo, p.immobile_comune, p.immobile_tipo, p.venditore, p.acquirente, p.zonaNome, p.note, ETICHETTA_STATO[p.stato]].join(' '));
+      const testo = normalizza([p.codice, p.descrizione, p.immobile_indirizzo, p.immobile_comune, p.immobile_tipo, p.venditore, p.acquirente, p.zonaNome, p.note, ETICHETTA_STATO[p.stato]].join(' '));
       if (!termini.every((t) => testo.includes(t))) return false;
     }
     return true;
@@ -106,7 +108,7 @@ export const archivio = {
     const m0 = modello();
     const anniPresenti = [...new Set(m0.pratiche.map((p) => (p.dataRif || '').slice(0, 4)).filter(Boolean))].sort().reverse();
 
-    const campoQ = h('input', { type: 'search', class: 'input', id: 'arch-q', placeholder: 'Cerca per codice, via, comune, cliente, zona…', value: s.q, 'aria-label': 'Cerca nell\'archivio', autocomplete: 'off' });
+    const campoQ = h('input', { type: 'search', class: 'input', id: 'arch-q', placeholder: 'Cerca per codice, zona, cliente, note…', value: s.q, 'aria-label': 'Cerca nell\'archivio', autocomplete: 'off' });
     const sel = (id, etichetta, opzioni, valore) => {
       const el = h('select', { class: 'select', id, 'aria-label': etichetta }, opzioni.map(([v, e]) => h('option', { value: v }, e)));
       el.value = valore;
@@ -187,7 +189,7 @@ export const archivio = {
         return h('tr', { class: 'cliccabile', dataset: { id: p.id }, onclick: (ev) => { if (!ev.target.closest('a, button, .popover')) vai(); } },
           h('td', { class: 'forte' }, h('a', { href: `#/pratiche/${p.id}`, style: { color: 'var(--text)' } }, ...evidenzia(p.codice, termini)), p.incompleta ? h('span', { class: 'badge badge-warn', style: { marginLeft: '8px' }, title: p.mancanti.map((x) => x.testo).join(' · ') }, icona('triangle-alert', { dimensione: 13 }), 'Dati') : null),
           h('td', { class: 'num' }, dataIt(p.dataRif)),
-          h('td', { class: 'immobile' }, h('span', { class: 'forte' }, ...evidenzia(p.immobile_indirizzo, termini)), h('span', { class: 'sottotesto' }, ...evidenzia([p.immobile_comune, p.immobile_tipo].filter(Boolean).join(' · '), termini), p.prezzo_vendita_cent ? h('span', { class: 'prezzo-inline' }, ` · ${eurInt(p.prezzo_vendita_cent)}`) : null),
+          h('td', { class: 'immobile' }, h('span', { class: 'forte' }, ...evidenzia(p.descrizione, termini)), h('span', { class: 'sottotesto' }, ...evidenzia([p.immobile_comune, p.immobile_tipo].filter(Boolean).join(' · '), termini), p.prezzo_vendita_cent ? h('span', { class: 'prezzo-inline' }, ` · ${eurInt(p.prezzo_vendita_cent)}`) : null),
             (p.venditore || p.acquirente) ? h('span', { class: 'sottotesto' }, ...evidenzia([p.venditore && `Ven. ${p.venditore}`, p.acquirente && `Acq. ${p.acquirente}`].filter(Boolean).join(' · '), termini)) : null),
           h('td', null, p.zonaNome ?? h('span', { class: 'badge badge-warn' }, 'Da indicare')),
           h('td', null, badgeStato(p.stato)),

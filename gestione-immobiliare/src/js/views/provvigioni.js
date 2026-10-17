@@ -75,7 +75,7 @@ export const provvigioni = {
       const ctx = contesto();
       const conteggi = {
         liquidazioni: m.liquidazioni.filter((l) => nelPeriodoData(l.data, ctx) && (ctx.collaboratoreId == null || l.collaboratore_id === ctx.collaboratoreId)).length,
-        incassi: m.incassi.filter((i) => nelPeriodoData(i.data, ctx)).length,
+        incassi: m.incassi.filter((i) => nelPeriodoData(i.data, ctx)).length + (m.pagamenti || []).filter((x) => nelPeriodoData(x.data, ctx)).length,
       };
       linguette.replaceChildren(...TABS.map(([k, e]) => h('button', {
         type: 'button', role: 'tab', id: `tab-${k}`, 'aria-selected': String(tab === k), 'aria-controls': 'pannello-prov',
@@ -142,7 +142,7 @@ export const provvigioni = {
         h('caption', { class: 'solo-lettori' }, 'Provvigioni per pratica e collaboratore'),
         h('thead', null, h('tr', null, h('th', null, 'Pratica'), h('th', null, 'Collaboratore'), h('th', { class: 'num' }, 'Quota'), h('th', { class: 'num' }, 'Fatturato'), h('th', null, 'Scaglione'), h('th', { class: 'num' }, 'Provvigione'), h('th', { class: 'num' }, 'Liquidata'), h('th', { class: 'num' }, 'Da liquidare'), h('th', null, 'Stato'))),
         h('tbody', null, voci.map(({ p, v }) => h('tr', { class: 'cliccabile', onclick: (ev) => { if (!ev.target.closest('a')) naviga(`#/pratiche/${p.id}`); } },
-          h('td', null, h('a', { href: `#/pratiche/${p.id}`, class: 'forte', style: { color: 'var(--text)' } }, p.codice), h('span', { class: 'sottotesto' }, `${p.immobile_indirizzo} · ${dataIt(p.dataRif)}`)),
+          h('td', null, h('a', { href: `#/pratiche/${p.id}`, class: 'forte', style: { color: 'var(--text)' } }, p.codice), h('span', { class: 'sottotesto' }, `${p.descrizione} · ${dataIt(p.dataRif)}`)),
           h('td', null, h('span', { class: 'chip-col' }, h('span', { class: `punto-col col-${nomi.get(v.collaboratoreId)?.colore ?? 0}` }), nomi.get(v.collaboratoreId)?.nome ?? '?')),
           h('td', { class: 'num' }, pct(v.quotaPct)), h('td', { class: 'num' }, eur(v.fatturatoCent)),
           h('td', null, v.scaglioneIdx >= 0 && p.conclusa ? h('span', { class: 'badge badge-info' }, `${v.scaglioneIdx + 1}° · ${pct(Math.round(v.percentualeApplicata * 100) / 100)}`) : h('span', { class: 'sottotesto' }, '—')),
@@ -173,10 +173,12 @@ export const provvigioni = {
     }
 
     function incassiTab(m, ctx) {
-      const elenco = m.incassi.filter((i) => nelPeriodoData(i.data, ctx) && i.pratica && (ctx.zonaId == null || i.pratica.zona_id === ctx.zonaId) && (ctx.collaboratoreId == null || i.pratica.voci.some((v) => v.collaboratoreId === ctx.collaboratoreId)))
-        .sort((a, b) => (a.data < b.data ? 1 : a.data > b.data ? -1 : b.id - a.id));
+      // incassi registrati + pagamenti fatti dalle parti alla conclusione (questi si cambiano dal modulo della pratica)
+      const daConclusione = (m.pagamenti || []).map((x) => ({ id: null, daConclusione: true, data: x.data, pratica: x.pratica, pratica_id: x.praticaId, importo_cent: x.importo_cent, pagante: x.parte, metodo: x.modalita, note: x.conIva ? 'Pagato alla conclusione (IVA compresa)' : 'Pagato alla conclusione (già senza IVA)' }));
+      const elenco = [...m.incassi, ...daConclusione].filter((i) => nelPeriodoData(i.data, ctx) && i.pratica && (ctx.zonaId == null || i.pratica.zona_id === ctx.zonaId) && (ctx.collaboratoreId == null || i.pratica.voci.some((v) => v.collaboratoreId === ctx.collaboratoreId)))
+        .sort((a, b) => (a.data < b.data ? 1 : a.data > b.data ? -1 : (b.id ?? 0) - (a.id ?? 0)));
       const barra = h('div', { class: 'riga-azioni', style: { justifyContent: 'space-between', marginBottom: '12px' } },
-        h('span', { class: 'sottotesto' }, `${elenco.length} ${elenco.length === 1 ? 'incasso' : 'incassi'} · ${eur(elenco.reduce((s, i) => s + i.importo_cent, 0))} nel periodo (IVA inclusa)`),
+        h('span', { class: 'sottotesto' }, `${elenco.length} ${elenco.length === 1 ? 'incasso' : 'incassi'} · ${eur(elenco.reduce((s, i) => s + i.importo_cent, 0))} nel periodo ${elenco.some((i) => i.daConclusione) ? '(contanti senza IVA, bonifico e assegno con IVA)' : '(IVA inclusa)'}`),
         h('span', { class: 'riga-azioni' },
           h('button', { type: 'button', class: 'btn btn-secondario btn-sm', onclick: async () => { const r = await app.driver.esportaFile(codificaTesto(csvIncassi(m)), nomeFile('Incassi', 'csv'), 'text/csv;charset=utf-8'); if (r && r.salvato !== false) notificaOk('Incassi esportati in CSV.'); } }, icona('download', { dimensione: 15 }), 'Esporta in CSV'),
           h('button', { type: 'button', class: 'btn btn-primario btn-sm', id: 'btn-nuovo-incasso', onclick: () => apriDialogoIncasso() }, icona('plus', { dimensione: 16 }), 'Registra incasso')));
@@ -186,9 +188,11 @@ export const provvigioni = {
         h('thead', null, h('tr', null, h('th', null, 'Data'), h('th', null, 'Pratica'), h('th', { class: 'num' }, 'Importo'), h('th', null, 'Pagante e metodo'), h('th', null, h('span', { class: 'solo-lettori' }, 'Azioni')))),
         h('tbody', null, elenco.map((i) => h('tr', null,
           h('td', { class: 'num' }, dataIt(i.data)),
-          h('td', null, h('a', { href: `#/pratiche/${i.pratica_id}`, class: 'forte', style: { color: 'var(--text)' } }, i.pratica.codice), h('span', { class: 'sottotesto' }, i.pratica.immobile_indirizzo)),
+          h('td', null, h('a', { href: `#/pratiche/${i.pratica_id}`, class: 'forte', style: { color: 'var(--text)' } }, i.pratica.codice), h('span', { class: 'sottotesto' }, i.pratica.descrizione)),
           h('td', { class: 'num forte' }, eur(i.importo_cent)), h('td', { class: 'sottotesto' }, [i.pagante, i.metodo, i.note].filter(Boolean).join(' · ') || '—'),
-          h('td', { class: 'num' }, h('button', { type: 'button', class: 'btn btn-pericolo-ghost btn-sm btn-icona', 'aria-label': `Elimina l'incasso del ${dataIt(i.data)}`, onclick: () => eliminaIncassoDaElenco(i) }, icona('trash-2', { dimensione: 15 }))))))))));
+          h('td', { class: 'num' }, i.daConclusione
+            ? h('a', { class: 'btn btn-ghost btn-sm', href: `#/pratiche/${i.pratica_id}/modifica`, 'aria-label': `Modifica la pratica ${i.pratica.codice} per cambiare i pagamenti` }, icona('pencil', { dimensione: 15 }), 'Pratica')
+            : h('button', { type: 'button', class: 'btn btn-pericolo-ghost btn-sm btn-icona', 'aria-label': `Elimina l'incasso del ${dataIt(i.data)}`, onclick: () => eliminaIncassoDaElenco(i) }, icona('trash-2', { dimensione: 15 }))))))))));
     }
 
     function disegna() {
