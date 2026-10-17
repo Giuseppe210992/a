@@ -29,10 +29,10 @@ describe('Backup e archivio storico', () => {
     const p = app.pagina;
     const t = rimuoviSpazi(await p.locator('#contenuto').innerText());
     assert.match(t, /Nessun backup ancora eseguito/);
-    assert.match(t, /Nella memoria del browser di questo computer \(IndexedDB\)/);
+    assert.match(t, /Nel file gi-dati\/Dati\/archivio\.sqlite/);
     assert.match(t, /15 pratiche · 4 incassi · 3 liquidazioni/);
     assert.match(t, /Copie nell'archivio storico 0/);
-    assert.match(t, /Stai usando il programma nel browser/);
+    assert.match(t, /Nel browser non resta nessuna traccia/);
     assert.match(t, /Tutto in ordine/);
     const controlli = await p.$$eval('#integrita .controllo', (a) => a.map((x) => ({ ok: x.classList.contains('ok'), testo: x.textContent.trim() })));
     assert.ok(controlli.length >= 4);

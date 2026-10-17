@@ -381,8 +381,8 @@ function sezioneInfo() {
   app.driver.info().then((info) => {
     monta(corpo, h('dl', { class: 'elenco-dati' },
       h('dt', null, 'Programma'), h('dd', null, `Gestione Immobiliare ${app.versione}`),
-      h('dt', null, 'Modalità'), h('dd', null, app.hostProgramma ? (info.portatile ? 'Programma Windows portatile (dati in un file accanto al programma, sulla chiavetta)' : 'Programma Windows (dati in un file sul computer)') : 'Browser (dati nella memoria del browser)'),
-      h('dt', null, 'Dove sono i dati'), h('dd', null, info.tipo === 'file' ? (info.percorsoDati ?? 'file sul computer') : 'IndexedDB del browser'),
+      h('dt', null, 'Modalità'), h('dd', null, app.hostProgramma ? (info.portatile ? 'Programma Windows portatile (dati in un file accanto al programma, sulla chiavetta)' : 'Programma Windows (dati in un file sul computer)') : 'Browser (nessuna traccia nel browser: i dati stanno solo nella cartella scelta)'),
+      h('dt', null, 'Dove sono i dati'), h('dd', null, info.tipo === 'file' ? (info.percorsoDati ?? 'file sul computer') : 'cartella scelta'),
       info.tipo === 'file' ? h('dt', null, 'Cartella dei backup') : null, info.tipo === 'file' ? h('dd', null, info.percorsoBackup ?? '') : null,
       h('dt', null, 'Versione dell\'archivio'), h('dd', null, `Schema ${VERSIONE_SCHEMA}`),
       h('dt', null, 'Connessione a Internet'), h('dd', null, 'Non necessaria: tutto funziona offline'),

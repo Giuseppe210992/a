@@ -77,9 +77,8 @@ export const backup = {
           h('div', null, h('h2', { id: 'stato-bk', style: { fontSize: '18px', fontWeight: 720 } }, !ultimo ? (haDati ? 'Nessun backup ancora eseguito' : 'Archivio vuoto: nessun backup necessario') : livello === 'ok' ? 'I tuoi dati sono protetti' : 'Il backup non è recente'),
             h('p', { class: 'sottotesto' }, ultimo ? `Ultimo backup: ${dataOra(ultimo)} (${gg === 0 ? 'oggi' : gg === 1 ? 'ieri' : `${gg} giorni fa`}). L'avviso compare dopo ${soglia} giorni.` : 'Crea una copia di sicurezza: richiede pochi secondi.'))),
         h('dl', { class: 'elenco-dati', style: { marginTop: '16px' } },
-          h('dt', null, 'Dove sono i dati'), h('dd', null, info.tipo === 'file' ? `Nel file ${info.percorsoDati ?? ''}` : 'Nella memoria del browser di questo computer (IndexedDB)'),
+          h('dt', null, 'Dove sono i dati'), h('dd', null, info.tipo === 'file' ? `Nel file ${info.percorsoDati ?? ''}` : 'In una cartella del computer'),
           info.tipo === 'file' ? h('dt', null, 'Cartella dei backup') : null, info.tipo === 'file' ? h('dd', null, info.percorsoBackup ?? '') : null,
-          info.tipo !== 'file' ? h('dt', null, 'Protezione dalla pulizia automatica') : null, info.tipo !== 'file' ? h('dd', null, info.persistente ? 'Attiva' : 'Non garantita dal browser: tieni sempre un backup esportato') : null,
           h('dt', null, 'Dimensione dell\'archivio'), h('dd', null, dimensioneFile(bytes.length)),
           h('dt', null, 'Contenuto'), h('dd', null, `${num(m.pratiche.length)} pratiche · ${num(m.incassi.length)} incassi · ${num(m.liquidazioni.length)} liquidazioni`),
           h('dt', null, 'Copie nell\'archivio storico'), h('dd', null, num(copie.length))),
@@ -92,7 +91,7 @@ export const backup = {
           'Chiudi sempre il programma prima di togliere la chiavetta, e ogni tanto salva una copia anche sul computer con «Esporta l\'archivio completo».')) : null,
         info.portatile && info.portatileTemporaneo ? h('div', { class: 'nota attenzione', id: 'avviso-temporanea', style: { marginTop: '12px' } }, icona('triangle-alert', { dimensione: 18 }), h('span', null,
           'Attenzione: il programma sembra aperto da una cartella temporanea (ad esempio direttamente da un file ZIP). I dati salvati qui possono andare persi: chiudilo, copia il file «Portatile» sulla chiavetta o in una cartella del computer e riaprilo da lì.')) : null,
-        info.tipo !== 'file' ? h('div', { class: 'nota attenzione', style: { marginTop: '12px' } }, icona('triangle-alert', { dimensione: 18 }), h('span', null, 'Stai usando il programma nel browser: se cancelli i dati di navigazione di questo sito o cambi profilo, l\'archivio non sarà più qui. Esporta spesso un backup, oppure usa il programma Windows che salva su file nella cartella Documenti.')) : null);
+        info.nelBrowser ? h('div', { class: 'nota', id: 'nota-privacy', style: { marginTop: '12px' } }, icona('shield-check', { dimensione: 18 }), h('span', null, 'Nel browser non resta nessuna traccia: i dati e i backup stanno solo nella cartella scelta all\'apertura. Chiudi la scheda prima di togliere la chiavetta.')) : null);
 
       // ---------- azioni
       const azione = (id, nomeIcona, titolo, testo, onClick, primaria = false) => h('button', { type: 'button', id, class: `op${primaria ? ' principale-op' : ''}`, onclick: onClick },

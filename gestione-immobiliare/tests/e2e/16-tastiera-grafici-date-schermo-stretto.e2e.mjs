@@ -234,6 +234,7 @@ describe('Schermo stretto, tante zone e scheda senza scaglioni', () => {
       await vai(p, '#/nuova');
       const indirizzo = p.locator('#pagamenti-venditore').getByLabel('Contanti');
       await indirizzo.click(); // il browser chiede conferma solo se l'utente ha davvero usato la pagina
+      await attendiQuiete(p, 150);
       await indirizzo.pressSequentially('1234');
       const [dialogo] = await Promise.all([p.waitForEvent('dialog'), p.close({ runBeforeUnload: true })]);
       assert.equal(dialogo.type(), 'beforeunload');

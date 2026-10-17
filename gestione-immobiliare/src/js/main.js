@@ -3,11 +3,11 @@ import initSqlJs from 'sql.js';
 import wasmBinary from 'sql.js/dist/sql-wasm-browser.wasm';
 import { app, ui, impostazioni, modello, alleVariazioniFiltri } from './core/app.js';
 import { h } from './core/dom.js';
-import { leggiPref } from './core/preferenze.js';
+import { leggiPref, usaPreferenzeSuCartella } from './core/preferenze.js';
 import { registraRotta, iniziaRouter, ridisegna } from './core/router.js';
 import { unaVolta } from './core/dom.js';
 import { caricaMotore, Archivio } from './data/db.js';
-import { DriverIndexedDb } from './data/drivers/indexeddb.js';
+import { DriverCartella, cartellaSupportata, scegliCartellaDati } from './data/drivers/cartella.js';
 import { DriverFile, hostDisponibile } from './data/drivers/host-file.js';
 import { seedPrimoAvvio } from './data/inizializza.js';
 import * as backup from './data/backup.js';
@@ -36,6 +36,32 @@ function schermataErrore(radice, titolo, messaggio) {
   radice.className = '';
   radice.replaceChildren(h('div', { class: 'avvio' }, h('div', { class: 'avvio-box', style: { maxWidth: '520px', padding: '24px' } },
     h('h1', { style: { fontSize: '22px', marginBottom: '8px' } }, titolo), h('p', null, messaggio))));
+}
+
+/**
+ * Nel browser non si salva nulla nel browser: serve la cartella dei dati. Il browser permette di sceglierla solo con un clic
+ * dell'utente, e non la ricorda: a ogni apertura si sceglie di nuovo la stessa cartella (una volta sola per apertura).
+ */
+function schermataScegliCartella(radice) {
+  radice.className = '';
+  return new Promise((risolvi) => {
+    const msg = h('p', { id: 'msg-cartella', class: 'sottotesto', role: 'status', style: { marginTop: '12px' } });
+    const scegli = async () => {
+      msg.textContent = '';
+      try {
+        risolvi(await scegliCartellaDati());
+      } catch (e) {
+        if (!e || e.name !== 'AbortError') msg.textContent = e?.message || 'Non riesco ad aprire la cartella.';
+      }
+    };
+    radice.replaceChildren(h('div', { class: 'avvio' }, h('div', { class: 'avvio-box', style: { maxWidth: '560px', padding: '24px' } },
+      h('h1', { style: { fontSize: '22px', marginBottom: '8px' } }, 'Gestione Immobiliare'),
+      h('p', null, 'Scegli la cartella dove tenere i dati (ad esempio sulla chiavetta). Tutto viene salvato solo lì: il browser non conserva nulla, quindi non devi cancellare i dati di navigazione.'),
+      h('p', { style: { marginTop: '8px' } }, 'La prima volta crea una cartella vuota (ad esempio «Dati Immobiliare» sulla chiavetta: il browser non accetta direttamente Desktop, Documenti o la radice di un disco); le volte dopo scegli sempre la stessa. Se il browser chiede il permesso di modificare i file, consenti.'),
+      h('div', { class: 'riga-azioni', style: { marginTop: '16px' } },
+        h('button', { type: 'button', class: 'btn btn-primario', id: 'scegli-cartella', onclick: scegli }, 'Scegli la cartella dei dati')),
+      msg)));
+  });
 }
 
 const NOME_BLOCCO = 'gestione-immobiliare-archivio';
@@ -88,7 +114,17 @@ async function avvia() {
 
   app.SQL = SQL;
   app.hostProgramma = hostDisponibile();
-  const driver = app.hostProgramma ? new DriverFile() : new DriverIndexedDb();
+  let driver;
+  if (app.hostProgramma) driver = new DriverFile();
+  else {
+    if (!cartellaSupportata()) {
+      schermataErrore(radice, 'Questo browser non può salvare i dati', 'Per salvare solo in una cartella tua, senza lasciare tracce nel browser, apri il programma con Google Chrome o Microsoft Edge (su computer), oppure usa il programma per Windows.');
+      return;
+    }
+    driver = new DriverCartella(await schermataScegliCartella(radice));
+    usaPreferenzeSuCartella(await driver.caricaPreferenze(), (o) => driver.salvaPreferenze(o));
+    applicaTemaIniziale();
+  }
   app.driver = driver;
 
   let archivio = new Archivio(SQL, driver);
@@ -100,7 +136,7 @@ async function avvia() {
       await schermataRecupero(radice, { app, SQL, driver, motivo: e.message, riavvia: () => location.reload() });
       return;
     }
-    schermataErrore(radice, 'Impossibile aprire l\'archivio', `${e.message}${app.hostProgramma ? '' : ' Se stai usando una finestra anonima o il browser blocca la memoria locale, i dati non possono essere salvati.'}`);
+    schermataErrore(radice, 'Impossibile aprire l\'archivio', `${e.message}${app.hostProgramma ? '' : ' Controlla di aver scelto la cartella giusta e di aver consentito la modifica dei file.'}`);
     return;
   }
   if (archivio.primoAvvio) await seedPrimoAvvio(archivio);

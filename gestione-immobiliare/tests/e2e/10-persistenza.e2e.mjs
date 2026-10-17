@@ -4,7 +4,7 @@ import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { apriContesto, apriApp, vai, rimuoviSpazi, sql, valoreSql, finestra, bottoneFinestra, attendiNotifica, testoSospetto, riquadri, cartellaTemp, scarica } from './lib.mjs';
+import { apriContesto, apriApp, vai, rimuoviSpazi, sql, valoreSql, finestra, bottoneFinestra, attendiNotifica, testoSospetto, riquadri, cartellaTemp, scarica, scriviArchivioSuCartella } from './lib.mjs';
 
 // l'incasso si registra dalla scheda della pratica (c'è una sola pratica in questa prova)
 const apriIncasso = async (p) => {
@@ -136,16 +136,7 @@ describe('Persistenza dopo chiusura e riapertura', () => {
     assert.deepEqual((await sql(p, 'SELECT nome FROM zone ORDER BY nome')).map((r) => r.nome), ['Centro', 'Lungomare']);
     assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM incassi'), 2);
     // si danneggia il file dei dati (come dopo un'interruzione o un disco difettoso) e si riapre
-    await p.evaluate(() => new Promise((ok, ko) => {
-      const rq = indexedDB.open('gestione-immobiliare', 1);
-      rq.onsuccess = () => {
-        const tx = rq.result.transaction('archivio', 'readwrite');
-        tx.objectStore('archivio').put({ bytes: new Uint8Array(600).fill(7), salvatoIl: 'x' }, 'principale');
-        tx.oncomplete = () => { rq.result.close(); ok(); };
-        tx.onerror = () => ko(tx.error);
-      };
-      rq.onerror = () => ko(rq.error);
-    }));
+    await scriviArchivioSuCartella(p, new Uint8Array(600).fill(7));
     await p.reload();
     await p.waitForSelector('.nota.errore');
     let t = rimuoviSpazi(await p.locator('body').innerText());
@@ -181,15 +172,7 @@ describe('Persistenza dopo chiusura e riapertura', () => {
     const file = await scarica(p, async () => { await vai(p, '#/backup'); await p.click('#bk-esporta'); });
     const backup = path.join(cartella, 'backup.sqlite');
     fs.writeFileSync(backup, file.bytes);
-    const danneggia = () => p.evaluate(() => new Promise((ok, ko) => {
-      const rq = indexedDB.open('gestione-immobiliare', 1);
-      rq.onsuccess = () => {
-        const tx = rq.result.transaction('archivio', 'readwrite');
-        tx.objectStore('archivio').put({ bytes: new Uint8Array(900).fill(3), salvatoIl: 'x' }, 'principale');
-        tx.oncomplete = () => { rq.result.close(); ok(); };
-      };
-      rq.onerror = () => ko(rq.error);
-    }));
+    const danneggia = () => scriviArchivioSuCartella(p, new Uint8Array(900).fill(3));
     await danneggia();
     await p.reload();
     await p.waitForSelector('.nota.errore');

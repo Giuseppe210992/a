@@ -427,8 +427,8 @@ describe('Impostazioni', () => {
     await p.waitForFunction(() => /Gestione Immobiliare \d/.test(document.querySelector('.imp-corpo').textContent));
     const t = rimuoviSpazi(await p.locator('.imp-corpo').innerText());
     assert.match(t, /Programma Gestione Immobiliare 1\.0\.0/);
-    assert.match(t, /Modalità Browser \(dati nella memoria del browser\)/);
-    assert.match(t, /Dove sono i dati IndexedDB del browser/);
+    assert.match(t, /Modalità Browser \(nessuna traccia nel browser: i dati stanno solo nella cartella scelta\)/);
+    assert.match(t, /Dove sono i dati gi-dati\/Dati\/archivio\.sqlite/);
     assert.match(t, /Versione dell'archivio Schema 3/);
     assert.match(t, /Connessione a Internet Non necessaria: tutto funziona offline/);
     assert.match(t, /scorciatoie da tastiera/i);

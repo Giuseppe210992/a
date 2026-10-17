@@ -1,7 +1,7 @@
 // Archivio: wrapper sul database SQLite (sql.js) con salvataggio duraturo.
 //
 // Ogni modifica passa da transazione(): se la funzione fallisce, la modifica viene annullata per intero;
-// se riesce, l'intero database viene scritto sul supporto (file o IndexedDB) PRIMA che
+// se riesce, l'intero database viene scritto sul supporto (file o cartella) PRIMA che
 // la chiamata si consideri conclusa. Cosi' un "Salvato" mostrato all'utente e' sempre vero.
 
 import { migra, versioneDatabase, idApplicazioneDatabase, ID_APPLICAZIONE, VERSIONE_SCHEMA } from './schema.js';

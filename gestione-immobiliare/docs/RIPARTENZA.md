@@ -16,7 +16,7 @@ Dove: cartella `gestione-immobiliare/` del repository `Giuseppe210992/a`, ramo `
 | Programma Windows | **Electron** che mostra lo stesso pacchetto e salva su file | L'utente usa un PC Windows normale; si costruisce su Windows in automatico (GitHub Actions) |
 | Dove stanno i dati (Windows) | `Documenti\Gestione Immobiliare\Dati\archivio.sqlite` (+ `.bak`), copie in `…\Backup\` | Cartella che l'utente vede, copia e salva facilmente. Salvataggio atomico: mai un file a metà |
 | Dove stanno i dati (versione portatile / chiavetta) | `<cartella del file .exe>\Gestione Immobiliare - Dati\Dati\archivio.sqlite` (+ `.bak`), copie in `…\Backup\` | La chiavetta porta con sé i dati. electron-builder imposta `PORTABLE_EXECUTABLE_DIR` (cartella dell'`.exe`); `cartellaBaseDati()` in `electron/host-archivio.cjs` sceglie la cartella (`GESTIONE_IMMOBILIARE_DATI` > portatile > Documenti). Se la cartella è temporanea (tipico: `.exe` aperto dentro lo ZIP scaricato) all'avvio compare un avviso e nel pannello Backup una nota gialla, perché Windows la svuota. Il portatile decomprime il programma in `%TEMP%` (di default cartella con l'id della compilazione, `portable.unpackDirName` di electron-builder) |
-| Dove stanno i dati (browser) | IndexedDB del browser | Solo per la versione browser; per questo c'è «Esporta l'archivio completo» |
+| Dove stanno i dati (browser) | **Una cartella scelta dall'utente** (`drivers/cartella.js`, File System Access API: `Dati/archivio.sqlite`, `Backup/`, `Esportazioni/`, `Dati/preferenze.json`). Nessun IndexedDB, localStorage, cookie o download: la scelta della cartella richiede un clic a ogni apertura (il handle non si salva, altrimenti andrebbe in IndexedDB) | Richiesta dell'utente: «totalmente in privacy, non voglio cancellare i dati di navigazione». Solo Chrome/Edge; negli altri browser il programma si ferma con un messaggio. `preferenze.js` usa la memoria nel browser e il file `preferenze.json` |
 | Importi | Sempre **centesimi interi** | Nessun errore di arrotondamento; le ripartizioni usano il metodo del resto maggiore, quindi la somma torna sempre esatta |
 | Scaglioni | **Quelli indicati dall'utente**, preimpostati al primo avvio (e dopo «Cancella tutti i dati») in `SCAGLIONI_INIZIALI` di `src/js/data/inizializza.js`: 5% fino a 2.600 €, 8% fino a 5.200 €, 11% fino a 7.800 €, 15% fino a 13.000 €, 20% oltre; stessa tabella per Luca, Giuseppe e tutte le zone. In centesimi le soglie sono 0, 260001, 520001, 780001, 1300001 | «Fino a X» comprende X, mentre il motore legge ogni soglia come «da» (inclusa): per questo il 2° scaglione parte da 2.600,01 € (a 2.600,00 € precisi si è ancora al 5%). Se l'utente preferisse che a 2.600,00 scatti già l'8% basta spostare le soglie di un centesimo indietro (e rieseguire le prove `scaglioni-agenzia`). Impostazioni → Scaglioni ha «Ripristina gli scaglioni dell'agenzia» (serve anche per gli archivi vecchi rimasti senza scaglioni) |
 | Metodo di calcolo (predefinito) | **Scaglione raggiunto**: la percentuale dello scaglione raggiunto si applica a *tutto* il cumulo mensile. Alternativa: progressivo (a fasce) | Era l'interpretazione più vicina alla richiesta («percentuale raggiunta»). Cambiabile in Impostazioni → *Metodo di calcolo*, tutto si ricalcola subito |
@@ -53,7 +53,7 @@ src/js/views/                         una schermata per file (8 + scheda pratica
 src/js/data/schema.js, db.js          schema SQLite (user_version 3) e classe Archivio (transazioni, esporta, sostituisci)
 src/js/data/calc/                     MOTORE DI CALCOLO: funzioni pure (scaglioni.js, compensi.js, modello.js, aggregati.js)
 src/js/data/repo/                     lettura e scrittura di pratiche, anagrafiche, impostazioni
-src/js/data/drivers/                  dove finiscono i byte: IndexedDB (browser), file (Electron), memoria (test)
+src/js/data/drivers/                  dove finiscono i byte: cartella scelta (browser), file (Electron), memoria (test). Nei test la «cartella» è un disco finto su IndexedDB (`__fsProva` in `tests/e2e/lib.mjs`) perché da file:// l'OPFS non esiste
 src/js/data/backup.js, integrity.js   copie di sicurezza, ripristino, importazione, verifica di coerenza
 electron/                             processo principale, ponte sicuro (preload), archivio su file
 build.mjs                             esbuild → dist/web/{index.html,app.js,app.css}  (--leggibile = senza minimizzare)
@@ -73,7 +73,7 @@ Regole da non rompere:
 ```
 cd gestione-immobiliare
 npm ci
-npm test                  # 141 prove su calcoli, compensi dai pagamenti, migrazione dello schema, scaglioni dell'agenzia, date, formati, archivio, host file, icone (circa 1 s)
+npm test                  # 146 prove su calcoli, compensi dai pagamenti, migrazione dello schema, scaglioni dell'agenzia, date, formati, archivio, host file, icone (circa 1 s)
 npm run test:e2e          # costruisce e prova ogni schermata nel browser (Chromium + Playwright), circa 4 minuti
 GI_RALLENTA=4 npm run test:e2e   # lo stesso con il browser 4 volte più lento
 GI_RITARDO=150 npm run test:e2e  # lo stesso con eventi e scritture su disco in ritardo di 150 ms (scova le letture troppo presto)

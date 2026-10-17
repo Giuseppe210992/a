@@ -138,3 +138,15 @@ Non servono altre informazioni: non scrivere mai nomi di clienti o importi reali
 ## Disinstallare
 
 Impostazioni di Windows → App → *Gestione Immobiliare* → Disinstalla. **I tuoi dati non vengono cancellati**: restano in `Documenti\Gestione Immobiliare`. (La versione portatile non si installa, quindi non si disinstalla: basta cancellare il file `.exe`; i suoi dati sono nella cartella `Gestione Immobiliare - Dati` accanto a lui.)
+
+## 9. Versione solo browser (Chrome o Edge): nessuna traccia
+
+Queste prove vanno fatte sul computer vero: nelle prove automatiche il selettore di cartelle del browser è simulato.
+
+| # | Cosa controllare | Esito |
+|---|---|---|
+| 9.1 | Aprendo `index.html` compare «Scegli la cartella dei dati». Crea una cartella vuota (es. «Dati Immobiliare» sulla chiavetta) e sceglila; consenti la modifica dei file | |
+| 9.2 | Inserisci una pratica, chiudi la scheda, riapri `index.html`, scegli **la stessa** cartella: i dati ci sono. In quella cartella vedi `Dati\archivio.sqlite` e `Backup\` | |
+| 9.3 | Un'esportazione CSV compare in `Esportazioni\` della cartella e **non** nell'elenco dei download del browser | |
+| 9.4 | Nelle impostazioni del browser → Cookie e dati dei siti: non c'è nessun dato per questa pagina (e quindi non c'è nulla da cancellare) | |
+| 9.5 | Se scegli direttamente Desktop, Documenti o un'intera chiavetta, Chrome rifiuta: scegli una sottocartella | |

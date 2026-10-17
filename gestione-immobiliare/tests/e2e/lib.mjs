@@ -55,10 +55,45 @@ function scriptRitardo(ms) {
   })();`;
 }
 
-// Nei test non si apre mai il selettore di file del sistema: si usa il download classico.
-const SCRIPT_INIZIALE = `
-  try { delete window.showSaveFilePicker; } catch (e) {}
-  try { window.showSaveFilePicker = undefined; } catch (e) {}
+// Nei test non si apre mai il selettore di cartelle del sistema: al suo posto c'e' una cartella finta (scritta su IndexedDB, perche' da file://
+// l'OPFS non e' disponibile) che resta tra una chiusura e l'altra solo con un profilo persistente, e il clic su «Scegli la cartella dei dati»
+// e' automatico, salvo window.__noAutoScegli. Il programma vero non usa mai IndexedDB: questo e' solo il disco finto dei test.
+export const CARTELLA_PROVA = 'gi-dati';
+const SCRIPT_CARTELLA_FINTA = `
+  (() => {
+    const apri = () => new Promise((ok, ko) => { const rq = indexedDB.open('gi-fs-prova', 1); rq.onupgradeneeded = () => rq.result.createObjectStore('f'); rq.onsuccess = () => ok(rq.result); rq.onerror = () => ko(rq.error); });
+    const tx = async (modo, f) => { const db = await apri(); return new Promise((ok, ko) => { const t = db.transaction('f', modo); let r; t.addEventListener('complete', () => { db.close(); ok(r); }); t.addEventListener('error', () => ko(t.error)); Promise.resolve(f(t.objectStore('f'))).then((v) => { r = v; }); }); };
+    const rq = (q) => new Promise((ok, ko) => { q.onsuccess = () => ok(q.result); q.onerror = () => ko(q.error); });
+    const fs = {
+      leggi: (p) => tx('readonly', (s) => rq(s.get(p))),
+      scrivi: (p, b) => tx('readwrite', (s) => { s.put(b, p); }),
+      elimina: (p) => tx('readwrite', (s) => { s.delete(p); }),
+      chiavi: (pre) => tx('readonly', async (s) => (await rq(s.getAllKeys())).filter((k) => k.startsWith(pre))),
+    };
+    window.__fsProva = fs;
+    const err = (n) => { const e = new Error(n); e.name = n; return e; };
+    const dir = (percorso) => ({
+      kind: 'directory', name: percorso.split('/').pop(),
+      async getFileHandle(n, o = {}) {
+        const p = percorso + '/' + n; let b = await fs.leggi(p);
+        if (!b) { if (!o.create) throw err('NotFoundError'); b = new Uint8Array(0); await fs.scrivi(p, b); }
+        return { kind: 'file', name: n,
+          async getFile() { const x = await fs.leggi(p); return { size: x.length, async arrayBuffer() { return x.slice().buffer; } }; },
+          async createWritable() { let d = new Uint8Array(0); return { async write(x) { d = new Uint8Array(x); }, async close() { await fs.scrivi(p, d); }, async abort() {} }; } };
+      },
+      async getDirectoryHandle(n) { return dir(percorso + '/' + n); },
+      async removeEntry(n) { const p = percorso + '/' + n; if (!(await fs.leggi(p))) throw err('NotFoundError'); await fs.elimina(p); },
+      async *entries() {
+        const pre = percorso + '/'; const visti = new Set();
+        for (const k of await fs.chiavi(pre)) { const resto = k.slice(pre.length); const nome = resto.split('/')[0]; if (visti.has(nome)) continue; visti.add(nome);
+          if (resto.includes('/')) yield [nome, dir(pre + nome)]; else yield [nome, { kind: 'file', name: nome, async getFile() { const x = await fs.leggi(k); return { size: x.length }; } }]; }
+      },
+    });
+    window.showDirectoryPicker = async () => dir('${CARTELLA_PROVA}');
+    new MutationObserver(() => { const b = document.querySelector('#scegli-cartella'); if (b && !window.__noAutoScegli && !b.dataset.cliccato) { b.dataset.cliccato = '1'; b.click(); } }).observe(document, { childList: true, subtree: true });
+  })();
+`;
+const SCRIPT_INIZIALE = SCRIPT_CARTELLA_FINTA + `
   // Le notifiche restano a lungo sullo schermo: a ogni clic o Invio quelle gia' presenti si segnano come "vecchie",
   // cosi' un test che aspetta l'esito di un'operazione non scambia per sua la notifica di un'operazione precedente.
   const segnaVecchie = () => { for (const t of document.querySelectorAll('.toast-area .toast')) t.dataset.vecchia = '1'; };
@@ -286,9 +321,29 @@ export const idPratica = (pagina, codice) => valoreSql(pagina, 'SELECT id FROM p
 
 /** Esegue `azione` (che provoca un download) e restituisce { nome, bytes }. */
 export async function scarica(pagina, azione) {
-  const [download] = await Promise.all([pagina.waitForEvent('download', { timeout: 15000 }), azione()]);
-  const percorso = await download.path();
-  return { nome: download.suggestedFilename(), bytes: fs.readFileSync(percorso) };
+  // il programma non scarica nulla (il browser ne terrebbe la cronologia): scrive nella cartella Esportazioni dei dati
+  const pre = `${CARTELLA_PROVA}/Esportazioni/`;
+  const elenco = () => pagina.evaluate((p) => window.__fsProva.chiavi(p), pre);
+  const prima = new Set(await elenco());
+  await azione();
+  const limite = Date.now() + 15000;
+  for (;;) {
+    const nuovo = (await elenco()).find((n) => !prima.has(n));
+    if (nuovo) {
+      const dati = await pagina.evaluate(async (n) => Array.from(await window.__fsProva.leggi(n)), nuovo);
+      return { nome: nuovo.slice(pre.length), bytes: Buffer.from(dati) };
+    }
+    if (Date.now() > limite) throw new Error('Nessun file esportato nella cartella Esportazioni.');
+    await new Promise((ok) => setTimeout(ok, 100));
+  }
+}
+
+/** Sostituisce il file dell'archivio nella cartella dei dati di prova (per simulare un file danneggiato). */
+export function scriviArchivioSuCartella(pagina, byte) {
+  return pagina.evaluate(async ([c, dati]) => {
+    await window.__fsProva.scrivi(`${c}/Dati/archivio.sqlite`, new Uint8Array(dati));
+    await window.__fsProva.elimina(`${c}/Dati/archivio.sqlite.bak`);
+  }, [CARTELLA_PROVA, Array.from(byte)]);
 }
 
 /** Legge un CSV italiano (separatore ";", BOM, campi tra virgolette) e restituisce { intestazioni, righe, bom }. */

@@ -163,6 +163,8 @@ describe('Struttura e navigazione', () => {
     const scuro = await sfondo();
     assert.notEqual(chiaro, scuro);
     assert.equal(await p.evaluate(() => document.documentElement.dataset.theme), 'dark');
+    // la preferenza si scrive nel file della cartella dei dati (non nel browser): si attende che sia arrivata
+    await p.waitForFunction(async () => { const b = await window.__fsProva.leggi('gi-dati/Dati/preferenze.json'); return !!b && /"tema":"dark"/.test(new TextDecoder().decode(b)); });
     await p.reload();
     await p.waitForFunction(() => window.__gi && window.__gi.app.archivio);
     assert.equal(await p.evaluate(() => document.documentElement.dataset.theme), 'dark');
