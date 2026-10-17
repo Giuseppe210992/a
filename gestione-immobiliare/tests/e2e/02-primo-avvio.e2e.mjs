@@ -13,23 +13,13 @@ describe('Primo avvio', () => {
     await vai(p, '#/');
     assert.equal(await kpi(p, 'Pratiche concluse'), '0');
     assert.equal(rimuoviSpazi(await kpi(p, 'Compensi dell\'agenzia')), '0 €');
-    assert.equal(rimuoviSpazi(await kpi(p, 'Provvigioni dei collaboratori')), '0 €');
-    assert.equal(rimuoviSpazi(await kpi(p, 'Ancora da pagare ai collaboratori')), '0 €');
-    assert.equal(await p.locator('.kpi').count(), 4);
+    assert.equal(rimuoviSpazi(await kpi(p, 'Provvigioni pagate')), '0 €');
+    assert.equal(await p.locator('.kpi').count(), 3);
     const stato = await p.evaluate(() => {
       const a = window.__gi.app.archivio;
       return { pratiche: a.valore('SELECT COUNT(*) FROM pratiche'), zone: a.valore('SELECT COUNT(*) FROM zone'), incassi: a.valore('SELECT COUNT(*) FROM incassi'), nomi: a.tutti('SELECT nome FROM collaboratori ORDER BY id').map((r) => r.nome) };
     });
     assert.deepEqual(stato, { pratiche: 0, zone: 0, incassi: 0, nomi: ['Luca', 'Giuseppe', 'Capo', 'Segretaria'] });
-    // un solo grafico, con messaggio di stato vuoto e nessuna barra inventata
-    assert.equal(await p.locator('.grafico-card').count(), 1);
-    assert.equal(await p.locator('.g-barra').count(), 0);
-    assert.equal(await p.locator('.grafico-card .g-vuoto').count(), 1);
-    // guida ai primi passi
-    assert.match(await p.textContent('.primi-passi'), /Per iniziare/);
-    assert.equal(await p.locator('.primi-passi .passo').count(), 4);
-    assert.equal(await p.locator('.primi-passi .passo.fatto').count(), 2); // i collaboratori e gli scaglioni dell'agenzia, già impostati
-    assert.match(await p.textContent('.primi-passi'), /Controlla scaglioni e percentuali/);
     // la tabella delle ultime pratiche e' vuota ma spiegata
     assert.match(await p.textContent('section[aria-labelledby="ult-titolo"]'), /Nessuna pratica da mostrare/);
     // nessun avviso inutile su un archivio vuoto
@@ -39,21 +29,10 @@ describe('Primo avvio', () => {
 
   test('tutte le schermate si aprono anche senza dati', async () => {
     const p = app.pagina;
-    for (const [hash, titolo] of [['#/pratiche', 'Archivio pratiche'], ['#/provvigioni', 'Provvigioni e liquidazioni'], ['#/cumulo', 'Cumulo mensile per zona'], ['#/statistiche', 'Statistiche e grafici'], ['#/backup', 'Backup e archivio storico'], ['#/impostazioni', 'Impostazioni']]) {
+    for (const [hash, titolo] of [['#/pratiche', 'Archivio pratiche'], ['#/provvigioni', 'Provvigioni'], ['#/cumulo', 'Cumulo mensile per zona'], ['#/statistiche', 'Statistiche e grafici'], ['#/backup', 'Backup e archivio storico'], ['#/impostazioni', 'Impostazioni']]) {
       await vai(p, hash);
       assert.equal(rimuoviSpazi(await p.locator('#contenuto h1').first().textContent()), titolo);
     }
     assert.deepEqual(app.errori, []);
-  });
-
-  test('una pratica "Registra incasso/liquidazione" senza pratiche spiega cosa fare', async () => {
-    const p = app.pagina;
-    await vai(p, '#/');
-    await p.click('#op-incasso');
-    await p.waitForSelector('dialog.modale[open]');
-    assert.match(await p.textContent('dialog.modale'), /Non c'è ancora nessuna pratica/);
-    await p.click('dialog.modale button:has-text("Nuova pratica")');
-    await p.waitForSelector('#contenuto h1:has-text("Nuova pratica")');
-    assert.equal(await p.locator('dialog.modale').count(), 0);
   });
 });

@@ -86,7 +86,6 @@ describe('Scaglioni dell\'agenzia preimpostati', () => {
     await vai(p, '#/');
     const r = await riquadri(p);
     assert.equal(r.maturate, 1500 * E);
-    assert.equal(r.daLiquidare, 1500 * E);
     assert.doesNotMatch(await p.textContent('#avvisi'), /Scaglioni non configurati/);
     assert.deepEqual(await testoSospetto(p), []);
   });

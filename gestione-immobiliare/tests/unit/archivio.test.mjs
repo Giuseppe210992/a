@@ -182,23 +182,12 @@ test('incassi: registrazione, modifica ed eliminazione aggiornano il modello', a
   assert.ok(leggiRegistro(archivio).some((r) => r.tipo === 'incasso_eliminato'));
 });
 
-test('liquidazioni: righe per pratica, ricalcolo del da liquidare, eliminazione', async () => {
-  const { archivio, id, luca, giuseppe } = await appConDati();
-  await assert.rejects(
-    registraLiquidazione(archivio, { collaboratoreId: giuseppe.id, data: '2026-10-30', righe: [{ praticaId: id, importoCent: 1000 }] }),
-    (e) => e instanceof ErroreValidazione && /ripartizione/.test(e.campi.righe),
-  );
-  const liq = await registraLiquidazione(archivio, { collaboratoreId: luca.id, data: '2026-10-30', metodo: 'Bonifico', righe: [{ praticaId: id, importoCent: 100000 }] });
-  let m = modelloDi(archivio);
-  assert.equal(m.perId.get(id).daLiquidareCent, 80000);
-  assert.equal(m.liquidazioni[0].totaleCent, 100000);
-  assert.equal(m.liquidazioni[0].collaboratoreNome, 'Luca');
-  // La pratica non si elimina e il collaboratore non si toglie dalla ripartizione finche' ci sono liquidazioni.
-  await assert.rejects(eliminaPratica(archivio, id), (e) => /liquidazioni registrate/.test(e.message));
-  await assert.rejects(salvaPratica(archivio, { ...pratica(), id }, [{ collaboratore_id: giuseppe.id, percentuale: 100 }]), (e) => e instanceof ErroreOperazione);
-  await eliminaLiquidazione(archivio, liq);
-  m = modelloDi(archivio);
-  assert.equal(m.perId.get(id).daLiquidareCent, 180000);
+test('le provvigioni sono già pagate: una volta inserita la pratica nulla resta da liquidare', async () => {
+  const { archivio, id, luca } = await appConDati();
+  const m = modelloDi(archivio);
+  assert.equal(m.perId.get(id).maturateCent, 180000);
+  assert.deepEqual([m.perId.get(id).liquidateCent, m.perId.get(id).daLiquidareCent], [180000, 0]);
+  assert.deepEqual([m.collaboratori.find((c) => c.id === luca.id).liquidateCent, m.collaboratori.find((c) => c.id === luca.id).daLiquidareCent], [180000, 0]);
 });
 
 test('elimina pratica: porta con se\' quote e incassi e lascia traccia nel registro', async () => {
@@ -372,14 +361,13 @@ test('verifica integrita\': archivio sano', async () => {
 });
 
 test('verifica integrita\': segnala incoerenze nei dati', async () => {
-  const { archivio, id, luca } = await appConDati();
-  // Incassi oltre il dovuto e liquidazione oltre il maturato (situazioni possibili ma da controllare)
+  const { archivio, id } = await appConDati();
+  // Incassi oltre il dovuto (situazioni possibili ma da controllare)
   await registraIncasso(archivio, { praticaId: id, data: '2026-10-06', importoCent: 900000 });
-  await registraLiquidazione(archivio, { collaboratoreId: luca.id, data: '2026-10-30', righe: [{ praticaId: id, importoCent: 200000 }] });
   const r = verificaIntegrita(archivio, modelloDi(archivio));
-  assert.ok(r.ok); // sono avvisi, non errori
-  assert.deepEqual(r.problemi.map((p) => p.codice).sort(), ['incassi_eccedenti', 'liquidato_oltre_maturato']);
-  assert.equal(r.avvisi, 2);
+  assert.ok(r.ok); // è un avviso, non un errore
+  assert.deepEqual(r.problemi.map((p) => p.codice).sort(), ['incassi_eccedenti']);
+  assert.equal(r.avvisi, 1);
   // Una ripartizione oltre il 100% scavalcando l'interfaccia e' un errore
   await archivio.transazione(() => archivio.esegui('INSERT INTO quote (pratica_id, collaboratore_id, percentuale) VALUES (?, 2, 50)', [id]));
   const r2 = verificaIntegrita(archivio, modelloDi(archivio));

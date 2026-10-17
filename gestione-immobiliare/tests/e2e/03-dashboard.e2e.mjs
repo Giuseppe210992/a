@@ -1,4 +1,4 @@
-// Dashboard con dati: quattro riquadri (verificati con un calcolo fatto a mano), periodo, un solo grafico, ultime pratiche, avvisi,
+// Dashboard con dati: tre riquadri (verificati con un calcolo fatto a mano), periodo, ultime pratiche, avvisi,
 // aggiornamento automatico. I filtri per zona e collaboratore si usano nelle Statistiche (stesse cifre, calcolate a mano).
 //
 // Il calcolo atteso e' indipendente dal programma: parte dalle 15 pratiche di dati-prova.mjs, dagli scaglioni
@@ -10,24 +10,23 @@ import { avvia, vai, conNavigazione, riquadri, totaliStatistiche, scegliPeriodo,
 import { inserisciDatiProva } from './dati-prova.mjs';
 
 const E = 100;
-const ATTESO_ANNO = { concluse: 13, compensi: 87920 * E, maturate: 28236 * E, daLiquidare: 21671 * E };
+const ATTESO_ANNO = { concluse: 13, compensi: 87920 * E, maturate: 28236 * E };
 
-describe('Dashboard: riquadri, periodo e grafico', () => {
+describe('Dashboard: riquadri, periodo, ultime pratiche e avvisi', () => {
   let app;
   before(async () => { app = await avvia(); await inserisciDatiProva(app.pagina); await vai(app.pagina, '#/'); });
   after(async () => { await app.chiudi(); });
 
-  test('i quattro riquadri mostrano i valori calcolati a mano (anno 2026)', async () => {
+  test('i tre riquadri mostrano i valori calcolati a mano (anno 2026)', async () => {
     const p = app.pagina;
     assert.deepEqual(await riquadri(p), ATTESO_ANNO);
-    assert.equal(await p.locator('.kpi').count(), 4);
+    assert.equal(await p.locator('.kpi').count(), 3);
     // le note dei riquadri danno il contesto
     const nota = async (etichetta) => rimuoviSpazi(await p.locator('.kpi', { has: p.locator('.kpi-etichetta', { hasText: new RegExp(`^${etichetta}$`) }) }).locator('.kpi-nota').innerText());
-    assert.match(await nota('Ancora da pagare ai collaboratori'), /Già pagati 6\.565 € su 28\.236 €/);
-    assert.match(await nota('Provvigioni dei collaboratori'), /Luca 13\.402 € · Giuseppe 14\.834 €/);
+    assert.match(await nota('Provvigioni pagate'), /Luca 13\.402 € · Giuseppe 14\.834 €/);
     assert.match(await nota('Pratiche concluse'), /Nel periodo scelto/);
     assert.match(await nota('Compensi dell\'agenzia'), /Senza IVA/);
-    // niente confronti, miniature o altri numeri a corredo: solo i quattro riquadri
+    // niente confronti, miniature o altri numeri a corredo: solo i tre riquadri
     assert.equal(await p.locator('.kpi .kpi-delta, .kpi .kpi-spark').count(), 0);
   });
 
@@ -44,11 +43,7 @@ describe('Dashboard: riquadri, periodo e grafico', () => {
       await p.waitForFunction(() => /13 pratiche/.test(document.querySelector('#contenuto').innerText));
     });
     await prova('Compensi dell\'agenzia', async () => assert.match(await p.locator('#contenuto h1').innerText(), /Statistiche e grafici/));
-    await prova('Provvigioni dei collaboratori', async () => assert.match(await p.locator('#contenuto h1').innerText(), /Provvigioni e liquidazioni/));
-    await prova('Ancora da pagare ai collaboratori', async () => {
-      assert.match(await p.locator('#contenuto h1').innerText(), /Provvigioni e liquidazioni/);
-      assert.match(await p.evaluate(() => location.hash), /solo=da-liquidare/);
-    });
+    await prova('Provvigioni pagate', async () => assert.match(await p.locator('#contenuto h1').innerText(), /Provvigioni/));
     await vai(p, '#/');
   });
 
@@ -57,11 +52,11 @@ describe('Dashboard: riquadri, periodo e grafico', () => {
     await vai(p, '#/');
     // settembre 2026: pratiche 009 e 015 (quest'ultima senza data di rogito: vale la data di apertura)
     await scegliPeriodo(p, 'Mese scorso');
-    assert.deepEqual(await riquadri(p), { concluse: 2, compensi: 4320 * E, maturate: 1296 * E, daLiquidare: 1296 * E });
+    assert.deepEqual(await riquadri(p), { concluse: 2, compensi: 4320 * E, maturate: 1296 * E });
     assert.match(rimuoviSpazi(await p.textContent('.tb-periodo')), /settembre 2026/);
     // ottobre 2026: pratiche 010, 011, 012
     await scegliPeriodo(p, 'Mese corrente');
-    assert.deepEqual(await riquadri(p), { concluse: 3, compensi: 23200 * E, maturate: 7660 * E, daLiquidare: 7660 * E });
+    assert.deepEqual(await riquadri(p), { concluse: 3, compensi: 23200 * E, maturate: 7660 * E });
     // intervallo 01/03/2026 – 30/06/2026: pratiche 003, 004, 005, 006
     await p.click('.periodo-btn');
     await p.click('.sel-periodo [role="tab"]:has-text("Intervallo")');
@@ -70,7 +65,7 @@ describe('Dashboard: riquadri, periodo e grafico', () => {
     await campi.nth(1).fill('30/06/2026');
     await p.waitForFunction(() => document.querySelector('.tb-periodo').textContent.includes('01/03/2026'));
     await p.keyboard.press('Escape');
-    assert.deepEqual(await riquadri(p), { concluse: 4, compensi: 26600 * E, maturate: 8500 * E, daLiquidare: 6135 * E });
+    assert.deepEqual(await riquadri(p), { concluse: 4, compensi: 26600 * E, maturate: 8500 * E });
     // tutto il periodo = stesso risultato dell'anno (tutti i dati sono del 2026)
     await p.click('.periodo-btn');
     await p.click('.sel-periodo [role="tab"]:has-text("Tutto")');
@@ -176,79 +171,6 @@ describe('Dashboard: riquadri, periodo e grafico', () => {
     await azzeraFiltri(p);
   });
 
-  test('c\'è un solo grafico, con valori scritti e testo alternativo', async () => {
-    const p = app.pagina;
-    await vai(p, '#/');
-    const titoli = await p.$$eval('.grafico-card h3', (a) => a.map((x) => x.textContent.trim()));
-    assert.deepEqual(titoli, ['Compensi mese per mese']);
-    const g = p.locator('#grafico-compensi');
-    assert.equal(await g.locator('svg.g-svg').count(), 1, 'un solo disegno');
-    assert.ok(await g.locator('.g-barra, .g-punto, .g-linea').count() > 0, 'ha delle barre');
-    assert.ok(await g.locator('svg.g-svg').getAttribute('aria-label'), 'ha un testo per i lettori di schermo');
-    assert.equal(await g.locator('.g-vuoto').isVisible(), false);
-    assert.equal(await g.locator('.g-legenda').count(), 0, 'una sola serie: niente legenda');
-    const cifre = rimuoviSpazi(await g.locator('.grafico-cifre').innerText());
-    assert.match(cifre, /Totale del periodo 87\.920,00 €/);
-    assert.match(cifre, /Media al mese 7\.326,67 €/);
-  });
-
-  test('grafico compensi: tooltip al passaggio del mouse e con la tastiera', async () => {
-    const p = app.pagina;
-    const g = p.locator('#grafico-compensi');
-    const colonne = g.locator('.g-hit');
-    assert.equal(await colonne.count(), 12);
-    await colonne.nth(9).hover(); // ottobre
-    const tt = g.locator('.g-tooltip');
-    await tt.waitFor({ state: 'visible' });
-    assert.match(rimuoviSpazi(await tt.innerText()), /ottobre 2026\s+Compensi 23\.200,00 €/);
-    await colonne.nth(0).hover();
-    await p.waitForFunction(() => document.querySelector('#grafico-compensi .g-tt-testa').textContent.includes('gennaio 2026'));
-    assert.match(rimuoviSpazi(await tt.innerText()), /gennaio 2026\s+Compensi 5\.600,00 €/);
-    await p.mouse.move(5, 5);
-    await tt.waitFor({ state: 'hidden' });
-    // tastiera: focus sul grafico, frecce per scorrere, Esc per chiudere
-    await g.locator('svg.g-svg').focus();
-    await tt.waitFor({ state: 'visible' });
-    await p.keyboard.press('Home');
-    assert.match(rimuoviSpazi(await tt.innerText()), /gennaio 2026/);
-    for (let i = 0; i < 9; i++) await p.keyboard.press('ArrowRight');
-    assert.match(rimuoviSpazi(await tt.innerText()), /ottobre 2026\s+Compensi 23\.200,00 €/);
-    await p.keyboard.press('Escape');
-    await tt.waitFor({ state: 'hidden' });
-  });
-
-  test('ogni grafico ha la vista tabella con gli stessi numeri e si torna al grafico', async () => {
-    const p = app.pagina;
-    const g = p.locator('#grafico-compensi');
-    await g.locator('button:has-text("Tabella")').click();
-    await g.locator('.grafico-tab table').waitFor({ state: 'visible' });
-    assert.equal(await g.locator('svg.g-svg').isVisible(), false);
-    const righe = await g.locator('.grafico-tab tbody tr').evaluateAll((tr) => tr.map((r) => [...r.children].map((c) => c.textContent.replace(/ /g, ' ').trim())));
-    assert.equal(righe.length, 12);
-    const per = Object.fromEntries(righe.map((r) => [r[0], r[1]]));
-    assert.equal(per['gennaio 2026'], '5.600,00 €');
-    assert.equal(per['agosto 2026'], '12.800,00 €');
-    assert.equal(per['settembre 2026'], '4.320,00 €');
-    assert.equal(per['ottobre 2026'], '23.200,00 €');
-    assert.equal(per['dicembre 2026'], '0,00 €');
-    const somma = righe.reduce((s, r) => s + centesimi(r[1]), 0);
-    assert.equal(somma, 87920 * E, 'la somma delle righe e\' il totale dei compensi');
-    assert.equal(await g.locator('button[aria-pressed="true"]').count(), 1);
-    await g.locator('button:has-text("Grafico")').click();
-    await g.locator('svg.g-svg').waitFor({ state: 'visible' });
-  });
-
-  test('con il periodo di un solo mese il grafico mostra comunque 12 mesi, quelli fuori periodo attenuati', async () => {
-    const p = app.pagina;
-    await scegliPeriodo(p, 'Mese corrente');
-    const g = p.locator('#grafico-compensi');
-    assert.equal(await g.locator('.g-hit').count(), 12);
-    assert.ok(await g.locator('.g-colonna.g-dim').count() >= 10, 'i mesi fuori dal periodo sono attenuati');
-    assert.match(rimuoviSpazi(await g.locator('.grafico-nota').innerText()), /colonne più chiare sono fuori dal periodo scelto/);
-    assert.match(rimuoviSpazi(await g.locator('.grafico-cifre').innerText()), /Totale del periodo 23\.200,00 €/);
-    await azzeraFiltri(p);
-  });
-
   test('ultime pratiche: le ultime cinque, poche colonne, e il clic apre la scheda', async () => {
     const p = app.pagina;
     await vai(p, '#/');
@@ -272,7 +194,7 @@ describe('Dashboard: riquadri, periodo e grafico', () => {
     await p.waitForSelector('#contenuto h1:has-text("Archivio pratiche")');
   });
 
-  test('avvisi automatici: dati mancanti, da liquidare, scaglione vicino, backup assente', async () => {
+  test('avvisi automatici: dati mancanti, scaglione vicino, backup assente', async () => {
     const p = app.pagina;
     await vai(p, '#/');
     await p.waitForSelector('#avvisi .avviso');
@@ -280,10 +202,7 @@ describe('Dashboard: riquadri, periodo e grafico', () => {
     const trova = (re) => avvisi.find((a) => re.test(a.testo));
     assert.ok(trova(/Nessun backup eseguito/), 'avviso backup');
     assert.ok(trova(/pratich[ae] con dati mancanti/), 'avviso dati mancanti');
-    const liq = trova(/Provvigioni da liquidare: 21\.671,00 €/);
-    assert.ok(liq, 'avviso da liquidare');
-    assert.match(liq.testo, /Luca 10\.357,00 €/);
-    assert.match(liq.testo, /Giuseppe 11\.314,00 €/);
+    assert.ok(!trova(/da liquidare/i), 'le provvigioni sono già pagate: nessun avviso da liquidare');
     const sca = trova(/Scaglione vicino: Giuseppe · Lungomare/);
     assert.ok(sca, 'avviso scaglione vicino');
     assert.match(sca.testo, /Mancano 800,00 € per lo scaglione 2 \(35%\)/);
@@ -301,7 +220,7 @@ describe('Dashboard: riquadri, periodo e grafico', () => {
     const quanti = () => p.locator('#avvisi li.avviso').count();
     const attendi = (n) => p.waitForFunction((x) => document.querySelectorAll('#avvisi li.avviso').length === x, n);
     const n0 = await quanti();
-    await p.locator('#avvisi li.avviso:has-text("Provvigioni da liquidare") button:has-text("Nascondi")').click();
+    await p.locator('#avvisi li.avviso:has-text("dati mancanti") button:has-text("Nascondi")').click();
     await attendi(n0 - 1);
     await p.locator('#avvisi button:has-text("Mostra di nuovo gli avvisi nascosti")').click();
     await attendi(n0);
@@ -334,13 +253,8 @@ describe('Dashboard: riquadri, periodo e grafico', () => {
     assert.equal(dopo.compensi, prima.compensi + 3000 * E);
     // provvigione: cumulo Luca/Centro a ottobre da 14.000 € (35% = 4.900) a 17.000 € (35% = 5.950) → +1.050 €
     assert.equal(dopo.maturate, prima.maturate + 1050 * E);
-    assert.equal(dopo.daLiquidare, prima.daLiquidare + 1050 * E);
     // la tabella delle ultime pratiche mostra subito la nuova
     await p.waitForFunction(() => document.querySelector('section[aria-labelledby="ult-titolo"] tbody tr td:nth-child(2)').textContent.includes('Via Aggiunta 1'));
-    // e il grafico dei compensi: ottobre ora 26.200
-    await p.locator('#grafico-compensi .g-hit').nth(9).hover();
-    await p.waitForFunction(() => document.querySelector('#grafico-compensi .g-tooltip').textContent.includes('26.200,00'));
-    await p.mouse.move(5, 5);
     // si annulla la modifica: elimina la pratica e torna tutto come prima
     await p.evaluate(async () => {
       const { api, app } = window.__gi;

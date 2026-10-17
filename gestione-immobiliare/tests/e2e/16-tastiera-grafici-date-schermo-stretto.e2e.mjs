@@ -2,7 +2,7 @@
 // pulsante dentro la notifica dopo un ripristino, copia danneggiata, errori nei moduli della scheda.
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { avvia, vai, rimuoviSpazi, sql, valoreSql, idPratica, finestra, bottoneFinestra, attendiNotifica, attendiQuiete, testoSospetto } from './lib.mjs';
+import { avvia, vai, rimuoviSpazi, sql, valoreSql, idPratica, finestra, bottoneFinestra, attendiNotifica, attendiQuiete, testoSospetto, apriIncasso } from './lib.mjs';
 import { inserisciDatiProva } from './dati-prova.mjs';
 
 describe('Grafici usati con la tastiera', () => {
@@ -34,12 +34,6 @@ describe('Grafici usati con la tastiera', () => {
     await p.keyboard.press('Escape');
     await tt.waitFor({ state: 'hidden' });
   }
-
-  test('Dashboard › Compensi mese per mese (colonne): frecce, Home, Fine ed Esc', async () => {
-    const p = app.pagina;
-    await vai(p, '#/');
-    await provaGrafico(p, '#grafico-compensi', { avanti: 'ArrowRight', indietro: 'ArrowLeft' });
-  });
 
   test('Statistiche › Compensi e incassi (linee): frecce destra e sinistra, Home, Fine ed Esc', async () => {
     const p = app.pagina;
@@ -117,7 +111,7 @@ describe('Menu delle azioni, campo data e notifiche con il pulsante', () => {
 
   test('Finestre: Maiusc+Tab dal primo elemento porta all\'ultimo e Tab dall\'ultimo al primo: il cursore non esce dalla finestra', async () => {
     const p = app.pagina;
-    await p.click('#op-incasso');
+    await apriIncasso(p);
     const f = finestra(p);
     await f.waitFor();
     const nome = () => p.evaluate(() => { const e = document.activeElement; return e.getAttribute('aria-label') || e.textContent.trim() || e.id; });
@@ -133,8 +127,7 @@ describe('Menu delle azioni, campo data e notifiche con il pulsante', () => {
   test('Campo data: le barre compaiono da sole, le lettere vengono tolte, il calendario si apre e la data scelta compare', async () => {
     const p = app.pagina;
     // il campo data si usa nelle finestre (qui «Registra un incasso»): il modulo della pratica non ha più date, è sempre quella di oggi
-    await vai(p, '#/');
-    await p.click('#op-incasso');
+    await apriIncasso(p);
     const f = finestra(p);
     await f.waitFor();
     const data = f.getByLabel('Data dell\'incasso');

@@ -6,6 +6,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { apriContesto, apriApp, vai, rimuoviSpazi, sql, valoreSql, finestra, bottoneFinestra, attendiNotifica, testoSospetto, riquadri, cartellaTemp, scarica } from './lib.mjs';
 
+// l'incasso si registra dalla scheda della pratica (c'è una sola pratica in questa prova)
+const apriIncasso = async (p) => {
+  await vai(p, `#/pratiche/${await valoreSql(p, 'SELECT id FROM pratiche ORDER BY id LIMIT 1')}`);
+  await p.click('#btn-incasso');
+};
+
 const E = 100;
 
 /** Apre una finestra del programma sul profilo indicato (come avviare il programma). */
@@ -27,7 +33,7 @@ describe('Persistenza dopo chiusura e riapertura', () => {
     fs.rmSync(cartella, { recursive: true, force: true });
   });
 
-  test('1ª apertura: si inseriscono zone, scaglioni, una pratica, un incasso, una liquidazione e le impostazioni, solo dall\'interfaccia', async () => {
+  test('1ª apertura: si inseriscono zone, scaglioni, una pratica, un incasso e le impostazioni, solo dall\'interfaccia', async () => {
     sessione1 = await avviaProgramma(profilo);
     const p = sessione1.pagina;
     try {
@@ -61,19 +67,11 @@ describe('Persistenza dopo chiusura e riapertura', () => {
     await p.locator('#pagamenti-acquirente').getByLabel('Bonifico').fill('3.660');
     await p.click('#salva-pratica');
     await attendiNotifica(p, /Pratica 2026\/001 salvata/);
-    // incasso e liquidazione dalla dashboard
-    await vai(p, '#/');
-    await p.click('#op-incasso');
-    await finestra(p).getByLabel('Pratica').selectOption({ index: 1 });
+    // incasso dalla scheda della pratica
+    await apriIncasso(p);
     await finestra(p).getByLabel('Importo incassato (IVA inclusa)').fill('2.000');
     await bottoneFinestra(p, 'Registra incasso').click();
     await attendiNotifica(p, /Incasso di 2\.000,00 € registrato/);
-    await p.click('#op-liquidazione');
-    await finestra(p).getByLabel('Collaboratore').selectOption({ label: /Luca/.test('Luca') ? (await finestra(p).getByLabel('Collaboratore').locator('option').allInnerTexts()).find((x) => x.startsWith('Luca')) : 'Luca' });
-    await finestra(p).locator('button:has-text("Nessuna")').click();
-    await finestra(p).locator('tbody tr input.input').first().fill('200');
-    await bottoneFinestra(p, 'Registra liquidazione').click();
-    await attendiNotifica(p, /Liquidazione di 200,00 € registrata per Luca/);
     // impostazioni, tema e barra
     await vai(p, '#/impostazioni?sezione=calcolo');
     await p.locator('input[name="metodo"][value="progressivo"]').check();
@@ -84,11 +82,10 @@ describe('Persistenza dopo chiusura e riapertura', () => {
     await vai(p, '#/');
     await p.click('#op-backup');
     await attendiNotifica(p, /Backup creato/);
-    // cumulo di Luca in ottobre 6.000 € = 3° scaglione (11%); metodo progressivo (scelto sopra): 130 + 208 + 800 × 11% = 426 €, meno 200 € già liquidati
-    assert.deepEqual(await riquadri(p), { concluse: 1, compensi: 6000 * E, maturate: 426 * E, daLiquidare: 226 * E });
+    // cumulo di Luca in ottobre 6.000 € = 3° scaglione (11%); metodo progressivo (scelto sopra): 130 + 208 + 800 × 11% = 426 €
+    assert.deepEqual(await riquadri(p), { concluse: 1, compensi: 6000 * E, maturate: 426 * E });
     // ultima azione: si chiude SUBITO dopo (la finestra di conferma si chiude solo a salvataggio avvenuto)
-    await p.click('#op-incasso');
-    await finestra(p).getByLabel('Pratica').selectOption({ index: 1 });
+    await apriIncasso(p);
     await finestra(p).getByLabel('Importo incassato (IVA inclusa)').fill('123,45');
     await bottoneFinestra(p, 'Registra incasso').click();
     await p.waitForFunction(() => document.querySelectorAll('dialog.modale').length === 0);
@@ -102,7 +99,7 @@ describe('Persistenza dopo chiusura e riapertura', () => {
     const p = sessione2.pagina;
     try {
     assert.deepEqual(await sql(p, 'SELECT (SELECT COUNT(*) FROM pratiche) AS pratiche, (SELECT COUNT(*) FROM zone) AS zone, (SELECT COUNT(*) FROM incassi) AS incassi, (SELECT COUNT(*) FROM liquidazioni) AS liq, (SELECT COUNT(*) FROM scaglioni) AS scaglioni, (SELECT COUNT(*) FROM quote) AS quote'),
-      [{ pratiche: 1, zone: 1, incassi: 2, liq: 1, scaglioni: 5, quote: 1 }]);
+      [{ pratiche: 1, zone: 1, incassi: 2, liq: 0, scaglioni: 5, quote: 1 }]);
     assert.deepEqual((await sql(p, 'SELECT percentuale FROM scaglioni WHERE zona_id IS NULL ORDER BY da_cent')).map((r) => r.percentuale), [5, 8, 11, 15, 22], 'anche lo scaglione modificato');
     const pr = (await sql(p, 'SELECT * FROM pratiche'))[0];
     assert.deepEqual([pr.codice, pr.stato, pr.immobile_indirizzo, pr.data_pratica, pr.data_rogito, pr.prezzo_vendita_cent, pr.compensi_da_pagamenti, pr.venditore_bonifico_cent, pr.acquirente_bonifico_cent, pr.compenso_venditore_cent, pr.compenso_acquirente_cent],
@@ -113,7 +110,7 @@ describe('Persistenza dopo chiusura e riapertura', () => {
     assert.equal(await p.evaluate(() => document.documentElement.dataset.theme), 'dark');
     assert.equal(await p.evaluate(() => document.body.dataset.sidebar), 'ridotta');
     // numeri (7.320 € pagati alla conclusione + 2.123,45 € di incassi registrati dopo)
-    assert.deepEqual(await riquadri(p), { concluse: 1, compensi: 6000 * E, maturate: 426 * E, daLiquidare: 226 * E });
+    assert.deepEqual(await riquadri(p), { concluse: 1, compensi: 6000 * E, maturate: 426 * E });
     // il backup manuale di prima è nell'archivio storico, e all'avvio è stata fatta la copia automatica del giorno
     await vai(p, '#/backup');
     const tipi = await p.evaluate(async () => (await window.__gi.app.driver.elencaCopie()).map((c) => c.tipo).sort());
@@ -232,8 +229,7 @@ describe('Persistenza dopo chiusura e riapertura', () => {
       window.__salvaOriginale = d.salva.bind(d);
       d.salva = async () => { throw new Error('Spazio esaurito (prova)'); };
     });
-    await p.click('#op-incasso');
-    await finestra(p).getByLabel('Pratica').selectOption({ index: 1 });
+    await apriIncasso(p);
     await finestra(p).getByLabel('Importo incassato (IVA inclusa)').fill('10');
     await bottoneFinestra(p, 'Registra incasso').click();
     await p.waitForSelector('.banner-errore:not([hidden])');

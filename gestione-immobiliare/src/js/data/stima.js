@@ -38,3 +38,41 @@ export function stimaPratica(archivio, bozza, quote, opzioni) {
     modello: m,
   };
 }
+
+/**
+ * Conguaglio del cumulo mensile: se la pratica si cumula con altre dello stesso mese (stessa zona e collaboratore, secondo
+ * il metodo scelto) lo scaglione può salire e anche le pratiche precedenti ne guadagnano. Per ogni collaboratore coinvolto:
+ *   giaPagatoCent         provvigione già pagata sulle pratiche precedenti (senza questa)
+ *   differenzaCent        quanto ancora gli spetta sulle pratiche precedenti, a causa di questa
+ *   nuovaCent             provvigione di questa pratica
+ *   totaleCent            pratiche precedenti ricalcolate + questa
+ */
+export function conguaglio(archivio, bozza, quote, opzioni) {
+  const s = stimaPratica(archivio, bozza, quote, opzioni);
+  const idTemp = bozza.id ?? -1;
+  const dati = leggiDati(archivio);
+  const idId = bozza.id ?? null;
+  dati.pratiche = dati.pratiche.filter((p) => p.id !== idId);
+  dati.quote = dati.quote.filter((q) => q.pratica_id !== idId);
+  const prima = calcolaModello(dati, opzioni);
+  const nomi = new Map(s.modello.collaboratori.map((c) => [c.id, c.nome]));
+  const somma = (voci) => voci.reduce((t, v) => t + v.provvigioneCent, 0);
+  const righe = [];
+  for (const c of s.cumuli) {
+    if (!c.praticheIds.some((id) => id !== idTemp)) continue;
+    const c0 = prima.cumuli.find((x) => x.chiave === c.chiave);
+    for (const v of c.voci.filter((x) => x.praticaId === idTemp && x.collaboratoreId != null)) {
+      const dopo = c.voci.filter((x) => x.praticaId !== idTemp && x.collaboratoreId === v.collaboratoreId);
+      if (!dopo.length) continue;
+      const prec = (c0?.voci || []).filter((x) => x.collaboratoreId === v.collaboratoreId);
+      const giaPagatoCent = somma(prec);
+      const nuovoVecchieCent = somma(dopo);
+      righe.push({
+        collaboratoreId: v.collaboratoreId, nome: nomi.get(v.collaboratoreId) ?? 'Collaboratore', mese: c.mese, zonaNome: c.zonaNome,
+        pratichePrecedenti: new Set(dopo.map((x) => x.praticaId)).size,
+        giaPagatoCent, differenzaCent: nuovoVecchieCent - giaPagatoCent, nuovaCent: v.provvigioneCent, totaleCent: nuovoVecchieCent + v.provvigioneCent,
+      });
+    }
+  }
+  return righe;
+}

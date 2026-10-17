@@ -1,4 +1,4 @@
-// Le quattro operazioni rapide della dashboard (nuova pratica, incasso, liquidazione, backup) e le esportazioni e importazioni
+// Le due operazioni rapide della dashboard (nuova pratica, incasso, liquidazione, backup) e le esportazioni e importazioni
 // della schermata «Backup e archivio storico», una per una, con il loro effetto reale sui dati.
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,11 +29,11 @@ describe('Dashboard: operazioni rapide, esportazioni e importazioni', () => {
     await vai(p, '#/');
   });
 
-  test('ci sono esattamente quattro operazioni rapide, con nome e descrizione', async () => {
+  test('ci sono esattamente due operazioni rapide, con nome e descrizione', async () => {
     const p = app.pagina;
     const titoli = await p.$$eval('.ops-griglia .op b', (a) => a.map((x) => x.textContent.trim()));
-    assert.deepEqual(titoli, ['Nuova pratica', 'Registra un incasso', 'Paga un collaboratore', 'Crea un backup']);
-    assert.equal(await p.locator('.ops-griglia .op small').count(), 4);
+    assert.deepEqual(titoli, ['Nuova pratica', 'Crea un backup']);
+    assert.equal(await p.locator('.ops-griglia .op small').count(), 2);
     // archivio mai salvato: lo dice, senza inventare una data
     await p.waitForFunction(() => /Nessun backup ancora/.test(document.querySelector('#op-backup small')?.textContent ?? '')); // la data dell'ultimo backup si legge dall'archivio
     assert.match(rimuoviSpazi(await p.locator('#op-backup small').innerText()), /Nessun backup ancora/);
@@ -51,7 +51,7 @@ describe('Dashboard: operazioni rapide, esportazioni e importazioni', () => {
     const p = app.pagina;
     await apriEsporta(p);
     await finestra(p).waitFor();
-    assert.equal(await finestra(p).locator('input[name="esp"]').count(), 5);
+    assert.equal(await finestra(p).locator('input[name="esp"]').count(), 4);
     assert.equal(await finestra(p).locator('input[name="esp"]:checked').getAttribute('value'), 'pratiche');
     const file = await scarica(p, () => bottoneFinestra(p, 'Esporta').click());
     assert.match(file.nome, /^Pratiche_2026-10-16\.csv$/);
@@ -83,7 +83,7 @@ describe('Dashboard: operazioni rapide, esportazioni e importazioni', () => {
     await attendiNotifica(p, /File “Pratiche_2026-10-16\.csv” salvato/);
   });
 
-  test('6b. Esporta: provvigioni, incassi e liquidazioni', async () => {
+  test('6b. Esporta: provvigioni e incassi', async () => {
     const p = app.pagina;
     const esporta = async (valore) => {
       await apriEsporta(p);
@@ -100,9 +100,6 @@ describe('Dashboard: operazioni rapide, esportazioni e importazioni', () => {
     const inc = leggiCsv((await esporta('incassi')).bytes);
     assert.equal(inc.righe.length, 4);
     assert.equal(inc.righe.reduce((s, r) => s + centesimi(r[3]), 0), 25376 * E);
-    const liq = leggiCsv((await esporta('liquidazioni')).bytes);
-    assert.equal(liq.righe.length, 5); // 1 + 2 + 2 righe
-    assert.equal(liq.righe.reduce((s, r) => s + centesimi(r[3]), 0), 6565 * E);
   });
 
   test('6c. Esporta: la spunta "solo periodo e filtri" limita i dati', async () => {
@@ -163,12 +160,13 @@ describe('Dashboard: operazioni rapide, esportazioni e importazioni', () => {
     await p.waitForFunction(() => !document.querySelector('#avvisi')?.textContent.includes('Nessun backup eseguito'));
   });
 
-  test('3. Registra un incasso: controlli, importo residuo, salvataggio e aggiornamento dei numeri', async () => {
+  test('3. Registra un incasso dalla scheda: controlli, importo residuo, salvataggio e aggiornamento dei numeri', async () => {
     const p = app.pagina;
     await vai(p, '#/');
     const incassati = () => valoreSql(p, 'SELECT SUM(importo_cent) FROM incassi');
     assert.equal(await incassati(), 25376 * E);
-    await p.click('#op-incasso');
+    await vai(p, `#/pratiche/${await idPratica(p, '2026/011')}`);
+    await p.click('#btn-incasso');
     const f = finestra(p);
     await f.waitFor();
     assert.match(await f.locator('h2').innerText(), /Registra un incasso/);
@@ -176,7 +174,7 @@ describe('Dashboard: operazioni rapide, esportazioni e importazioni', () => {
     // senza scegliere nulla: errori chiari e la finestra resta aperta
     await bottoneFinestra(p, 'Registra incasso').click();
     await f.locator('.ha-errore').first().waitFor();
-    assert.ok(await f.locator('.errore').first().innerText());
+    assert.match(rimuoviSpazi(await f.innerText()), /importo/i);
     assert.equal(await f.count(), 1);
     // importo non valido
     await f.getByLabel('Pratica').selectOption(String(await idPratica(p, '2026/011')));
@@ -213,63 +211,6 @@ describe('Dashboard: operazioni rapide, esportazioni e importazioni', () => {
     assert.match(t, /Acconto di prova/);
     assert.match(t, /8\.760,00 €/); // ancora da incassare
     await vai(p, '#/');
-  });
-
-  test('4. Registra una liquidazione: elenco delle pratiche, distribuzione, conferma, salvataggio', async () => {
-    const p = app.pagina;
-    await vai(p, '#/');
-    await p.click('#op-liquidazione');
-    const f = finestra(p);
-    await f.waitFor();
-    // senza collaboratore: spiegazione
-    assert.match(rimuoviSpazi(await f.innerText()), /Scegli un collaboratore per vedere le provvigioni da liquidare/);
-    await bottoneFinestra(p, 'Registra liquidazione').click();
-    assert.match(rimuoviSpazi(await f.innerText()), /Scegli il collaboratore/);
-    await f.getByLabel('Collaboratore').selectOption(String(await valoreSql(p, "SELECT id FROM collaboratori WHERE nome = 'Giuseppe'")));
-    const righe = f.locator('tbody tr');
-    assert.equal(await righe.count(), 6);
-    const dati = await righe.evaluateAll((tr) => tr.map((r) => [...r.children].slice(1, 5).map((c) => c.textContent.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim())));
-    const per = Object.fromEntries(dati.map((d) => [d[0].match(/^\d{4}\/\d{3}/)[0], d.slice(1)]));
-    assert.deepEqual(per['2026/003'], ['570,00 €', '0,00 €', '570,00 €']);
-    assert.deepEqual(per['2026/005'], ['3.640,00 €', '1.000,00 €', '2.640,00 €']);
-    assert.deepEqual(per['2026/008'], ['4.480,00 €', '0,00 €', '4.480,00 €']);
-    assert.ok(!per['2026/002'], 'la 002 è già liquidata per intero');
-    // tutte selezionate di partenza: totale = tutto il dovuto
-    assert.match(rimuoviSpazi(await f.locator('.riepilogo-calcolo').innerText()), /Totale della liquidazione 11\.314,00 €/);
-    await f.locator('button:has-text("Nessuna")').click();
-    assert.match(rimuoviSpazi(await f.locator('.riepilogo-calcolo').innerText()), /Totale della liquidazione 0,00 €/);
-    await bottoneFinestra(p, 'Registra liquidazione').click();
-    assert.equal(await f.count(), 1, 'senza righe scelte non si registra');
-    await attendiNotifica(p, /Seleziona almeno una pratica/);
-    // distribuzione di 1.000 € dalle più vecchie: 003 (570) e poi 005 (430)
-    await f.getByLabel('Oppure distribuisci un importo (dalle più vecchie)').fill('1000');
-    await f.locator('button:has-text("Distribuisci")').click();
-    const importi = await righe.evaluateAll((tr) => tr.map((r) => ({ codice: r.children[1].textContent.trim().match(/^\d{4}\/\d{3}/)[0], sel: r.querySelector('input[type=checkbox]').checked, importo: r.querySelector('input.input').value })));
-    assert.deepEqual(importi.filter((x) => x.sel).map((x) => [x.codice, x.importo]), [['2026/003', '570,00'], ['2026/005', '430,00']]);
-    assert.match(rimuoviSpazi(await f.locator('.riepilogo-calcolo').innerText()), /Totale della liquidazione 1\.000,00 €/);
-    // si sceglie invece la sola 008 e si prova a pagare di più del dovuto: chiede conferma
-    await f.locator('button:has-text("Nessuna")').click();
-    const r008 = righe.filter({ hasText: '2026/008' });
-    await r008.locator('input.input').fill('5.000,00');
-    await bottoneFinestra(p, 'Registra liquidazione').click();
-    await p.waitForSelector('dialog.modale[open] >> text=Importo superiore al dovuto');
-    await p.locator('dialog.modale[open]').last().locator('button:has-text("Annulla")').click();
-    assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM liquidazioni'), 3, 'dopo Annulla nulla è stato registrato');
-    await r008.locator('input.input').fill('4.480,00');
-    await f.getByLabel('Metodo', { exact: true }).selectOption({ label: 'Bonifico' });
-    await f.getByLabel('Note').fill('Saldo agosto');
-    await bottoneFinestra(p, 'Registra liquidazione').click();
-    await attendiNotifica(p, /Liquidazione di 4\.480,00 € registrata per Giuseppe/);
-    assert.equal(await f.count(), 0);
-    const l = (await sql(p, 'SELECT * FROM liquidazioni ORDER BY id DESC LIMIT 1'))[0];
-    assert.deepEqual([l.data, l.metodo, l.note], ['2026-10-16', 'Bonifico', 'Saldo agosto']);
-    const rr = await sql(p, 'SELECT r.importo_cent, p.codice FROM liquidazioni_righe r JOIN pratiche p ON p.id = r.pratica_id WHERE r.liquidazione_id = ?', [l.id]);
-    assert.deepEqual(rr, [{ importo_cent: 448000, codice: '2026/008' }]);
-    // i riquadri si sono aggiornati: da liquidare 21.671 − 4.480 = 17.191 €
-    await p.waitForFunction(() => /Già pagati 11\.045\s€ su 28\.236\s€/.test(document.body.textContent));
-    const dopo = await riquadri(p);
-    assert.equal(dopo.daLiquidare, 17191 * E);
-    assert.equal(dopo.maturate, prima.maturate);
   });
 
   test('8. Importa un backup: un file sbagliato viene rifiutato spiegando perché, senza toccare i dati', async () => {
@@ -334,7 +275,6 @@ describe('Dashboard: operazioni rapide, esportazioni e importazioni', () => {
     assert.ok(copie.includes('pre-importazione'), 'prima dell\'importazione è stata salvata una copia di sicurezza');
     // la dashboard è tornata ai valori di partenza, senza ricaricare
     await vai(p, '#/');
-    await p.waitForFunction(() => /Già pagati 6\.565\s€ su 28\.236\s€/.test(document.body.textContent));
     assert.deepEqual(await riquadri(p), prima);
   });
 

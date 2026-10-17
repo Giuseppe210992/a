@@ -10,7 +10,7 @@ import { apriModale, conferma, ok as notificaOk, notifica, segnalaErrore, errore
 import { campoSelezione, campoData, campoImporto, campoTesto, campoAreaTesto, mostraErrori } from './campi.js';
 import { registraIncasso, registraLiquidazione, PAGANTI, METODI_PAGAMENTO } from '../data/repo/pratiche.js';
 import { creaBackup, esportaArchivio, leggiFileDaImportare, applicaImportazione } from '../data/backup.js';
-import { csvPratiche, csvProvvigioni, csvIncassi, csvLiquidazioni, codificaTesto, nomeFile } from '../data/esporta.js';
+import { csvPratiche, csvProvvigioni, csvIncassi, codificaTesto, nomeFile } from '../data/esporta.js';
 import { concluseNelContesto } from '../data/calc/aggregati.js';
 
 const etichettaPratica = (p) => `${p.codice} — ${p.descrizione}`;
@@ -94,132 +94,6 @@ export function apriDialogoIncasso({ praticaId = null } = {}) {
   return dlg;
 }
 
-// ------------------------------------------------------------------ liquidazione
-
-export function apriDialogoLiquidazione({ collaboratoreId = null, praticaId = null } = {}) {
-  const m = modello();
-  const collab = m.collaboratori.filter((c) => c.attivo || c.daLiquidareCent !== 0);
-  if (!collab.length) {
-    return apriModale({ titolo: 'Registra una liquidazione', icona: 'info', contenuto: h('p', null, 'Non ci sono collaboratori. Aggiungili da Impostazioni.'), azioni: [{ id: 'ok', etichetta: 'Ok', tipo: 'primario' }] });
-  }
-  const selCollab = campoSelezione({
-    etichetta: 'Collaboratore', obbligatorio: true, valore: collaboratoreId ?? (collab.length === 1 ? collab[0].id : ''), vuoto: 'Scegli il collaboratore…',
-    opzioni: collab.map((c) => ({ valore: c.id, etichetta: `${c.nome}${c.daLiquidareCent > 0 ? ` (da liquidare ${eur(c.daLiquidareCent)})` : ''}` })),
-  });
-  const data = campoData({ etichetta: 'Data del pagamento', valore: oggi(), obbligatorio: true });
-  const metodo = campoSelezione({ etichetta: 'Metodo', vuoto: 'Non indicato', opzioni: METODI_PAGAMENTO.map((x) => ({ valore: x, etichetta: x })) });
-  const note = campoTesto({ etichetta: 'Note', maxlength: 300 });
-  const area = h('div', { class: 'liq-righe' });
-  const totale = h('strong', { class: 'num' }, eur(0));
-  const dist = campoImporto({ etichetta: 'Oppure distribuisci un importo (dalle più vecchie)' });
-  let righe = []; // { voce, p, check, importo }
-
-  function disegnaRighe() {
-    const cid = +selCollab.get();
-    righe = [];
-    area.replaceChildren();
-    if (!cid) { area.append(h('p', { class: 'sottotesto' }, 'Scegli un collaboratore per vedere le provvigioni da liquidare.')); aggiornaTotale(); return; }
-    const voci = m.pratiche
-      .filter((p) => !p.annullata)
-      .map((p) => ({ p, v: p.voci.find((x) => x.collaboratoreId === cid) }))
-      .filter((x) => x.v)
-      .sort((a, b) => (a.p.dataRif < b.p.dataRif ? -1 : a.p.dataRif > b.p.dataRif ? 1 : a.p.id - b.p.id));
-    const da = voci.filter((x) => x.v.daLiquidareCent > 0);
-    const anticipi = voci.filter((x) => x.v.daLiquidareCent <= 0 && x.p.inCorso);
-    if (!da.length && !anticipi.length) {
-      area.append(h('div', { class: 'nota ok' }, icona('circle-check', { dimensione: 18 }), h('span', null, 'Non c\'è nulla da liquidare a questo collaboratore.')));
-      aggiornaTotale();
-      return;
-    }
-    const costruisciRiga = ({ p, v }, anticipo) => {
-      const check = h('input', { type: 'checkbox', 'aria-label': `Liquida ${p.codice}`, checked: !anticipo && (praticaId ? p.id === praticaId : true) });
-      const campo = campoImporto({ centesimi: anticipo ? null : v.daLiquidareCent, placeholder: '0,00' });
-      campo.input.setAttribute('aria-label', `Importo da liquidare per ${p.codice}`);
-      check.addEventListener('change', () => { if (check.checked && campo.get() === null) campo.set(Math.max(0, v.daLiquidareCent)); aggiornaTotale(); });
-      campo.input.addEventListener('input', () => { if (campo.get() > 0) check.checked = true; aggiornaTotale(); });
-      righe.push({ v, p, check, campo });
-      return h('tr', null,
-        h('td', { class: 'centro' }, check),
-        h('td', null, h('span', { class: 'forte' }, p.codice), h('span', { class: 'sottotesto' }, `${p.descrizione} · ${p.dataEtichetta}`)),
-        h('td', { class: 'num' }, eur(v.maturataCent)),
-        h('td', { class: 'num' }, eur(v.liquidataCent)),
-        h('td', { class: 'num forte' }, anticipo ? h('span', { class: 'badge badge-corso' }, 'In corso') : eur(v.daLiquidareCent)),
-        h('td', { style: { minWidth: '140px' } }, campo.el),
-      );
-    };
-    const tab = h('div', { class: 'tabella-wrap', style: { maxHeight: '300px', overflow: 'auto' } },
-      h('table', { class: 'tabella tabella-compatta' },
-        h('thead', null, h('tr', null, h('th', { class: 'centro' }, ''), h('th', null, 'Pratica'), h('th', { class: 'num' }, 'Maturata'), h('th', { class: 'num' }, 'Già liquidata'), h('th', { class: 'num' }, 'Da liquidare'), h('th', null, 'Importo ora'))),
-        h('tbody', null, da.map((x) => costruisciRiga(x, false)), anticipi.length ? h('tr', null, h('td', { colspan: 6, class: 'sottotesto', style: { background: 'var(--surface-2)' } }, 'Anticipi su pratiche ancora in corso (nessuna provvigione maturata)')) : null, anticipi.map((x) => costruisciRiga(x, true)))));
-    area.append(tab);
-    aggiornaTotale();
-  }
-
-  function aggiornaTotale() {
-    const t = righe.filter((r) => r.check.checked).reduce((s, r) => s + (r.campo.get() || 0), 0);
-    totale.textContent = eur(t);
-  }
-
-  function distribuisci() {
-    let restante = dist.get();
-    if (!restante || restante <= 0) { dist.errore('Scrivi l\'importo da distribuire.'); return; }
-    dist.errore(null);
-    for (const r of righe) { r.check.checked = false; r.campo.set(null); }
-    for (const r of righe) {
-      if (restante <= 0) break;
-      if (r.v.daLiquidareCent <= 0) continue;
-      const q = Math.min(restante, r.v.daLiquidareCent);
-      r.check.checked = true; r.campo.set(q); restante -= q;
-    }
-    aggiornaTotale();
-    if (restante > 0) notifica({ tipo: 'avviso', testo: `${eur(restante)} non sono stati assegnati: superano il totale da liquidare.` });
-  }
-
-  dist.input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); distribuisci(); } }); // Invio qui distribuisce, non registra la liquidazione
-  selCollab.input.addEventListener('change', disegnaRighe);
-  const selTutte = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', onclick: () => { for (const r of righe) { if (r.v.daLiquidareCent > 0) { r.check.checked = true; if (r.campo.get() === null) r.campo.set(r.v.daLiquidareCent); } } aggiornaTotale(); } }, 'Seleziona tutte');
-  const selNessuna = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', onclick: () => { for (const r of righe) r.check.checked = false; aggiornaTotale(); } }, 'Nessuna');
-
-  const form = h('form', { onsubmit: (e) => e.preventDefault() },
-    h('div', { class: 'griglia-campi' },
-      h('div', { class: 'c-6' }, selCollab.el), h('div', { class: 'c-6' }, data.el),
-      h('div', { class: 'c-12' }, h('div', { class: 'riga-azioni', style: { justifyContent: 'space-between', marginBottom: '8px' } }, h('span', { class: 'etichetta forte' }, 'Pratiche da liquidare'), h('span', { class: 'riga-azioni' }, selTutte, selNessuna)), area),
-      h('div', { class: 'c-6' }, h('div', null, dist.el, h('div', { style: { marginTop: '6px' } }, h('button', { type: 'button', class: 'btn btn-secondario btn-sm', onclick: distribuisci }, 'Distribuisci')))),
-      h('div', { class: 'c-6' }, metodo.el), h('div', { class: 'c-12' }, note.el),
-      h('div', { class: 'c-12' }, h('div', { class: 'riepilogo-calcolo' }, h('div', { class: 'riga totale' }, h('span', null, 'Totale della liquidazione'), totale)))));
-  disegnaRighe();
-
-  return apriModale({
-    titolo: 'Registra una liquidazione', descrizione: 'Il pagamento delle provvigioni a un collaboratore, pratica per pratica.', icona: 'hand-coins', tonoIcona: 'info', larghezza: 820,
-    contenuto: form,
-    azioni: [
-      { id: 'annulla', etichetta: 'Annulla', tipo: 'secondario' },
-      { id: 'salva', etichetta: 'Registra liquidazione', tipo: 'primario', icona: 'check', onClick: async () => {
-        const scelte = righe.filter((r) => r.check.checked && (r.campo.get() || 0) > 0).map((r) => ({ praticaId: r.p.id, importoCent: r.campo.get() }));
-        if (!selCollab.get()) { selCollab.errore('Scegli il collaboratore.'); return false; }
-        if (!scelte.length) { notificaErrore('Seleziona almeno una pratica e indica l\'importo da liquidare.'); return false; }
-        const sopra = righe.filter((r) => r.check.checked && (r.campo.get() || 0) > Math.max(0, r.v.daLiquidareCent) && r.p.conclusa);
-        if (sopra.length) {
-          const ok = await conferma({
-            titolo: 'Importo superiore al dovuto', tipo: 'primario', etichettaConferma: 'Registra comunque', icona: 'triangle-alert',
-            messaggio: 'Per alcune pratiche stai liquidando più della provvigione ancora da pagare.',
-            dettagli: sopra.map((r) => `${r.p.codice}: da liquidare ${eur(r.v.daLiquidareCent)}, inserito ${eur(r.campo.get())}`),
-          });
-          if (!ok) return false;
-        }
-        try {
-          await registraLiquidazione(app.archivio, { collaboratoreId: +selCollab.get(), data: data.get(), metodo: metodo.get(), note: note.get(), righe: scelte });
-          const nome = m.collaboratori.find((c) => c.id === +selCollab.get())?.nome;
-          notificaOk(`Liquidazione di ${eur(scelte.reduce((s, x) => s + x.importoCent, 0))} registrata${nome ? ` per ${nome}` : ''}.`);
-        } catch (e) {
-          if (e.campi) { mostraErrori({ collaboratoreId: selCollab, data }, e.campi); if (e.campi.righe) notificaErrore(e.campi.righe); return false; }
-          throw e;
-        }
-      } },
-    ],
-  });
-}
-
 // ------------------------------------------------------------------ esportazione
 
 export function apriDialogoEsporta() {
@@ -229,7 +103,6 @@ export function apriDialogoEsporta() {
     { id: 'pratiche', titolo: 'Elenco delle pratiche', testo: 'Una riga per pratica con importi, ripartizione e provvigioni (file CSV per Excel).', ext: 'csv' },
     { id: 'provvigioni', titolo: 'Provvigioni per pratica e collaboratore', testo: 'Fatturato, percentuale applicata, maturato, liquidato e residuo (CSV).', ext: 'csv' },
     { id: 'incassi', titolo: 'Incassi', testo: 'Tutti i pagamenti ricevuti dai clienti (CSV).', ext: 'csv' },
-    { id: 'liquidazioni', titolo: 'Liquidazioni', testo: 'Tutti i pagamenti ai collaboratori (CSV).', ext: 'csv' },
     { id: 'completo', titolo: 'Archivio completo (file di backup)', testo: 'Tutti i dati in un solo file, per spostarli su un altro computer o conservarli.', ext: 'sqlite' },
   ];
   let scelta = 'pratiche';
@@ -255,7 +128,6 @@ export function apriDialogoEsporta() {
           const voci = pratichePer.filter((p) => !p.annullata).flatMap((p) => p.voci.filter((v) => ctx.collaboratoreId == null || !filtra || v.collaboratoreId === ctx.collaboratoreId).map((v) => ({ p, v })));
           bytes = codificaTesto(csvProvvigioni(modelloOra, voci)); nome = nomeFile('Provvigioni', 'csv');
         } else if (scelta === 'incassi') { bytes = codificaTesto(csvIncassi(modelloOra)); nome = nomeFile('Incassi', 'csv'); }
-        else if (scelta === 'liquidazioni') { bytes = codificaTesto(csvLiquidazioni(modelloOra)); nome = nomeFile('Liquidazioni', 'csv'); }
         else {
           const r = await esportaArchivio(app);
           if (r.annullato) return false;

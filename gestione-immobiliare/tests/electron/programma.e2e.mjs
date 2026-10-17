@@ -79,6 +79,8 @@ describe('Programma Windows (Electron)', { skip: binarioElectron() ? false : 'El
     await p.locator('#pagamenti-venditore').getByLabel('Bonifico').fill('1.220'); // 1.000 + IVA al 22%
     await p.waitForSelector('#ripartizione-automatica'); // la ripartizione arriva da sola dalla zona
     await p.click('#salva-pratica');
+    // la zona ha già pratiche nello stesso mese: prima di salvare compare l'avviso del cumulo
+    await p.locator('dialog.modale[open] button', { hasText: 'Salva la pratica' }).click();
     await p.waitForSelector('#contenuto h1:has-text("Zona Centro")');
     assert.match(await p.locator('#contenuto').innerText(), /2026\/016/);
     // il file su disco contiene davvero i dati: lo si apre con un altro processo di lettura

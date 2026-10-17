@@ -8,7 +8,7 @@ const VOCI = [
   ['dashboard', 'Dashboard', 'Dashboard'],
   ['nuova', 'Nuova pratica', 'Nuova pratica'],
   ['pratiche', 'Archivio pratiche', 'Archivio pratiche'],
-  ['provvigioni', 'Provvigioni e liquidazioni', 'Provvigioni e liquidazioni'],
+  ['provvigioni', 'Provvigioni', 'Provvigioni'],
   ['cumulo', 'Cumulo mensile per zona', 'Cumulo mensile per zona'],
   ['statistiche', 'Statistiche e grafici', 'Statistiche e grafici'],
   ['backup', 'Backup e archivio storico', 'Backup e archivio storico'],

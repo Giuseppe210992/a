@@ -1,16 +1,19 @@
-// Mese della proposta e percentuali fisse (il capo il 15% e la segretaria il 4% del totale delle provvigioni, in qualsiasi zona).
+// Mese della proposta e percentuali fisse (il capo il 15% e la segretaria il 4% del COMPENSO TOTALE della pratica, senza IVA,
+// in qualsiasi zona e a prescindere da quanto prendono i collaboratori) e conguaglio del cumulo.
 // I numeri attesi sono calcolati a mano, a partire dagli scaglioni dell'agenzia: 5% fino a 2.600 €, 8% fino a 5.200 €,
 // 11% fino a 7.800 €, 15% fino a 13.000 €, 20% oltre.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { nuovaApp, modelloDi } from './helpers-db.mjs';
-import { salvaPratica, registraIncasso, registraLiquidazione } from '../../src/js/data/repo/pratiche.js';
+import { salvaPratica, registraIncasso } from '../../src/js/data/repo/pratiche.js';
 import {
   creaZona, creaCollaboratore, elencoCollaboratori, aggiornaCollaboratore, salvaRipartizioneZona, ripartizioneAutomatica,
 } from '../../src/js/data/repo/anagrafiche.js';
 import { scriviImpostazioni } from '../../src/js/data/repo/impostazioni.js';
 import { ErroreValidazione } from '../../src/js/data/repo/errori.js';
 import { calcolaModello } from '../../src/js/data/calc/modello.js';
+import { conguaglio } from '../../src/js/data/stima.js';
+import { leggiImpostazioni, opzioniCalcolo } from '../../src/js/data/repo/impostazioni.js';
 import { oggi } from '../../src/js/core/dates.js';
 import { datiBase, aggiungiPratica } from './helpers.mjs';
 
@@ -38,7 +41,7 @@ test('il primo avvio crea il capo (15%) e la segretaria (4%) accanto a Luca e Gi
   assert.deepEqual(elencoCollaboratori(archivio).map((c) => [c.nome, c.percentuale_fissa]), [['Luca', null], ['Giuseppe', null], ['Capo', 15], ['Segretaria', 4]]);
 });
 
-test('Luca solo: 10.000 € di compenso → 15% = 1.500 €; il capo prende il 15% di 1.500 (225 €) e la segretaria il 4% (60 €)', async () => {
+test('Luca solo: 10.000 € di compenso → Luca 15% = 1.500 €; il capo prende il 15% del compenso (1.500 €) e la segretaria il 4% (400 €)', async () => {
   const app = await appCompleta();
   // 6.100 per parte con IVA 22% compresa = 5.000 + 1.100 → compenso senza IVA 10.000 €
   const id = await nuova(app, app.centro, { vend: 6100, acq: 6100 });
@@ -46,25 +49,23 @@ test('Luca solo: 10.000 € di compenso → 15% = 1.500 €; il capo prende il 1
   assert.equal(p.compensoTotaleCent, 10000 * E);
   const voce = (chi) => p.voci.find((v) => v.collaboratoreId === chi.id);
   assert.equal(voce(app.luca).provvigioneCent, 1500 * E);
-  assert.equal(voce(app.capo).provvigioneCent, 225 * E);
-  assert.equal(voce(app.segretaria).provvigioneCent, 60 * E);
-  assert.equal(voce(app.capo).baseCent, 1500 * E, 'la percentuale si calcola sul totale delle provvigioni dei collaboratori');
+  assert.equal(voce(app.capo).provvigioneCent, 1500 * E, '15% di 10.000, non di quanto prende Luca');
+  assert.equal(voce(app.segretaria).provvigioneCent, 400 * E, '4% di 10.000');
+  assert.equal(voce(app.capo).baseCent, 10000 * E);
   assert.deepEqual([voce(app.capo).fissa, voce(app.capo).fatturatoCent, voce(app.capo).quotaPct], [true, 0, 0]);
-  assert.equal(p.provvigioniCent, (1500 + 225 + 60) * E, 'totale della pratica: 1.785 €');
-  assert.equal(p.maturateCent, 1785 * E);
-  assert.equal(p.daLiquidareCent, 1785 * E);
-  // margine dell'agenzia: compensi − tutte le provvigioni (anche del capo e della segretaria) = 10.000 − 1.785
+  assert.equal(p.provvigioniCent, (1500 + 1500 + 400) * E, 'totale della pratica: 3.400 €');
+  // tutto è già pagato: nulla da liquidare
+  assert.deepEqual([p.maturateCent, p.liquidateCent, p.daLiquidareCent], [3400 * E, 3400 * E, 0]);
+  // margine dell'agenzia: compensi − tutte le provvigioni = 10.000 − 3.400
   const m = modelloDi(app.archivio);
   const margine = m.pratiche.reduce((s, x) => s + x.voci.reduce((t, v) => t + v.fatturatoCent - v.provvigioneCent, 0), 0);
-  assert.equal(margine, 8215 * E);
-  // nel riepilogo per collaboratore
+  assert.equal(margine, 6600 * E);
   const riep = Object.fromEntries(m.collaboratori.map((c) => [c.nome, [c.maturateCent, c.pratiche, c.fatturatoCent, c.percentualeFissa]]));
-  assert.deepEqual(riep.Capo, [225 * E, 0, 0, 15]);
-  assert.deepEqual(riep.Segretaria, [60 * E, 0, 0, 4]);
+  assert.deepEqual(riep.Capo, [1500 * E, 0, 0, 15]);
+  assert.deepEqual(riep.Segretaria, [400 * E, 0, 0, 4]);
   assert.deepEqual(riep.Luca, [1500 * E, 1, 10000 * E, null]);
 });
-
-test('zona divisa 60/40: ognuno ha il suo scaglione; capo e segretaria prendono la percentuale sul totale delle provvigioni', async () => {
+test('zona divisa 60/40: ognuno ha il suo scaglione; capo e segretaria prendono comunque la percentuale sul compenso totale', async () => {
   const app = await appCompleta();
   const id = await nuova(app, app.collina, { vend: 6100, acq: 6100 }); // compenso 10.000 €
   const p = modelloDi(app.archivio).perId.get(id);
@@ -72,37 +73,31 @@ test('zona divisa 60/40: ognuno ha il suo scaglione; capo e segretaria prendono 
   // Luca 6.000 € → 3° scaglione (da 5.200,01 a 7.800: 11%) = 660 €; Giuseppe 4.000 € → 2° scaglione (8%) = 320 €
   assert.equal(prov(app.luca), 660 * E);
   assert.equal(prov(app.giuseppe), 320 * E);
-  // totale 980 €: capo 15% = 147,00 €, segretaria 4% = 39,20 €
-  assert.equal(prov(app.capo), 147 * E);
-  assert.equal(prov(app.segretaria), 3920);
+  // capo e segretaria: 15% e 4% di 10.000 €, non di 980 €
+  assert.equal(prov(app.capo), 1500 * E);
+  assert.equal(prov(app.segretaria), 400 * E);
 });
-
-test('in qualsiasi zona: stessa percentuale; arrotondamento al centesimo pratica per pratica (mezzi verso l\'alto)', () => {
+test('in qualsiasi zona: stessa percentuale sul compenso; arrotondamento al centesimo pratica per pratica (mezzi verso l\'alto)', () => {
   const dati = datiBase();
   dati.collaboratori.push({ id: 3, nome: 'Capo', attivo: 1, colore: 3, percentuale_fissa: 15 }, { id: 4, nome: 'Segretaria', attivo: 1, colore: 4, percentuale_fissa: 4 });
-  // pratica in zona B di Giuseppe, compenso 6.000 € → cumulo 6.000 → 30% = 1.800 €
-  aggiungiPratica(dati, 1, { zona_id: 2, compenso_venditore_cent: 3000 * E, compenso_acquirente_cent: 3000 * E }, [[2, 100]]);
-  // pratica in zona A di Luca con un compenso che dà una provvigione di 33,33 € (111,10 × 30% = 33,33)
+  aggiungiPratica(dati, 1, { zona_id: 2, compenso_venditore_cent: 3000 * E, compenso_acquirente_cent: 3000 * E, aliquota_iva: 0 }, [[2, 100]]);
+  // compenso 111,10 € (IVA 0%): 15% = 16,665 → 16,67; 4% = 4,444 → 4,44
   aggiungiPratica(dati, 2, { zona_id: 1, data_rogito: '2026-09-10', compenso_venditore_cent: 11110, compenso_acquirente_cent: 0, aliquota_iva: 0 }, [[1, 100]]);
   const m = calcolaModello(dati);
   const voce = (id, collab) => m.perId.get(id).voci.find((v) => v.collaboratoreId === collab);
-  assert.equal(voce(1, 2).provvigioneCent, 1800 * E);
-  assert.equal(voce(1, 3).provvigioneCent, 270 * E, 'capo: 15% di 1.800 € in zona B');
-  assert.equal(voce(1, 4).provvigioneCent, 72 * E, 'segretaria: 4% di 1.800 €');
-  assert.equal(voce(2, 1).provvigioneCent, 3333);
-  assert.equal(voce(2, 3).provvigioneCent, 500, '15% di 33,33 € = 5,0 € (4,9995 → 5,00)');
-  assert.equal(voce(2, 4).provvigioneCent, 133, '4% di 33,33 € = 1,3332 → 1,33');
+  assert.equal(voce(1, 3).provvigioneCent, 900 * E, 'capo: 15% di 6.000 € in zona B');
+  assert.equal(voce(1, 4).provvigioneCent, 240 * E, 'segretaria: 4% di 6.000 €');
+  assert.equal(voce(2, 3).provvigioneCent, 1667);
+  assert.equal(voce(2, 4).provvigioneCent, 444);
 });
-
-test('pratica non conclusa o senza provvigioni: niente quota per capo e segretaria', async () => {
+test('pratica non conclusa: niente quota per capo e segretaria; anche senza ripartizione prendono la loro percentuale sul compenso', async () => {
   const app = await appCompleta();
   const inCorso = await salvaPratica(app.archivio, { stato: 'in_corso', zona_id: app.centro, venditore_bonifico_cent: 6100 * E, venditore: 'A', acquirente: 'B' }, quoteDi(app.archivio, app.centro));
   const senzaQuote = await salvaPratica(app.archivio, { zona_id: app.centro, venditore_bonifico_cent: 6100 * E, venditore: 'A', acquirente: 'B' }, []);
   const m = modelloDi(app.archivio);
   assert.equal(m.perId.get(inCorso).voci.filter((v) => v.fissa).length, 0);
-  assert.equal(m.perId.get(senzaQuote).voci.filter((v) => v.fissa).length, 0, 'nessuna provvigione ai collaboratori: niente base');
+  assert.deepEqual(m.perId.get(senzaQuote).voci.filter((v) => v.fissa).map((v) => v.provvigioneCent), [750 * E, 200 * E], 'compenso 5.000 €: 15% = 750, 4% = 200');
 });
-
 test('maturazione all\'incasso: anche capo e segretaria maturano in proporzione a quanto è stato incassato', async () => {
   const app = await appCompleta();
   await scriviImpostazioni(app.archivio, { 'calcolo.maturazione': 'incasso' });
@@ -113,23 +108,16 @@ test('maturazione all\'incasso: anche capo e segretaria maturano in proporzione 
   await registraIncasso(app.archivio, { praticaId: id, data: oggi(), importoCent: 6100 * E }); // metà del dovuto
   const p = dopoDati();
   const m = (chi) => p.voci.find((v) => v.collaboratoreId === chi.id).maturataCent;
-  assert.deepEqual([m(app.luca), m(app.capo), m(app.segretaria)], [750 * E, 112.5 * E, 30 * E], 'metà di 1.500, 225 e 60');
+  assert.deepEqual([m(app.luca), m(app.capo), m(app.segretaria)], [750 * E, 750 * E, 200 * E], 'metà di 1.500, 1.500 e 400');
 });
-
-test('si può liquidare il capo: da liquidare scende e la pratica si modifica senza problemi', async () => {
+test('modificare la pratica ricalcola capo e segretaria sul nuovo compenso', async () => {
   const app = await appCompleta();
   const id = await nuova(app, app.centro, { vend: 6100, acq: 6100 });
-  await registraLiquidazione(app.archivio, { collaboratoreId: app.capo.id, data: oggi(), righe: [{ praticaId: id, importoCent: 100 * E }] });
-  const v = () => modelloDi(app.archivio).perId.get(id).voci.find((x) => x.collaboratoreId === app.capo.id);
-  assert.deepEqual([v().maturataCent, v().liquidataCent, v().daLiquidareCent], [225 * E, 100 * E, 125 * E]);
-  // modificare la pratica non è bloccato dalle liquidazioni del capo (non è nelle quote)
-  await salvaPratica(app.archivio, { id, codice: '2026/001', zona_id: app.centro, prezzo_vendita_cent: 250000 * E, venditore: 'Mario Rossi', acquirente: 'Anna Bianchi', mese_proposta: mese, venditore_bonifico_cent: 6100 * E, acquirente_bonifico_cent: 6100 * E, aliquota_iva: 22 }, quoteDi(app.archivio, app.centro));
-  assert.equal(v().liquidataCent, 100 * E);
-  // una pratica senza quote non si può liquidare al capo
-  const senza = await salvaPratica(app.archivio, { zona_id: app.centro, venditore_bonifico_cent: 6100 * E, venditore: 'A', acquirente: 'B' }, []);
-  await assert.rejects(registraLiquidazione(app.archivio, { collaboratoreId: app.capo.id, data: oggi(), righe: [{ praticaId: senza, importoCent: 1 * E }] }), ErroreValidazione);
+  await salvaPratica(app.archivio, { id, codice: '2026/001', zona_id: app.centro, prezzo_vendita_cent: 250000 * E, venditore: 'Mario Rossi', acquirente: 'Anna Bianchi', mese_proposta: mese, venditore_bonifico_cent: 3050 * E, acquirente_bonifico_cent: 3050 * E, aliquota_iva: 22 }, quoteDi(app.archivio, app.centro));
+  const p = modelloDi(app.archivio).perId.get(id); // compenso 5.000 €
+  const v = (chi) => p.voci.find((x) => x.collaboratoreId === chi.id).provvigioneCent;
+  assert.deepEqual([v(app.luca), v(app.capo), v(app.segretaria)], [400 * E, 750 * E, 200 * E]);
 });
-
 test('chi prende una percentuale fissa non entra nelle quote, nelle ripartizioni delle zone né nell\'"unico collaboratore"', async () => {
   const app = await appCompleta();
   await assert.rejects(salvaRipartizioneZona(app.archivio, app.centro, [{ collaboratore_id: app.capo.id, percentuale: 100 }]), (e) => e instanceof ErroreValidazione && /percentuale fissa/.test(e.campi.quote));
@@ -159,11 +147,8 @@ test('cambiando la percentuale del capo le provvigioni si ricalcolano (come per 
   const app = await appCompleta();
   const id = await nuova(app, app.centro, { vend: 6100, acq: 6100 });
   await aggiornaCollaboratore(app.archivio, app.capo.id, { percentualeFissa: 10 });
-  assert.equal(modelloDi(app.archivio).perId.get(id).voci.find((v) => v.collaboratoreId === app.capo.id).provvigioneCent, 150 * E);
+  assert.equal(modelloDi(app.archivio).perId.get(id).voci.find((v) => v.collaboratoreId === app.capo.id).provvigioneCent, 1000 * E);
 });
-
-// ---------------------------------------------------------------- mese della proposta
-
 test('il mese della proposta decide il cumulo: due pratiche dello stesso mese si cumulano, di mesi diversi no', async () => {
   const app = await nuovaApp();
   const [luca] = elencoCollaboratori(app.archivio);
@@ -203,4 +188,31 @@ test('mese della proposta: per le pratiche nuove vale di default il mese di oggi
   const riga = app.archivio.uno('SELECT * FROM pratiche WHERE id = ?', [nuovaSenza]);
   await salvaPratica(app.archivio, { ...riga, note: 'ritoccata' }, []);
   assert.equal(app.archivio.valore('SELECT mese_proposta FROM pratiche WHERE id = ?', [nuovaSenza]), mese);
+});
+
+// ---------------------------------------------------------------- conguaglio quando la pratica si cumula con altre del mese
+
+test('cumulo: la nuova pratica fa salire lo scaglione, le vecchie guadagnano la differenza; il conguaglio dà già pagato, differenza, nuova e totale', async () => {
+  const app = await nuovaApp();
+  const [luca] = elencoCollaboratori(app.archivio);
+  const zona = await creaZona(app.archivio, { nome: 'Centro' });
+  await salvaRipartizioneZona(app.archivio, zona, [{ collaboratore_id: luca.id, percentuale: 100 }]);
+  const opz = opzioniCalcolo(leggiImpostazioni(app.archivio));
+  const bozza = (compensoConIva) => ({
+    zona_id: zona, venditore: 'A', acquirente: 'B', mese_proposta: mese, compensi_da_pagamenti: 1, aliquota_iva: 22, venditore_bonifico_cent: compensoConIva * E,
+  });
+  const quote = quoteDi(app.archivio, zona);
+  // prima pratica del mese: nessun cumulo con altre
+  assert.deepEqual(conguaglio(app.archivio, bozza(6100), quote, opz), []);
+  await salvaPratica(app.archivio, bozza(6100), quote); // 5.000 € → 8% = 400 € già pagati
+  // seconda: altri 5.000 € → cumulo 10.000 € → 15%: la vecchia passa da 400 a 750, la nuova prende 750
+  const [r] = conguaglio(app.archivio, bozza(6100), quote, opz);
+  assert.equal(r.nome, 'Luca');
+  assert.equal(r.pratichePrecedenti, 1);
+  assert.deepEqual([r.giaPagatoCent, r.differenzaCent, r.nuovaCent, r.totaleCent], [400 * E, 350 * E, 750 * E, 1500 * E]);
+  // seconda più piccola (1.220 con IVA = 1.000 €): cumulo 6.000 € → 11%: vecchia 5.000 × 11% = 550 (+150), nuova 110
+  const [r2] = conguaglio(app.archivio, bozza(1220), quote, opz);
+  assert.deepEqual([r2.giaPagatoCent, r2.differenzaCent, r2.nuovaCent, r2.totaleCent], [400 * E, 150 * E, 110 * E, 660 * E]);
+  // una pratica di un altro mese non si cumula: nessun conguaglio
+  assert.deepEqual(conguaglio(app.archivio, { ...bozza(6100), mese_proposta: '2026-09' }, quote, opz), []);
 });

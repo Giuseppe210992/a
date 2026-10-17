@@ -230,14 +230,15 @@ export function calcolaModello(dati, opzioniIn = {}) {
   }
   cumuli.sort((a, b) => a.mese.localeCompare(b.mese) || (a.zonaNome || '').localeCompare(b.zonaNome || '', 'it') || (a.collaboratoreNome || '').localeCompare(b.collaboratoreNome || '', 'it'));
 
-  // --- 2b) chi prende una percentuale fissa (capo, segretaria): una percentuale del totale delle provvigioni di ogni
-  //         pratica conclusa, in qualsiasi zona. Si somma a quanto spetta ai collaboratori (è un costo in più per l'agenzia).
-  //         Ogni importo è arrotondato al centesimo pratica per pratica (mezzi verso l'alto).
+  // --- 2b) chi prende una percentuale fissa (capo, segretaria): una percentuale del COMPENSO TOTALE (senza IVA) di ogni
+  //         pratica conclusa, in qualsiasi zona e a prescindere da quanto prendono i collaboratori. Si somma a quanto spetta
+  //         ai collaboratori (è un costo in più per l'agenzia). Ogni importo è arrotondato al centesimo pratica per pratica
+  //         (mezzi verso l'alto).
   const fissi = collaboratori.filter((c) => Number(c.percentuale_fissa) > 0);
   if (fissi.length) {
     for (const p of out) {
       if (!p.conclusa) continue;
-      const base = p.voci.reduce((somma, v) => somma + v.provvigioneCent, 0);
+      const base = p.compensoTotaleCent;
       if (base <= 0) continue;
       for (const c of fissi) {
         const voce = {
@@ -262,8 +263,9 @@ export function calcolaModello(dati, opzioniIn = {}) {
           ? (p.totaleLordoCent > 0 ? Math.min(v.provvigioneCent, arrotonda(v.provvigioneCent * Math.min(p.incassatoCent, p.totaleLordoCent), p.totaleLordoCent)) : 0)
           : v.provvigioneCent;
       }
-      v.liquidataCent = v.collaboratoreId != null ? (liquidatoPerVoce.get(`${p.id}|${v.collaboratoreId}`) || 0) : 0;
-      v.daLiquidareCent = v.maturataCent - v.liquidataCent;
+      // una volta inserita la pratica le provvigioni sono considerate già pagate: nessuna liquidazione da registrare
+      v.liquidataCent = v.maturataCent;
+      v.daLiquidareCent = 0;
       p.provvigioniCent += v.provvigioneCent;
       p.maturateCent += v.maturataCent;
       p.liquidateCent += v.liquidataCent;

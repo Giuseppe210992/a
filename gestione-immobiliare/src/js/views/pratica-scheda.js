@@ -10,7 +10,7 @@ import { campoData, campoImporto, campoSelezione, campoTesto, mostraErrori } fro
 import { modificaIncasso, eliminaIncasso, PAGANTI, METODI_PAGAMENTO } from '../data/repo/pratiche.js';
 import { opzioniCalcolo } from '../data/repo/impostazioni.js';
 import { stimaPratica } from '../data/stima.js';
-import { apriDialogoIncasso, apriDialogoLiquidazione } from '../components/dialoghi.js';
+import { apriDialogoIncasso } from '../components/dialoghi.js';
 import { badgeStato } from './dashboard.js';
 import { eliminaPraticaConConferma } from './archivio.js';
 
@@ -48,10 +48,10 @@ async function eliminaIncassoConferma(inc, p) {
 
 function passaggiCalcolo(m, p, v, nome) {
   if (v.fissa) {
-    // chi prende una percentuale fissa: una percentuale del totale delle provvigioni dei collaboratori della pratica
+    // chi prende una percentuale fissa: una percentuale del compenso totale della pratica
     return [
-      `Totale delle provvigioni dei collaboratori su questa pratica: ${eur(v.baseCent)}.`,
-      `${nome} prende il ${pct(v.percentualeFissa)} di quel totale, in qualsiasi zona: ${eur(v.baseCent)} × ${pct(v.percentualeFissa)} = ${eur(v.provvigioneCent)} (arrotondato al centesimo).`,
+      `Compenso totale della pratica (senza IVA): ${eur(v.baseCent)}.`,
+      `${nome} prende il ${pct(v.percentualeFissa)} del compenso totale, in qualsiasi zona e a prescindere da quanto prendono i collaboratori: ${eur(v.baseCent)} × ${pct(v.percentualeFissa)} = ${eur(v.provvigioneCent)} (arrotondato al centesimo).`,
     ];
   }
   const cu = m.cumuli.find((c) => c.chiave === v.cumuloChiave);
@@ -78,7 +78,6 @@ function passaggiCalcolo(m, p, v, nome) {
   passi.push(m.opzioni.maturazione === 'incasso'
     ? `Maturata all'incasso: in proporzione a quanto il cliente ha pagato (${pct(Math.round(p.frazioneIncassata * 10000) / 100)}) → ${eur(v.maturataCent)}.`
     : `Maturata alla conclusione della pratica: ${eur(v.maturataCent)}.`);
-  passi.push(`Liquidata finora: ${eur(v.liquidataCent)} → ancora da liquidare ${eur(v.daLiquidareCent)}.`);
   return passi;
 }
 
@@ -94,7 +93,6 @@ export const scheda = {
     document.title = `${p.codice} · Gestione Immobiliare`;
     const nomeDi = (id) => m.collaboratori.find((c) => c.id === id)?.nome ?? 'Non assegnato';
     const incassi = m.incassi.filter((i) => i.pratica_id === p.id);
-    const righeLiq = m.liquidazioni.flatMap((l) => l.righe.filter((r) => r.pratica_id === p.id).map((r) => ({ l, r })));
 
     const btnAltro = h('button', { type: 'button', class: 'btn btn-secondario btn-icona', 'aria-label': 'Altre azioni' }, icona('ellipsis', { dimensione: 20 }));
     const menu = menuAzioni(btnAltro, [
@@ -109,7 +107,6 @@ export const scheda = {
       h('div', { class: 'pagina-azioni' },
         h('a', { class: 'btn btn-primario', href: `#/pratiche/${p.id}/modifica`, id: 'btn-modifica' }, icona('pencil', { dimensione: 16 }), 'Modifica'),
         h('button', { type: 'button', class: 'btn btn-secondario', id: 'btn-incasso', onclick: () => apriDialogoIncasso({ praticaId: p.id }) }, icona('banknote', { dimensione: 16 }), 'Registra incasso'),
-        p.voci.some((v) => v.collaboratoreId != null) ? h('button', { type: 'button', class: 'btn btn-secondario', id: 'btn-liquida', onclick: () => apriDialogoLiquidazione({ praticaId: p.id, collaboratoreId: p.voci.find((v) => v.collaboratoreId != null && v.daLiquidareCent > 0)?.collaboratoreId ?? null }) }, icona('hand-coins', { dimensione: 16 }), 'Liquida provvigioni') : null,
         menu));
 
     const avvisoMancanti = p.incompleta ? h('div', { class: 'nota attenzione', style: { marginBottom: '16px' } }, icona('triangle-alert', { dimensione: 20 }),
@@ -186,15 +183,14 @@ export const scheda = {
         etichettaStima ? h('p', { class: 'sottotesto', style: { marginTop: '4px' } }, etichettaStima) : null),
       conSegnoQuote ? h('div', { class: 'tabella-wrap', style: { marginTop: '8px' } }, h('table', { class: 'tabella', id: 'tabella-provvigioni' },
         h('caption', { class: 'solo-lettori' }, 'Ripartizione tra collaboratori e provvigioni'),
-        h('thead', null, h('tr', null, h('th', null, 'Collaboratore'), h('th', { class: 'num' }, 'Quota'), h('th', { class: 'num' }, 'Fatturato'), h('th', null, 'Scaglione'), h('th', { class: 'num' }, 'Provvigione'), h('th', { class: 'num' }, 'Maturata'), h('th', { class: 'num' }, 'Liquidata'), h('th', { class: 'num' }, 'Da liquidare'))),
+        h('thead', null, h('tr', null, h('th', null, 'Collaboratore'), h('th', { class: 'num' }, 'Quota'), h('th', { class: 'num' }, 'Fatturato'), h('th', null, 'Scaglione'), h('th', { class: 'num' }, 'Provvigione'))),
         h('tbody', null, vociMostrate.map((v) => {
           const c = m.collaboratori.find((x) => x.id === v.collaboratoreId);
           return h('tr', null,
             h('td', { class: 'forte' }, c ? h('span', { class: 'chip-col' }, h('span', { class: `punto-col col-${c.colore}` }), c.nome) : h('span', { class: 'badge badge-warn' }, 'Non assegnata')),
             h('td', { class: 'num' }, v.fissa ? '—' : pct(v.quotaPct)), h('td', { class: 'num' }, v.fissa ? '—' : eur(v.fatturatoCent)),
-            h('td', null, v.fissa ? h('span', { class: 'badge badge-info' }, `${pct(v.percentualeFissa)} del totale`) : v.scaglioneIdx >= 0 ? h('span', { class: 'badge badge-info' }, `${v.scaglioneIdx + 1}° · ${pct(Math.round(v.percentualeApplicata * 100) / 100)}`) : h('span', { class: 'sottotesto' }, p.conclusa ? 'non configurato' : '—')),
-            h('td', { class: 'num' }, eur(v.provvigioneCent)), h('td', { class: 'num' }, eur(v.maturataCent)), h('td', { class: 'num' }, eur(v.liquidataCent)),
-            h('td', { class: `num forte ${v.daLiquidareCent < 0 ? 'negativo' : ''}` }, eur(v.daLiquidareCent)));
+            h('td', null, v.fissa ? h('span', { class: 'badge badge-info' }, `${pct(v.percentualeFissa)} del compenso`) : v.scaglioneIdx >= 0 ? h('span', { class: 'badge badge-info' }, `${v.scaglioneIdx + 1}° · ${pct(Math.round(v.percentualeApplicata * 100) / 100)}`) : h('span', { class: 'sottotesto' }, p.conclusa ? 'non configurato' : '—')),
+            h('td', { class: 'num' }, eur(v.provvigioneCent)));
         }))))
         : h('p', { class: 'sottotesto', style: { padding: '12px 20px 20px' } }, 'Nessuna ripartizione indicata. Apri “Modifica” per assegnare la pratica ai collaboratori.'));
 
@@ -204,15 +200,8 @@ export const scheda = {
         h('div', { class: 'forte', style: { marginBottom: '6px' } }, nomeDi(v.collaboratoreId)),
         h('ol', { class: 'passaggi-calcolo' }, passaggiCalcolo(m, p, v, nomeDi(v.collaboratoreId)).map((t, i) => h('li', { 'data-n': String(i + 1) }, t))))))) : null;
 
-    const cardLiq = h('section', { class: 'card sezione-modulo' }, h('h2', null, 'Liquidazioni collegate'),
-      righeLiq.length ? h('div', { class: 'tabella-wrap', style: { marginTop: '8px' } }, h('table', { class: 'tabella tabella-compatta' },
-        h('thead', null, h('tr', null, h('th', null, 'Data'), h('th', null, 'Collaboratore'), h('th', { class: 'num' }, 'Importo'), h('th', null, 'Metodo'))),
-        h('tbody', null, righeLiq.map(({ l, r }) => h('tr', null, h('td', { class: 'num' }, dataIt(l.data)), h('td', null, l.collaboratoreNome), h('td', { class: 'num forte' }, eur(r.importo_cent)), h('td', { class: 'sottotesto' }, l.metodo ?? '—'))))))
-        : h('p', { class: 'sottotesto', style: { marginTop: '8px' } }, 'Nessuna liquidazione registrata su questa pratica.'),
-      h('p', { style: { marginTop: '10px' } }, h('a', { href: '#/provvigioni?tab=liquidazioni' }, 'Tutte le liquidazioni →')));
-
     monta(contenitore, testa, avvisoMancanti,
-      h('div', { class: 'scheda-griglia' }, cardDati, cardCompensi, h('div', { class: 'intera' }, cardRip), dettaglioCalcolo, cardLiq));
+      h('div', { class: 'scheda-griglia' }, cardDati, cardCompensi, h('div', { class: 'intera' }, cardRip), dettaglioCalcolo));
     return {};
   },
 };

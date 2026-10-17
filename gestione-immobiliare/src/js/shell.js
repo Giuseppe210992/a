@@ -18,7 +18,7 @@ export const VOCI_MENU = [
   { id: 'dashboard', href: '#/', etichetta: 'Dashboard', icona: 'layout-dashboard', attiva: (p) => p === '/' },
   { id: 'nuova', href: '#/nuova', etichetta: 'Nuova pratica', icona: 'file-plus', attiva: (p) => p === '/nuova' },
   { id: 'pratiche', href: '#/pratiche', etichetta: 'Archivio pratiche', icona: 'archive', attiva: (p) => p.startsWith('/pratiche') },
-  { id: 'provvigioni', href: '#/provvigioni', etichetta: 'Provvigioni e liquidazioni', icona: 'hand-coins', attiva: (p) => p.startsWith('/provvigioni') },
+  { id: 'provvigioni', href: '#/provvigioni', etichetta: 'Provvigioni', icona: 'hand-coins', attiva: (p) => p.startsWith('/provvigioni') },
   { id: 'cumulo', href: '#/cumulo', etichetta: 'Cumulo mensile per zona', icona: 'layers', attiva: (p) => p.startsWith('/cumulo') },
   { id: 'statistiche', href: '#/statistiche', etichetta: 'Statistiche e grafici', icona: 'chart-column', attiva: (p) => p.startsWith('/statistiche') },
   { id: 'backup', href: '#/backup', etichetta: 'Backup e archivio storico', icona: 'database-backup', attiva: (p) => p.startsWith('/backup') },

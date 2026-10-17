@@ -39,11 +39,11 @@ export function csvPratiche(modello, pratiche = modello.pratiche) {
 
 export function csvProvvigioni(modello, voci) {
   const nomeCollab = new Map(modello.collaboratori.map((c) => [c.id, c.nome]));
-  const intestazioni = ['Codice pratica', 'Data rogito', 'Zona', 'Collaboratore', 'Quota %', 'Fatturato attribuito', 'Percentuale applicata', 'Provvigione calcolata', 'Maturata', 'Liquidata', 'Da liquidare'];
+  const intestazioni = ['Codice pratica', 'Data rogito', 'Zona', 'Collaboratore', 'Quota %', 'Fatturato attribuito', 'Percentuale applicata', 'Provvigione calcolata'];
   const righe = voci.map(({ p, v }) => [
     p.codice, p.data_rogito ? dataIt(p.data_rogito) : '', p.zonaNome ?? '', nomeCollab.get(v.collaboratoreId) ?? 'Non assegnato',
     v.fissa ? '' : String(v.quotaPct).replace('.', ','), csvEuro(v.fatturatoCent), String(Math.round(v.percentualeApplicata * 100) / 100).replace('.', ','),
-    csvEuro(v.provvigioneCent), csvEuro(v.maturataCent), csvEuro(v.liquidataCent), csvEuro(v.daLiquidareCent),
+    csvEuro(v.provvigioneCent),
   ]);
   return creaCsv(intestazioni, righe);
 }

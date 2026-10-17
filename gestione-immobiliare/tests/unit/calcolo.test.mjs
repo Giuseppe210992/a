@@ -119,29 +119,16 @@ test('maturazione alla conclusione o all\'incasso', () => {
   assert.equal(provv(all, 2, 1).maturataCent, 0); // nulla incassato su P2
 });
 
-test('liquidato e da liquidare per pratica e per collaboratore', () => {
+test('le provvigioni sono considerate già pagate: liquidato = maturato e nulla da liquidare, anche con liquidazioni vecchie nei dati', () => {
   const d = ottobre();
   d.liquidazioni.push({ id: 1, collaboratore_id: 1, data: '2026-10-30' });
   d.righe.push({ id: 1, liquidazione_id: 1, pratica_id: 1, importo_cent: 100000 });
   const m = calcolaModello(d);
   const v = provv(m, 1, 1);
-  assert.equal(v.liquidataCent, 100000);
-  assert.equal(v.daLiquidareCent, 80000);
-  assert.equal(m.perId.get(1).daLiquidareCent, 80000);
+  assert.equal(v.liquidataCent, 180000);
+  assert.equal(v.daLiquidareCent, 0);
   const luca = m.collaboratori.find((c) => c.id === 1);
-  assert.equal(luca.maturateCent, 285000);
-  assert.equal(luca.liquidateCent, 100000);
-  assert.equal(luca.daLiquidareCent, 185000);
-});
-
-test('un anticipo su una pratica in corso crea un residuo negativo evidente', () => {
-  const d = ottobre();
-  aggiungiPratica(d, 9, { stato: 'in_corso', data_rogito: null }, [[1, 100]]);
-  d.liquidazioni.push({ id: 1, collaboratore_id: 1, data: '2026-10-30' });
-  d.righe.push({ id: 1, liquidazione_id: 1, pratica_id: 9, importo_cent: 50000 });
-  const m = calcolaModello(d);
-  assert.equal(provv(m, 9, 1).maturataCent, 0);
-  assert.equal(provv(m, 9, 1).daLiquidareCent, -50000);
+  assert.deepEqual([luca.maturateCent, luca.liquidateCent, luca.daLiquidareCent], [285000, 285000, 0]);
 });
 
 test('dati mancanti riconosciuti', () => {
@@ -178,8 +165,8 @@ test('riquadri della dashboard sul periodo', () => {
   assert.equal(r.compensiCent, 1900000);
   assert.equal(r.valoreVendutoCent, 4 * 150000 * E);
   assert.equal(r.maturateCent, 622500); // 367.500 (Luca A) + 105.000 (Giuseppe A) + 150.000 (Giuseppe B)
-  assert.equal(r.liquidateCent, 0);
-  assert.equal(r.daLiquidareCent, 622500);
+  assert.equal(r.liquidateCent, 622500, 'già pagate');
+  assert.equal(r.daLiquidareCent, 0);
   assert.equal(r.inCorso, 0);
 });
 

@@ -80,18 +80,6 @@ export async function calcolaAvvisi() {
     });
   }
 
-  // 4) provvigioni da liquidare
-  const daLiq = m.collaboratori.filter((c) => c.daLiquidareCent > 0);
-  const totaleDaLiq = daLiq.reduce((s, c) => s + c.daLiquidareCent, 0);
-  if (totaleDaLiq > 0) {
-    lista.push({
-      id: 'liquidare', livello: 'info', icona: 'hand-coins',
-      titolo: `Provvigioni da liquidare: ${eur(totaleDaLiq)}`,
-      testo: daLiq.map((c) => `${c.nome} ${eur(c.daLiquidareCent)}`).join(' · '),
-      azione: { etichetta: 'Registra liquidazione', href: '#/provvigioni?registra=liquidazione' },
-    });
-  }
-
   // 5) scaglioni prossimi al raggiungimento (mese corrente)
   const soglia = Number(imp['avvisi.sogliaScaglionePct']) || 20;
   const meseOggi = chiaveMese(oggi());

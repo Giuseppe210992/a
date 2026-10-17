@@ -1,4 +1,4 @@
-// Provvigioni e liquidazioni, Cumulo mensile per zona, Statistiche e grafici: numeri verificati con un calcolo fatto a mano.
+// Provvigioni, Cumulo mensile per zona, Statistiche e grafici: numeri verificati con un calcolo fatto a mano.
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -10,7 +10,7 @@ import { inserisciDatiProva } from './dati-prova.mjs';
 const E = 100;
 const celle = (p, selettore) => p.locator(selettore).evaluateAll((tr) => tr.map((r) => [...r.children].map((c) => c.innerText.replace(/ /g, ' ').replace(/\s+/g, ' ').trim())));
 
-describe('Provvigioni e liquidazioni', () => {
+describe('Provvigioni', () => {
   let app;
   before(async () => { app = await avvia(); await inserisciDatiProva(app.pagina); });
   after(async () => { await app.chiudi(); });
@@ -21,201 +21,52 @@ describe('Provvigioni e liquidazioni', () => {
     await vai(p, '#/provvigioni');
   });
 
-  test('riepilogo: totali e una scheda per collaboratore, con maturato, liquidato e da liquidare', async () => {
+  test('riepilogo semplice: un totale per persona e il totale generale, senza liquidazioni', async () => {
     const p = app.pagina;
-    const kpi = await p.locator('.kpi').evaluateAll((a) => a.map((x) => x.innerText.replace(/ /g, ' ').replace(/\s+/g, ' ').trim()));
-    assert.match(kpi[0], /Fatturato attribuito 87\.920 €/);
-    assert.match(kpi[1], /Provvigioni maturate 28\.236 €/);
-    assert.match(kpi[2], /Già liquidate 6\.565 €/);
-    assert.match(kpi[3], /Ancora da liquidare 21\.671 €/);
-    const schede = await p.locator('.carta-collab').evaluateAll((a) => a.map((x) => x.innerText.replace(/ /g, ' ').replace(/\s+/g, ' ').trim()));
-    assert.equal(schede.length, 2);
-    assert.match(schede[0], /^Luca 8 pratiche nel periodo Fatturato attribuito 42\.340,00 € Provvigioni maturate 13\.402,00 € Già liquidate 3\.045,00 € Ancora da liquidare 10\.357,00 €/);
-    assert.match(schede[1], /^Giuseppe 7 pratiche nel periodo Fatturato attribuito 45\.580,00 € Provvigioni maturate 14\.834,00 € Già liquidate 3\.520,00 € Ancora da liquidare 11\.314,00 €/);
-    // barra di avanzamento delle liquidazioni
-    assert.equal(await p.locator('.carta-collab .meter[role="img"]').first().getAttribute('aria-label'), 'Liquidato il 23%');
+    const kpi = await p.locator('.kpi').evaluateAll((a) => a.map((x) => x.innerText.replace(/ /g, ' ').replace(/\s+/g, ' ').trim()));
+    assert.deepEqual(kpi, ['Luca 13.402,00 €', 'Giuseppe 14.834,00 €', 'Totale 28.236,00 €']);
+    const t = rimuoviSpazi(await p.locator('#contenuto').innerText());
+    assert.doesNotMatch(t, /liquid/i, 'nessun riferimento a liquidazioni');
+    assert.equal(await p.getByRole('tab').count(), 0, 'niente schede: una sola tabella');
+    assert.equal(await p.locator('button:has-text("Registra liquidazione")').count(), 0);
+  });
+
+  test('tabella: una riga per pratica e persona, con quota, compenso, percentuale e provvigione', async () => {
+    const p = app.pagina;
+    const righe = await celle(p, '#tabella-dettaglio tbody tr');
+    assert.equal(righe.length, 15);
+    const per = (codice, chi) => righe.find((r) => r[0].startsWith(codice) && r[1] === chi);
+    assert.deepEqual(per('2026/011', 'Luca').slice(1), ['Luca', '100%', '8.000,00 €', '2° · 35%', '2.800,00 €']);
+    assert.deepEqual(per('2026/003', 'Giuseppe').slice(1), ['Giuseppe', '50%', '1.900,00 €', '1° · 30%', '570,00 €']);
+    const somma = righe.reduce((t, r) => t + centesimi(r[5]), 0);
+    assert.equal(somma, 28236 * E);
+    assert.deepEqual(await celle(p, '#tabella-dettaglio tfoot tr'), [['Totale (15 righe)', '28.236,00 €']]);
+    // clic su una riga → scheda della pratica
+    await p.locator('#tabella-dettaglio tbody tr').first().locator('td').last().click();
+    await p.waitForSelector('#contenuto #btn-modifica');
   });
 
   test('i filtri della barra superiore valgono anche qui', async () => {
     const p = app.pagina;
     await scegliCollaboratore(p, 'Giuseppe');
-    assert.equal(await p.locator('.carta-collab').count(), 1);
-    assert.match(rimuoviSpazi(await p.locator('.carta-collab').innerText()), /Giuseppe/);
-    await scegliCollaboratore(p, null);
-    await scegliZona(p, 'Collina');
-    const kpi = await p.locator('.kpi').first().innerText();
-    assert.match(rimuoviSpazi(kpi), /10\.720 €/);
+    await p.waitForFunction(() => document.querySelectorAll('.kpi').length === 2);
+    assert.deepEqual(await p.locator('.kpi').evaluateAll((a) => a.map((x) => x.innerText.replace(/ /g, ' ').replace(/\s+/g, ' ').trim())), ['Giuseppe 14.834,00 €', 'Totale 14.834,00 €']);
     await azzeraFiltri(p);
-    await scegliPeriodo(p, 'Mese scorso');
-    assert.match(rimuoviSpazi(await p.locator('.kpi').nth(1).innerText()), /1\.296 €/);
+    await scegliPeriodo(p, 'Mese corrente');
+    await p.waitForFunction(() => /7\.660,00/.test(document.querySelector('#pannello-prov').innerText.replace(/ /g, ' ')));
+    await azzeraFiltri(p);
   });
 
-  test('dettaglio per pratica: una riga per pratica e collaboratore, con scaglione e stato del pagamento', async () => {
+  test('esporta in CSV le righe mostrate', async () => {
     const p = app.pagina;
-    await p.getByRole('tab', { name: 'Dettaglio per pratica' }).click();
-    await p.waitForSelector('#tabella-dettaglio');
-    assert.match(await p.evaluate(() => location.hash), /tab=dettaglio/);
-    const righe = await celle(p, '#tabella-dettaglio tbody tr');
-    assert.equal(righe.length, 15);
-    const per = (codice, nome) => righe.find((r) => r[0].startsWith(codice) && r[1] === nome);
-    assert.deepEqual(per('2026/001', 'Luca').slice(2), ['100%', '5.600,00 €', '1° · 30%', '1.680,00 €', '1.680,00 €', '0,00 €', 'Liquidata']);
-    assert.deepEqual(per('2026/003', 'Luca').slice(2), ['50%', '1.900,00 €', '1° · 30%', '570,00 €', '285,00 €', '285,00 €', 'Parziale']);
-    assert.deepEqual(per('2026/005', 'Giuseppe').slice(2), ['100%', '10.400,00 €', '2° · 35%', '3.640,00 €', '1.000,00 €', '2.640,00 €', 'Parziale']);
-    assert.deepEqual(per('2026/011', 'Luca').slice(2), ['100%', '8.000,00 €', '2° · 35%', '2.800,00 €', '0,00 €', '2.800,00 €', 'Da liquidare']);
-    // il totale in fondo
-    const piede = (await celle(p, '#tabella-dettaglio tfoot tr'))[0];
-    assert.match(piede[0], /^Totale \(15 righe\)/);
-    assert.equal(piede[1], '87.920,00 €');
-    assert.equal(piede[3], '28.236,00 €');
-    assert.equal(piede[4], '6.565,00 €');
-    assert.equal(piede[5], '21.671,00 €');
-    // solo quelle da liquidare
-    await p.locator('#solo-dal').check();
-    await p.waitForFunction(() => document.querySelectorAll('#tabella-dettaglio tbody tr').length === 13);
-    assert.match(await p.evaluate(() => location.hash), /solo=da-liquidare/);
-    assert.equal(centesimi((await celle(p, '#tabella-dettaglio tfoot tr'))[0][5]), 21671 * E);
-    // il clic sulla riga apre la scheda
-    await p.locator('#tabella-dettaglio tbody tr').first().locator('td').nth(2).click();
-    await p.waitForSelector('#contenuto h1');
-    assert.match(await p.evaluate(() => location.hash), /^#\/pratiche\/\d+$/);
-  });
-
-  test('dettaglio: esporta in CSV le righe mostrate', async () => {
-    const p = app.pagina;
-    await p.getByRole('tab', { name: 'Dettaglio per pratica' }).click();
-    await p.locator('#solo-dal').check();
     const file = await scarica(p, () => p.getByRole('button', { name: 'Esporta in CSV' }).click());
-    assert.match(file.nome, /^Provvigioni_/);
+    assert.match(file.nome, /^Provvigioni.*\.csv$/);
     const csv = leggiCsv(file.bytes);
-    assert.equal(csv.righe.length, 13);
-    const col = csv.intestazioni.indexOf('Da liquidare');
-    assert.equal(csv.righe.reduce((s, r) => s + centesimi(r[col]), 0), 21671 * E);
-  });
-
-  test('liquidazioni: elenco, dettaglio per pratica, modifica, eliminazione con conferma', async () => {
-    const p = app.pagina;
-    await p.getByRole('tab', { name: /Liquidazioni/ }).click();
-    await p.waitForSelector('#tabella-liquidazioni');
-    assert.match(rimuoviSpazi(await p.locator('#pannello-prov').innerText()), /3 liquidazioni · 6\.565,00 € nel periodo/);
-    assert.equal(rimuoviSpazi(await p.locator('#tab-liquidazioni .conteggio').innerText()), '3');
-    const righe = await celle(p, '#tabella-liquidazioni tbody tr');
-    assert.deepEqual(righe.map((r) => [r[0], r[1], r[3]]), [
-      ['10/05/2026', 'Luca', '1.365,00 €'], ['10/03/2026', 'Giuseppe', '3.520,00 €'], ['05/02/2026', 'Luca', '1.680,00 €'],
-    ]);
-    // l'elenco delle pratiche della liquidazione di Giuseppe
-    const riga = p.locator('#tabella-liquidazioni tbody tr', { hasText: 'Giuseppe' });
-    await riga.locator('summary').click();
-    const dettagli = rimuoviSpazi(await riga.locator('details').innerText());
-    assert.match(dettagli, /2 pratiche/);
-    assert.match(dettagli, /2026\/002 — 2\.520,00 €/);
-    assert.match(dettagli, /2026\/005 — 1\.000,00 €/);
-    // modifica di data, metodo e note
-    await p.getByRole('button', { name: 'Modifica la liquidazione del 05/02/2026' }).click();
-    const f = finestra(p);
-    assert.match(rimuoviSpazi(await f.innerText()), /Modifica la liquidazione a Luca/);
-    await f.getByLabel('Data del pagamento').fill('06/02/2026');
-    await f.getByLabel('Metodo').selectOption({ label: 'Contanti' });
-    await f.getByLabel('Note').fill('Corretta');
-    await bottoneFinestra(p, 'Salva').click();
-    await attendiNotifica(p, /Liquidazione aggiornata/);
-    assert.deepEqual(await sql(p, "SELECT data, metodo, note FROM liquidazioni WHERE data = '2026-02-06'"), [{ data: '2026-02-06', metodo: 'Contanti', note: 'Corretta' }]);
-    assert.equal(await valoreSql(p, "SELECT SUM(importo_cent) FROM liquidazioni_righe"), 656500, 'gli importi non cambiano');
-    // l'eliminazione chiede conferma e riporta le pratiche "da liquidare"
-    await p.getByRole('button', { name: 'Elimina la liquidazione del 06/02/2026' }).click();
-    const t = rimuoviSpazi(await f.innerText());
-    assert.match(t, /Eliminare questa liquidazione\?/);
-    assert.match(t, /1\.680,00 € a Luca/);
-    assert.match(t, /1 pratica tornerà “da liquidare”/);
-    await bottoneFinestra(p, 'Annulla').click();
-    assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM liquidazioni'), 3);
-    await p.getByRole('button', { name: 'Elimina la liquidazione del 06/02/2026' }).click();
-    await bottoneFinestra(p, 'Elimina liquidazione').click();
-    await attendiNotifica(p, /Liquidazione eliminata/);
-    assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM liquidazioni'), 2);
-    await p.waitForFunction(() => /2 liquidazioni · 4\.885,00/.test(document.querySelector('#pannello-prov').innerText.replace(/ /g, ' ')));
-    // la dashboard segue: da liquidare 21.671 + 1.680
-    await vai(p, '#/');
-    await p.waitForFunction(() => /Già pagati 4\.885\s€ su 28\.236\s€/.test(document.body.innerText));
-  });
-
-  test('liquidazioni: "Registra liquidazione" dall\'elenco, anche per un anticipo su una pratica in corso', async () => {
-    const p = app.pagina;
-    await p.getByRole('tab', { name: /Liquidazioni/ }).click();
-    await p.locator('#btn-nuova-liq').click();
-    const f = finestra(p);
-    await f.getByLabel('Collaboratore').selectOption(String(await valoreSql(p, "SELECT id FROM collaboratori WHERE nome = 'Luca'")));
-    // la 013 è in corso: compare tra gli anticipi
-    assert.match(rimuoviSpazi(await f.innerText()), /Anticipi su pratiche ancora in corso/);
-    const riga013 = f.locator('tbody tr', { hasText: '2026/013' });
-    assert.match(rimuoviSpazi(await riga013.innerText()), /In corso/);
-    await f.locator('button:has-text("Nessuna")').click();
-    await riga013.locator('input.input').fill('500');
-    assert.equal(await riga013.locator('input[type=checkbox]').isChecked(), true, 'scrivendo un importo la riga si seleziona');
-    await bottoneFinestra(p, 'Registra liquidazione').click();
-    await attendiNotifica(p, /Liquidazione di 500,00 € registrata per Luca/);
-    // l'anticipo compare nel dettaglio come "Anticipo" e il residuo è negativo
-    await p.getByRole('tab', { name: 'Dettaglio per pratica' }).click();
-    await p.waitForSelector('#tabella-dettaglio');
-    const r = (await celle(p, '#tabella-dettaglio tbody tr')).find((x) => x[0].startsWith('2026/013'));
-    assert.equal(r[8], 'Anticipo');
-    assert.equal(r[6], '500,00 €');
-    assert.equal(r[7], '−500,00 €');
-    // pulizia
-    await p.evaluate(async () => {
-      const { api, app } = window.__gi;
-      const l = app.archivio.tutti("SELECT id FROM liquidazioni WHERE data = '2026-10-16'");
-      for (const x of l) await api.eliminaLiquidazione(app.archivio, x.id);
-    });
-  });
-
-  test('incassi: elenco, totale, eliminazione con conferma, registrazione dall\'elenco', async () => {
-    const p = app.pagina;
-    await p.getByRole('tab', { name: /Incassi/ }).click();
-    await p.waitForSelector('#tabella-incassi');
-    assert.match(rimuoviSpazi(await p.locator('#pannello-prov').innerText()), /4 incassi · 25\.376,00 € nel periodo \(IVA inclusa\)/);
-    const righe = await celle(p, '#tabella-incassi tbody tr');
-    assert.deepEqual(righe.map((r) => [r[0], r[1].split(' ')[0], r[2]]), [
-      ['05/10/2026', '2026/010', '3.660,00 €'], ['12/03/2026', '2026/003', '4.636,00 €'], ['25/02/2026', '2026/002', '10.248,00 €'], ['20/01/2026', '2026/001', '6.832,00 €'],
-    ]);
-    // registra un incasso da qui
-    await p.locator('#btn-nuovo-incasso').click();
-    const f = finestra(p);
-    await f.getByLabel('Pratica').selectOption(String(await idPratica(p, '2026/012')));
-    await f.getByLabel('Importo incassato (IVA inclusa)').fill('1.000');
-    await bottoneFinestra(p, 'Registra incasso').click();
-    await attendiNotifica(p, /Incasso di 1\.000,00 € registrato sulla pratica 2026\/012/);
-    await p.waitForFunction(() => /5 incassi · 26\.376,00/.test(document.querySelector('#pannello-prov').innerText.replace(/ /g, ' ')));
-    // eliminazione
-    await p.getByRole('button', { name: 'Elimina l\'incasso del 16/10/2026' }).click();
-    assert.match(rimuoviSpazi(await f.innerText()), /Eliminare questo incasso\?/);
-    assert.match(rimuoviSpazi(await f.innerText()), /1\.000,00 € del 16\/10\/2026 sulla pratica 2026\/012/);
-    await bottoneFinestra(p, 'Annulla').click();
-    assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM incassi'), 5);
-    await p.getByRole('button', { name: 'Elimina l\'incasso del 16/10/2026' }).click();
-    await bottoneFinestra(p, 'Elimina incasso').click();
-    await attendiNotifica(p, /Incasso eliminato/);
-    assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM incassi'), 4);
-  });
-
-  test('i pulsanti in alto aprono le finestre di incasso e liquidazione; "Vedi il dettaglio" cambia scheda', async () => {
-    const p = app.pagina;
-    await p.click('#btn-incasso-prov');
-    assert.match(rimuoviSpazi(await finestra(p).innerText()), /Registra un incasso/);
-    await bottoneFinestra(p, 'Annulla').click();
-    await p.click('#btn-liquidazione-prov');
-    assert.match(rimuoviSpazi(await finestra(p).innerText()), /Registra una liquidazione/);
-    await bottoneFinestra(p, 'Annulla').click();
-    await p.locator('.carta-collab').first().getByRole('button', { name: 'Vedi il dettaglio' }).click();
-    await p.waitForSelector('#tabella-dettaglio');
-    await vai(p, '#/provvigioni');
-    await p.locator('.carta-collab').first().getByRole('button', { name: 'Registra liquidazione' }).click();
-    assert.match(await finestra(p).getByLabel('Collaboratore').locator('option:checked').innerText(), /^Luca/, 'la liquidazione parte dal collaboratore della scheda');
-    await bottoneFinestra(p, 'Annulla').click();
-  });
-
-  test('nessun errore in console e nessun "null" nelle pagine', async () => {
-    assert.deepEqual(await testoSospetto(app.pagina), []);
-    assert.deepEqual(app.errori, []);
+    assert.equal(csv.righe.length, 15);
+    const col = csv.intestazioni.indexOf('Provvigione calcolata');
+    assert.ok(col >= 0);
+    assert.equal(csv.righe.reduce((t, r) => t + centesimi(r[col] || '0'), 0), 28236 * E);
+    await attendiNotifica(p, /Provvigioni esportate in CSV/);
   });
 });
 

@@ -53,20 +53,6 @@ describe('Campanella e avvisi', () => {
     await p.waitForFunction((x) => document.querySelector('.topbar button[aria-label^="Avvisi"]').getAttribute('aria-label') === `Avvisi: ${x}`, n);
   });
 
-  test('"Registra liquidazione" dall\'avviso apre l\'elenco delle provvigioni con la finestra pronta, e chiude la campanella', async () => {
-    const p = app.pagina;
-    await campanella(p).click();
-    const pop = p.locator('.popover-avvisi');
-    await pop.waitFor();
-    await pop.getByRole('link', { name: 'Registra liquidazione' }).click();
-    const f = finestra(p);
-    await f.waitFor();
-    assert.match(await f.locator('h2').innerText(), /Registra una liquidazione/);
-    assert.equal(await p.evaluate(() => location.hash), '#/provvigioni', 'l\'indirizzo torna pulito: ricaricando non si riapre la finestra');
-    assert.equal(await p.locator('.popover-avvisi').count(), 0);
-    await bottoneFinestra(p, 'Annulla').click();
-  });
-
   test('"Crea backup ora" dall\'avviso crea davvero una copia e l\'avviso sparisce', async () => {
     const p = app.pagina;
     const prima = await quanteCopie(p);

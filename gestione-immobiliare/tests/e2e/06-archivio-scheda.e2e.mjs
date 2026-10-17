@@ -326,7 +326,7 @@ describe('Scheda della pratica', () => {
     for (let i = 0; i < 3 && await finestra(p).count(); i++) await p.keyboard.press('Escape');
   });
 
-  test('la scheda di una pratica condivisa mostra dati, incassi, ripartizione e liquidazioni', async () => {
+  test('la scheda di una pratica condivisa mostra dati, incassi e ripartizione, senza liquidazioni', async () => {
     const p = app.pagina;
     await vai(p, `#/pratiche/${await idPratica(p, '2026/003')}`);
     assert.match(rimuoviSpazi(await p.locator('#contenuto h1').innerText()), /^Via Garibaldi 8 Conclusa$/);
@@ -342,15 +342,15 @@ describe('Scheda della pratica', () => {
     assert.match(t, /Incassato 4\.636,00 € Saldata/);
     assert.match(t, /12\/03\/2026 4\.636,00 €/);
     const righe = await celle(p, '#tabella-provvigioni tbody tr');
-    assert.deepEqual(righe.map((r) => r.slice(0, 8)), [
-      ['Luca', '50%', '1.900,00 €', '1° · 30%', '570,00 €', '570,00 €', '285,00 €', '285,00 €'],
-      ['Giuseppe', '50%', '1.900,00 €', '1° · 30%', '570,00 €', '570,00 €', '0,00 €', '570,00 €'],
+    assert.deepEqual(righe.map((r) => r.slice(0, 5)), [
+      ['Luca', '50%', '1.900,00 €', '1° · 30%', '570,00 €'],
+      ['Giuseppe', '50%', '1.900,00 €', '1° · 30%', '570,00 €'],
     ]);
-    assert.match(t, /Liquidazioni collegate/);
-    assert.match(t, /10\/05\/2026 Luca 285,00 €/);
+    assert.doesNotMatch(t, /Liquidazioni collegate|Da liquidare|Liquidata/);
     assert.doesNotMatch(t, /Cronologia/);
     // pulsanti d'azione
-    for (const id of ['#btn-modifica', '#btn-incasso', '#btn-liquida']) assert.ok(await p.locator(id).isVisible(), id);
+    for (const id of ['#btn-modifica', '#btn-incasso']) assert.ok(await p.locator(id).isVisible(), id);
+    assert.equal(await p.locator('#btn-liquida').count(), 0, 'niente liquidazione: la provvigione è già pagata');
   });
 
   test('"Come è stata calcolata la provvigione" spiega i passaggi con i numeri reali', async () => {
@@ -366,7 +366,7 @@ describe('Scheda della pratica', () => {
     assert.match(t, /Scaglione raggiunto: 2° \(da 10\.000,00 € a 19\.999,99 €\) → 35%/);
     assert.match(t, /Metodo “scaglione raggiunto”: 35% su tutto il cumulo; 8\.000,00 € × 35% = 2\.800,00 €/);
     assert.match(t, /Maturata alla conclusione della pratica: 2\.800,00 €/);
-    assert.match(t, /Liquidata finora: 0,00 € → ancora da liquidare 2\.800,00 €/);
+    assert.doesNotMatch(t, /liquidar/i);
   });
 
   test('una pratica in corso mostra la stima delle provvigioni, dichiarandola tale', async () => {
@@ -413,24 +413,6 @@ describe('Scheda della pratica', () => {
     await attendiNotifica(p, /Incasso eliminato/);
     assert.equal(await valoreSql(p, "SELECT COUNT(*) FROM incassi WHERE data = '2026-10-16'"), 0);
     await p.waitForFunction(() => /Nessun incasso registrato/.test(document.querySelector('#contenuto').innerText));
-  });
-
-  test('Liquida provvigioni dalla scheda: collaboratore e pratica già scelti', async () => {
-    const p = app.pagina;
-    await vai(p, `#/pratiche/${await idPratica(p, '2026/009')}`);
-    await p.click('#btn-liquida');
-    const f = finestra(p);
-    await f.waitFor();
-    assert.match(await f.getByLabel('Collaboratore').locator('option:checked').innerText(), /^Luca/);
-    const righe = await f.locator('tbody tr').evaluateAll((tr) => tr.map((r) => ({ codice: r.children[1]?.textContent.match(/^\d{4}\/\d{3}/)?.[0], sel: r.querySelector('input[type=checkbox]')?.checked })));
-    const sel = righe.filter((r) => r.sel).map((r) => r.codice);
-    assert.deepEqual(sel, ['2026/009'], 'solo la pratica aperta è selezionata');
-    assert.match(rimuoviSpazi(await f.locator('.riepilogo-calcolo').innerText()), /Totale della liquidazione 1\.056,00 €/);
-    await bottoneFinestra(p, 'Registra liquidazione').click();
-    await attendiNotifica(p, /Liquidazione di 1\.056,00 € registrata per Luca/);
-    await p.waitForFunction(() => /Liquidazioni collegate[\s\S]*1\.056,00/.test(document.querySelector('#contenuto').innerText.replace(/ /g, ' ')));
-    const righeProv = await celle(p, '#tabella-provvigioni tbody tr');
-    assert.deepEqual([righeProv[0][6], righeProv[0][7]], ['1.056,00 €', '0,00 €']);
   });
 
   test('Elimina la pratica dal menu della scheda: conferma e ritorno all\'archivio', async () => {

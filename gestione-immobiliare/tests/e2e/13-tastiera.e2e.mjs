@@ -1,8 +1,8 @@
 // Uso da tastiera: Invio nei moduli e nelle finestre. Chi lavora a un PC scrive il valore e preme Invio:
-// deve succedere ciò che farebbe il pulsante principale, e solo dove è sicuro (mai nella liquidazione a più righe).
+// deve succedere ciò che farebbe il pulsante principale.
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { avvia, vai, conNavigazione, rimuoviSpazi, sql, valoreSql, idPratica, finestra, bottoneFinestra, attendiNotifica, testoSospetto } from './lib.mjs';
+import { avvia, vai, conNavigazione, rimuoviSpazi, sql, valoreSql, idPratica, finestra, bottoneFinestra, attendiNotifica, testoSospetto, apriIncasso } from './lib.mjs';
 import { inserisciDatiProva } from './dati-prova.mjs';
 
 describe('Tastiera: Invio nei moduli e nelle finestre', () => {
@@ -18,7 +18,7 @@ describe('Tastiera: Invio nei moduli e nelle finestre', () => {
   test('Registra un incasso: Invio nel campo importo lo registra e chiude la finestra', async () => {
     const p = app.pagina;
     const n0 = await valoreSql(p, 'SELECT COUNT(*) FROM incassi');
-    await p.click('#op-incasso');
+    await apriIncasso(p);
     const f = finestra(p);
     await f.waitFor();
     // con un importo non valido Invio non registra nulla e spiega l'errore
@@ -50,27 +50,6 @@ describe('Tastiera: Invio nei moduli e nelle finestre', () => {
     assert.equal(await valoreSql(p, "SELECT i.importo_cent FROM incassi i JOIN pratiche p ON p.id = i.pratica_id WHERE p.codice = '2026/011' ORDER BY i.id DESC LIMIT 1"), 60000);
   });
 
-  test('Registra una liquidazione: Invio nel campo "distribuisci" distribuisce l\'importo e NON registra il pagamento', async () => {
-    const p = app.pagina;
-    const n0 = await valoreSql(p, 'SELECT COUNT(*) FROM liquidazioni');
-    await p.click('#op-liquidazione');
-    const f = finestra(p);
-    await f.waitFor();
-    await f.getByLabel('Collaboratore').selectOption(String(await valoreSql(p, "SELECT id FROM collaboratori WHERE nome = 'Luca'")));
-    await f.locator('tbody input[type="checkbox"]').first().waitFor();
-    const campo = f.getByLabel(/^Oppure distribuisci un importo/);
-    await campo.fill('1.000,00');
-    await campo.press('Enter');
-    await p.waitForFunction(() => /1\.000,00\s€/.test(document.querySelector('dialog.modale[open] .riepilogo-calcolo .riga.totale')?.textContent ?? ''));
-    assert.equal(await f.count(), 1, 'la finestra resta aperta: Invio non conferma il pagamento');
-    assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM liquidazioni'), n0);
-    // anche Invio in un importo di riga non registra niente: per una liquidazione serve il pulsante
-    await f.locator('tbody input[type="text"]').first().press('Enter');
-    assert.equal(await f.count(), 1);
-    assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM liquidazioni'), n0);
-    await bottoneFinestra(p, 'Annulla').click();
-  });
-
   test('Nuova pratica: Invio in un campo salva la pratica e apre la scheda', async () => {
     const p = app.pagina;
     const n0 = await valoreSql(p, 'SELECT COUNT(*) FROM pratiche');
@@ -80,7 +59,11 @@ describe('Tastiera: Invio nei moduli e nelle finestre', () => {
     await p.locator('#form-pratica').getByLabel('Nominativo dell\'acquirente').fill('Anna Bianchi');
     const contanti = p.locator('#pagamenti-venditore').getByLabel('Contanti');
     await contanti.fill('1.000');
-    await conNavigazione(p, () => contanti.press('Enter'));
+    await contanti.press('Enter');
+    // la zona Centro ha già pratiche di Luca nello stesso mese: prima di salvare compare l'avviso del cumulo
+    await finestra(p).waitFor();
+    assert.match(rimuoviSpazi(await finestra(p).innerText()), /pratica cumulata con altre del mese/i);
+    await conNavigazione(p, () => bottoneFinestra(p, 'Salva la pratica').click());
     assert.match(await p.evaluate(() => location.hash), /^#\/pratiche\/\d+$/);
     assert.equal(await valoreSql(p, 'SELECT COUNT(*) FROM pratiche'), n0 + 1);
     assert.equal(await valoreSql(p, 'SELECT venditore_contanti_cent FROM pratiche ORDER BY id DESC LIMIT 1'), 100000);

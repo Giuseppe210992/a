@@ -26,9 +26,9 @@ Si apre un archivio **senza pratiche né zone**: nessun dato dimostrativo. Ci so
 
 | # | Cosa controllare | Esito |
 |---|---|---|
-| 2.1 | A sinistra c'è la barra con 8 voci: Dashboard, Nuova pratica, Archivio pratiche, Provvigioni e liquidazioni, Cumulo mensile per zona, Statistiche e grafici, Backup e archivio storico, Impostazioni | |
+| 2.1 | A sinistra c'è la barra con 8 voci: Dashboard, Nuova pratica, Archivio pratiche, Provvigioni, Cumulo mensile per zona, Statistiche e grafici, Backup e archivio storico, Impostazioni | |
 | 2.2 | In alto: «Gestione Immobiliare», la data di oggi, il periodo, la ricerca e il pulsante **+ Nuova pratica** | |
-| 2.3 | La dashboard mostra 4 riquadri a zero, 4 pulsanti grandi, un solo grafico vuoto e un invito a inserire la prima pratica | |
+| 2.3 | La dashboard mostra 3 riquadri a zero, 2 pulsanti grandi (Nuova pratica, Crea un backup) e un invito a inserire la prima pratica; nessun grafico | |
 | 2.4 | **Riduci barra** nasconde i nomi e lascia le icone; passando il mouse su un'icona compare il nome; la scelta resta dopo aver chiuso e riaperto | |
 
 ## 3. Imposta i tuoi numeri (Impostazioni)
@@ -62,16 +62,17 @@ Come si leggono gli importi: **contanti, bonifico e assegno comprendono tutti l'
 | 4.1 | Mentre scrivi, il riepilogo (compenso senza IVA, IVA, totale pagato, provvigioni stimate) si aggiorna da solo; con l'esempio sopra «Il conto» legge 5.000 € / 1.100 € / 6.100 € | |
 | 4.2 | Scegliendo la zona compare la ripartizione automatica (ad esempio «Luca 60% · Giuseppe 40%»); se la zona non ne ha una, il modulo lo dice e al salvataggio chiede conferma | |
 | 4.3 | Dopo il salvataggio la pratica compare in **Archivio pratiche** e nella tabella «Ultime pratiche» della dashboard; cliccando la riga si apre la scheda, che mostra zona, pagamenti, compenso senza IVA, IVA e provvigioni | |
-| 4.4 | I 4 riquadri della dashboard cambiano e coincidono con i tuoi conti (ricorda: quanto scritto nel modulo è già contato come incassato) | |
-| 4.5 | Dalla scheda: **Registra incasso** (la finestra mostra il residuo da incassare, che è 0 se le parti hanno già pagato tutto) e **Registra liquidazione** funzionano e i numeri si aggiornano | |
+| 4.4 | I 3 riquadri della dashboard cambiano e coincidono con i tuoi conti (ricorda: quanto scritto nel modulo è già contato come incassato) | |
+| 4.5 | Dalla scheda: **Registra incasso** (la finestra mostra il residuo da incassare, che è 0 se le parti hanno già pagato tutto) funziona e i numeri si aggiornano; **non esiste più la liquidazione**: le provvigioni sono già pagate | |
 | 4.6 | **Cumulo mensile per zona** mostra lo scaglione raggiunto e la percentuale; coincide con il tuo conto (compenso **senza IVA** di tutte le pratiche del mese nella stessa zona, per collaboratore secondo la ripartizione) | |
-| 4.7 | Nelle finestre semplici (Registra incasso, Nuova zona, modifiche) scrivi il valore e premi **Invio**: fa quello che fa il pulsante principale. Nella liquidazione a più righe Invio **non** registra il pagamento (serve il pulsante) | |
+| 4.7 | Nelle finestre semplici (Registra incasso, Nuova zona, modifiche) scrivi il valore e premi **Invio**: fa quello che fa il pulsante principale. | |
 | 4.8 | **Ricerca rapida** (in alto, oppure premi `/`): scrivi una parola (codice, zona, nome del venditore o dell'acquirente), scorri con le frecce, Invio apre la pratica; Maiusc+Invio mostra tutte le corrispondenze nell'archivio | |
 | 4.9 | Provando a cambiare le percentuali della ripartizione di una zona, le pratiche **già inserite** restano come sono; valgono per quelle nuove | |
 | 4.10 | Provando a salvare senza il nominativo del venditore o dell'acquirente il programma non salva e lo dice | |
 | 4.11 | Con il mese della proposta diverso da quello di oggi, la stima dice «Cumulo di <mese scelto>» e la pratica compare in quel mese in Cumulo mensile e nelle Statistiche | |
-| 4.12 | **Capo e segretaria**: nella stima e nella scheda compaiono anche loro. Esempio con 10.000 € di compenso nel Centro tutto a Luca: Luca 1.500 €, Capo 225 € (15% di 1.500), Segretaria 60 € (4% di 1.500). Controlla che sia questo che intendevi (in più rispetto a Luca e Giuseppe, sul totale delle loro provvigioni) | |
-| 4.13 | In *Impostazioni → Collaboratori* si legge «Capo 15% del totale delle provvigioni» e «Segretaria 4%…»; con *Modifica* si cambia la percentuale. In *Paga un collaboratore* si possono pagare anche loro | |
+| 4.12 | **Capo e segretaria**: nella stima e nella scheda compaiono anche loro. Esempio con 10.000 € di compenso nel Centro tutto a Luca: Luca 1.500 €, Capo 1.500 € (15% di 10.000), Segretaria 400 € (4% di 10.000). Controlla che sia questo che intendevi (in più rispetto a Luca e Giuseppe, sul compenso totale) | |
+| 4.13 | In *Impostazioni → Collaboratori* si legge «Capo 15% del compenso totale» e «Segretaria 4%…»; con *Modifica* si cambia la percentuale. | |
+| 4.14 | **Cumulo:** inserisci una pratica nello stesso mese e nella stessa zona di una già inserita, in modo che lo scaglione salga. Nel modulo compare un riquadro giallo e, premendo Salva, una finestra con per ogni collaboratore: **già pagato** sulle vecchie pratiche, **differenza da dare**, quanto spetta per la **nuova** e il **totale**. Controlla i numeri con il tuo foglio | |
 
 ## 5. Chiudi e riapri (la prova più importante)
 
@@ -80,7 +81,7 @@ Come si leggono gli importi: **contanti, bonifico e assegno comprendono tutti l'
 
 | # | Cosa controllare | Esito |
 |---|---|---|
-| 5.1 | Le pratiche, gli incassi, le liquidazioni e le impostazioni ci sono ancora, identici | |
+| 5.1 | Le pratiche, gli incassi e le impostazioni ci sono ancora, identici | |
 | 5.2 | Esiste il file `Documenti\Gestione Immobiliare\Dati\archivio.sqlite` | |
 | 5.3 | Provando ad aprire **una seconda copia** del programma, si porta in primo piano la prima (non se ne apre una seconda) | |
 

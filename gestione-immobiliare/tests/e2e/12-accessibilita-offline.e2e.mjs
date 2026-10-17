@@ -123,7 +123,7 @@ describe('Accessibilità', () => {
     assert.deepEqual(senzaSegno, [], `elementi senza indicatore del cursore: ${senzaSegno}`);
     // salto al contenuto, poi la barra laterale (marchio e 8 voci, nell'ordine richiesto), poi l'intestazione
     assert.equal(visti[0], 'Salta al contenuto');
-    assert.deepEqual(visti.slice(2, 10), ['Dashboard', 'Nuova pratica', 'Archivio pratiche', 'Provvigioni e liquidazioni', 'Cumulo mensile per zona', 'Statistiche e grafici', 'Backup e archivio storico', 'Impostazioni']);
+    assert.deepEqual(visti.slice(2, 10), ['Dashboard', 'Nuova pratica', 'Archivio pratiche', 'Provvigioni', 'Cumulo mensile per zona', 'Statistiche e grafici', 'Backup e archivio storico', 'Impostazioni']);
     assert.ok(!visti.includes('Apri il menu'), 'il pulsante del menu del telefono non compare con la tastiera su un computer');
     assert.ok(visti.some((x) => /Ricerca rapida/.test(x)) && visti.some((x) => x === 'Nuova pratica'));
     assert.ok(new Set(visti).size >= 20, `elementi raggiungibili con Tab: ${new Set(visti).size}`);
@@ -140,8 +140,8 @@ describe('Accessibilità', () => {
 
   test('finestre di dialogo: il cursore entra, resta dentro, Esc chiude e il cursore torna dov\'era', async () => {
     const p = app.pagina;
-    await vai(p, '#/');
-    await p.locator('#op-incasso').focus();
+    await vai(p, `#/pratiche/${await idPratica(p, '2026/011')}`);
+    await p.locator('#btn-incasso').focus();
     await p.keyboard.press('Enter');
     await finestra(p).waitFor();
     assert.equal(await p.evaluate(() => document.activeElement.closest('dialog.modale') !== null), true, 'il cursore è dentro la finestra');
@@ -152,13 +152,13 @@ describe('Accessibilità', () => {
     assert.equal(await p.locator('dialog.modale').getAttribute('aria-labelledby'), 'modale-titolo');
     await p.keyboard.press('Escape');
     await p.waitForFunction(() => document.querySelectorAll('dialog.modale').length === 0);
-    assert.equal(await p.evaluate(() => document.activeElement.id), 'op-incasso');
+    assert.equal(await p.evaluate(() => document.activeElement.id), 'btn-incasso');
   });
 
   test('grafici: raggiungibili con Tab e con frecce; la tabella equivalente è uno dei pulsanti', async () => {
     const p = app.pagina;
-    await vai(p, '#/');
-    const g = p.locator('#grafico-compensi');
+    await vai(p, '#/statistiche');
+    const g = p.locator('#grafico-compensi-incassi');
     await g.locator('svg.g-svg').focus();
     assert.equal(await g.locator('svg.g-svg').getAttribute('role'), 'group');
     assert.match(await g.locator('svg.g-svg').getAttribute('aria-label'), /Usa le frecce per scorrere i valori/);

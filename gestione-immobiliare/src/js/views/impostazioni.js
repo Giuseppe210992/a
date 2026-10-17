@@ -63,7 +63,7 @@ function elencoAnagrafica({ tipo, etichettaSing, etichettaPlur, genere }) {
     const attivo = e ? r.attivo : r.attiva;
     return h('div', { class: 'riga-elenco', dataset: { id: r.id, nome: r.nome } },
       h('div', { class: 'nome' }, h('span', { class: `punto-col col-${r.colore}`, style: { width: '14px', height: '14px' }, title: `Colore nei grafici: ${NOMI_COLORE[r.colore]}` }), h('div', null, r.nome,
-        h('br'), h('small', null, e ? `${r.percentuale_fissa ? `${pct(r.percentuale_fissa)} del totale delle provvigioni · ${usi.liquidazioni} liquidazioni` : `${usi.pratiche} pratiche · ${usi.liquidazioni} liquidazioni`}${usi.zone ? ` · nella ripartizione di ${usi.zone === 1 ? '1 zona' : `${usi.zone} zone`}` : ''}` : `${usi.pratiche} pratiche${r.usa_scaglioni_propri ? ' · scaglioni propri' : ' · scaglioni predefiniti'} · ripartizione: ${testoRipartizioneZona(r.id)}`))),
+        h('br'), h('small', null, e ? `${r.percentuale_fissa ? `${pct(r.percentuale_fissa)} del compenso totale · ${usi.liquidazioni} liquidazioni` : `${usi.pratiche} pratiche · ${usi.liquidazioni} liquidazioni`}${usi.zone ? ` · nella ripartizione di ${usi.zone === 1 ? '1 zona' : `${usi.zone} zone`}` : ''}` : `${usi.pratiche} pratiche${r.usa_scaglioni_propri ? ' · scaglioni propri' : ' · scaglioni predefiniti'} · ripartizione: ${testoRipartizioneZona(r.id)}`))),
       attivo ? h('span', { class: 'badge badge-ok' }, 'Attivo') : h('span', { class: 'badge' }, 'Non attivo'),
       h('div', { class: 'riga-azioni' },
         e ? null : h('button', { type: 'button', class: 'btn btn-secondario btn-sm', id: `ripartizione-zona-${r.id}`, onclick: () => apriDialogoRipartizione(r) }, icona('handshake', { dimensione: 15 }), 'Ripartizione'),
@@ -84,7 +84,7 @@ function modificaAnagrafica(tipo, r, etichettaSing) {
   const attivo = casella({ etichetta: e ? 'Collaboratore attivo' : 'Zona attiva', selezionata: !!(e ? r.attivo : r.attiva) });
   // chi prende una percentuale fissa (il capo, la segretaria) non lavora a scaglioni sulle pratiche
   const fissa = e && (r.percentuale_fissa || !usiCollaboratore(app.archivio, r.id).pratiche)
-    ? campoPercentuale({ etichetta: 'Percentuale fissa sul totale delle provvigioni (facoltativa)', valore: r.percentuale_fissa ?? null, aiuto: 'Per chi prende una percentuale di tutte le provvigioni, in qualsiasi zona (il capo, la segretaria). Lascia vuoto per chi lavora a scaglioni sulle sue pratiche.' })
+    ? campoPercentuale({ etichetta: 'Percentuale fissa sul compenso totale (facoltativa)', valore: r.percentuale_fissa ?? null, aiuto: 'Per chi prende una percentuale del compenso di ogni pratica, in qualsiasi zona (il capo, la segretaria). Lascia vuoto per chi lavora a scaglioni sulle sue pratiche.' })
     : null;
   const propri = e ? null : casella({ etichetta: 'Usa scaglioni propri (diversi da quelli predefiniti)', selezionata: !!r.usa_scaglioni_propri });
   return apriModale({

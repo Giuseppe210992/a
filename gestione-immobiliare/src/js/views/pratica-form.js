@@ -9,7 +9,7 @@ import { icona } from '../core/icone.js';
 import { app, modello, impostazioni } from '../core/app.js';
 import { naviga, rimonta } from '../core/router.js';
 import { oggi, chiaveMese, aggiungiMesi } from '../core/dates.js';
-import { eur, pct, meseAnno, dataIt, maiuscola } from '../core/format.js';
+import { eur, eurSegno, pct, meseAnno, dataIt, maiuscola } from '../core/format.js';
 import { apriModale, conferma, ok as notificaOk, segnalaErrore, errore as notificaErrore } from '../core/ui.js';
 import { campoTesto, campoAreaTesto, campoImporto, campoSelezione, mostraErrori } from '../components/campi.js';
 import { editorRipartizione, apriDialogoRipartizione } from '../components/ripartizione-zona.js';
@@ -17,7 +17,7 @@ import { salvaPratica, TIPI_IMMOBILE } from '../data/repo/pratiche.js';
 import { creaZona, salvaRipartizioneZona, ripartizioneAutomatica } from '../data/repo/anagrafiche.js';
 import { opzioniCalcolo } from '../data/repo/impostazioni.js';
 import { calcolaCompensi, ivaSuImponibile, PARTI, MODALITA, CAMPI_PAGAMENTO, campoPagamento } from '../data/calc/compensi.js';
-import { stimaPratica } from '../data/stima.js';
+import { stimaPratica, conguaglio } from '../data/stima.js';
 
 /** Importi iniziali dei sei campi di pagamento: quelli registrati, oppure (pratica vecchia) il compenso riportato come bonifico con IVA. */
 function pagamentiIniziali(pratica) {
@@ -129,6 +129,18 @@ function montaForm(contenitore, { pratica = null }) {
       origine === 'zona' || origine === 'predefinita' ? h('div', { class: 'riga-azioni', style: { marginTop: '8px' } }, bottoneZona('Cambia la divisione della zona')) : null);
   }
 
+  // ----------------------------------------------------------- cumulo con altre pratiche del mese: quanto già pagato e conguaglio
+  function righeConguaglio() {
+    try { return conguaglio(app.archivio, leggiBozza(), quote, opzioniCalcolo(imp)); } catch (e) { console.error(e); return []; }
+  }
+  const testiConguaglio = (r) => [
+    `${r.nome} · ${meseAnno(r.mese)}${r.zonaNome ? ` in ${r.zonaNome}` : ''} (${r.pratichePrecedenti} ${r.pratichePrecedenti === 1 ? 'pratica precedente' : 'pratiche precedenti'})`,
+    `Già pagato sulle pratiche precedenti: ${eur(r.giaPagatoCent)}`,
+    `Differenza da dare sulle pratiche precedenti: ${eurSegno(r.differenzaCent)}`,
+    `Per questa pratica: ${eur(r.nuovaCent)}`,
+    `Totale (precedenti + questa): ${eur(r.totaleCent)}`,
+  ];
+
   // ----------------------------------------------------------- riepilogo e stima
   const riepilogo = h('div', { class: 'riepilogo-calcolo', 'aria-live': 'polite' });
   const stima = h('div', { class: 'stima-provvigione', 'aria-live': 'polite' });
@@ -187,7 +199,7 @@ function montaForm(contenitore, { pratica = null }) {
         if (v.fissa) {
           righe.push(h('div', { class: 'stima-riga' },
             h('div', { class: 'titolo' }, h('span', null, nomi.get(v.collaboratoreId) ?? 'Collaboratore'), h('span', { class: 'num' }, eur(v.provvigioneCent))),
-            h('div', { class: 'dettaglio' }, `${pct(v.percentualeFissa)} del totale delle provvigioni (${eur(v.baseCent)})`)));
+            h('div', { class: 'dettaglio' }, `${pct(v.percentualeFissa)} del compenso totale (${eur(v.baseCent)})`)));
           continue;
         }
         const cu = s.cumuli.find((x) => x.collaboratoreId === v.collaboratoreId || x.collaboratoreId === null);
@@ -198,8 +210,12 @@ function montaForm(contenitore, { pratica = null }) {
           cu?.prossimo ? h('div', { class: 'dettaglio' }, `Mancano ${eur(cu.prossimo.mancanteCent)} allo scaglione ${cu.prossimo.indice + 1} (${pct(cu.prossimo.percentuale)})`) : null));
       }
     }
+    const cong = righeConguaglio();
+    const boxCumulo = cong.length ? h('div', { class: 'nota attenzione', id: 'avviso-cumulo' }, icona('triangle-alert', { dimensione: 18 }),
+      h('div', null, h('strong', null, 'Attenzione: si cumula con altre pratiche del mese. '), ...cong.map((r) => h('div', { style: { marginTop: '8px' } }, ...testiConguaglio(r).map((t, i) => h('div', { class: i === 0 ? 'forte' : 'dettaglio' }, t)))))) : null;
     monta(stima,
       h('h3', { style: { fontSize: '14px', fontWeight: 700 } }, 'Quanto spetta ai collaboratori (stima)'),
+      boxCumulo,
       ...righe,
       h('p', { class: 'sottotesto' }, 'Può cambiare se nel mese arrivano altre pratiche.'));
   }
@@ -269,6 +285,15 @@ function montaForm(contenitore, { pratica = null }) {
         titolo: 'La zona non ha una ripartizione', tipo: 'primario', etichettaConferma: 'Salva comunque', icona: 'triangle-alert',
         messaggio: 'Senza ripartizione i compensi non vengono assegnati a nessun collaboratore e le provvigioni restano a zero. La pratica verrà segnalata tra quelle con dati mancanti.',
         dettagli: ['Puoi impostare la ripartizione della zona (pulsante nel modulo) e poi salvare.'],
+      });
+      if (!procedi) return;
+    }
+    const cong = righeConguaglio();
+    if (cong.length) {
+      const procedi = await conferma({
+        titolo: 'Attenzione: pratica cumulata con altre del mese', tipo: 'primario', etichettaConferma: 'Salva la pratica', icona: 'triangle-alert',
+        messaggio: 'Questa pratica si cumula con altre dello stesso mese: lo scaglione può cambiare anche per le pratiche precedenti.',
+        dettagli: cong.flatMap(testiConguaglio),
       });
       if (!procedi) return;
     }

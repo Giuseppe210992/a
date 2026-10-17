@@ -201,7 +201,6 @@ describe('Impostazioni', () => {
     await vai(p, '#/');
     const r = await riquadri(p);
     assert.equal(r.maturate, 25700 * E);
-    assert.equal(r.daLiquidare, (25700 - 6565) * E);
     // la scheda della 001: 5.600 × 25% = 1.400 € (prima 1.680 €)
     await vai(p, `#/pratiche/${await idPratica(p, '2026/001')}`);
     const righe = await p.locator('#tabella-provvigioni tbody tr').evaluateAll((tr) => tr.map((x) => [...x.children].map((c) => c.innerText.replace(/ /g, ' ').trim())));

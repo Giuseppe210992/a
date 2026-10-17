@@ -249,13 +249,12 @@ export async function azzeraFiltri(pagina) {
   await attendiQuiete(pagina, 80);
 }
 
-/** Valori numerici dei quattro riquadri come centesimi (o numero intero per le pratiche concluse). */
+/** Valori numerici dei tre riquadri come centesimi (o numero intero per le pratiche concluse). */
 export async function riquadri(pagina) {
   const nomi = {
     concluse: 'Pratiche concluse',
     compensi: 'Compensi dell\'agenzia',
-    maturate: 'Provvigioni dei collaboratori',
-    daLiquidare: 'Ancora da pagare ai collaboratori',
+    maturate: 'Provvigioni pagate',
   };
   const out = {};
   for (const [k, etichetta] of Object.entries(nomi)) {
@@ -342,3 +341,10 @@ export async function attendiNotifica(pagina, re) {
 
 /** Pulsante di una finestra di dialogo, per nome. */
 export const bottoneFinestra = (pagina, nome) => finestra(pagina).locator('button', { hasText: nome }).last();
+
+/** Apre la finestra «Registra un incasso» dalla scheda della prima pratica (l'incasso non è più un'operazione della dashboard). */
+export async function apriIncasso(pagina) {
+  const id = await pagina.evaluate(() => window.__gi.app.archivio.valore('SELECT id FROM pratiche ORDER BY id LIMIT 1'));
+  await vai(pagina, `#/pratiche/${id}`);
+  await pagina.click('#btn-incasso');
+}
