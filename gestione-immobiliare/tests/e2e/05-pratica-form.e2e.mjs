@@ -257,12 +257,17 @@ describe('Nuova pratica e modifica', () => {
     assert.match(s, /Luca\s*1\.800,00 €/);
     assert.match(s, /→ scaglione 4 \(15%\)/);
     assert.match(s, /Mancano 1\.000,01 € allo scaglione 5 \(20%\)/);
-    // in una zona divisa 60/40 ognuno ha il suo cumulo: Luca 7.200 → 3° scaglione (11%) = 792; Giuseppe 4.800 → 2° scaglione (8%) = 384
+    // in una zona divisa 60/40 la percentuale si calcola sul compenso INTERO (12.000 € → 4° scaglione, 15% = 1.800) e solo alla fine si divide: Luca 60% = 1.080, Giuseppe 40% = 720
     await scegliZona('Collina');
     await p.waitForFunction(() => /Giuseppe/.test(document.querySelector('.stima-provvigione').textContent));
     s = await stima();
-    assert.match(s, /Luca\s*792,00 €\s*Quota 60% dei compensi: 7\.200,00 €/);
-    assert.match(s, /Giuseppe\s*384,00 €\s*Quota 40% dei compensi: 4\.800,00 €/);
+    assert.match(s, /Luca\s*1\.080,00 €\s*Quota 60% dei compensi: 7\.200,00 €/);
+    assert.match(s, /Giuseppe\s*720,00 €\s*Quota 40% dei compensi: 4\.800,00 €/);
+    assert.match(s, /Cumulo di ottobre 2026 in Collina: 12\.000,00 € → scaglione 4 \(15%\)/);
+    // il totale da pagare è in grande, con quanto resta all'agenzia
+    assert.equal(rimuoviSpazi(await p.locator('#stima-totale-valore').innerText()), '1.800,00 €');
+    assert.match(s, /Resta all'agenzia 10\.200,00 €/);
+    assert.ok(await p.locator('#stima-totale-valore').evaluate((e) => parseFloat(getComputedStyle(e).fontSize) >= 30), 'cifra grande');
   });
 
   test('"Nuova zona" dal modulo crea la zona con la sua ripartizione e la sceglie; un nome già usato viene rifiutato', async () => {

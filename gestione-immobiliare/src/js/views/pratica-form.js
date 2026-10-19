@@ -197,26 +197,33 @@ function montaForm(contenitore, { pratica = null }) {
     } else {
       for (const v of s.pratica.voci.filter((x) => x.collaboratoreId != null)) {
         if (v.fissa) {
-          righe.push(h('div', { class: 'stima-riga' },
+          righe.push(h('div', { class: 'stima-riga grande' },
             h('div', { class: 'titolo' }, h('span', null, nomi.get(v.collaboratoreId) ?? 'Collaboratore'), h('span', { class: 'num' }, eur(v.provvigioneCent))),
             h('div', { class: 'dettaglio' }, `${pct(v.percentualeFissa)} del compenso totale (${eur(v.baseCent)})`)));
           continue;
         }
-        const cu = s.cumuli.find((x) => x.collaboratoreId === v.collaboratoreId || x.collaboratoreId === null);
-        righe.push(h('div', { class: 'stima-riga' },
+        const cu = s.cumuli.find((x) => x.collaboratoriIds.includes(v.collaboratoreId) || x.collaboratoriIds.length === 0);
+        righe.push(h('div', { class: 'stima-riga grande' },
           h('div', { class: 'titolo' }, h('span', null, nomi.get(v.collaboratoreId) ?? 'Collaboratore'), h('span', { class: 'num' }, eur(v.provvigioneCent))),
           h('div', { class: 'dettaglio' }, `Quota ${pct(v.quotaPct)} dei compensi: ${eur(v.fatturatoCent)}`),
           cu ? h('div', { class: 'dettaglio' }, `Cumulo di ${meseAnno(cu.mese)}${cu.zonaNome ? ` in ${cu.zonaNome}` : ''}: ${eur(cu.fatturatoCent)} → scaglione ${cu.scaglioneIdx + 1} (${pct(cu.percentuale)})`) : null,
           cu?.prossimo ? h('div', { class: 'dettaglio' }, `Mancano ${eur(cu.prossimo.mancanteCent)} allo scaglione ${cu.prossimo.indice + 1} (${pct(cu.prossimo.percentuale)})`) : null));
       }
     }
+    // totale da pagare e quanto resta all'agenzia, in grande
+    const daPagare = s.pratica.voci.filter((x) => x.collaboratoreId != null).reduce((t, x) => t + x.provvigioneCent, 0);
+    const totaleGrande = quote.length && (mm.tabellaPredefinita.length || mm.tabellePerZona.size)
+      ? h('div', { class: 'stima-totale', id: 'stima-totale' },
+        h('div', null, h('span', { class: 'etichetta' }, 'Totale provvigioni da pagare'), h('span', { class: 'valore', id: 'stima-totale-valore' }, eur(daPagare))),
+        h('div', { class: 'resto' }, h('span', null, 'Resta all\'agenzia'), h('span', { class: 'num' }, eur(s.pratica.compensoTotaleCent - daPagare)))) : null;
     const cong = righeConguaglio();
     const boxCumulo = cong.length ? h('div', { class: 'nota attenzione', id: 'avviso-cumulo' }, icona('triangle-alert', { dimensione: 18 }),
       h('div', null, h('strong', null, 'Attenzione: si cumula con altre pratiche del mese. '), ...cong.map((r) => h('div', { style: { marginTop: '8px' } }, ...testiConguaglio(r).map((t, i) => h('div', { class: i === 0 ? 'forte' : 'dettaglio' }, t)))))) : null;
     monta(stima,
-      h('h3', { style: { fontSize: '14px', fontWeight: 700 } }, 'Quanto spetta ai collaboratori (stima)'),
+      h('h3', { style: { fontSize: '16px', fontWeight: 750 } }, 'Quanto spetta ai collaboratori (stima)'),
       boxCumulo,
       ...righe,
+      totaleGrande,
       h('p', { class: 'sottotesto' }, 'Può cambiare se nel mese arrivano altre pratiche.'));
   }
   const ricalcolaRitardato = ritarda(ricalcola, 120);
@@ -361,8 +368,8 @@ function montaForm(contenitore, { pratica = null }) {
         altreInfo,
       ),
       h('aside', { class: 'form-riepilogo', 'aria-label': 'Il conto' },
-        h('section', { class: 'card sezione-modulo' }, h('h2', null, 'Il conto'), riepilogo),
-        h('section', { class: 'card sezione-modulo' }, stima)),
+        h('section', { class: 'card sezione-modulo stima-grande' }, stima),
+        h('section', { class: 'card sezione-modulo' }, h('h2', null, 'Il conto'), riepilogo)),
     ),
     h('div', { class: 'barra-salvataggio' }, stato,
       h('a', { class: 'btn btn-secondario', href: modifica ? `#/pratiche/${pratica.id}` : '#/pratiche', id: 'annulla-pratica' }, 'Annulla'),

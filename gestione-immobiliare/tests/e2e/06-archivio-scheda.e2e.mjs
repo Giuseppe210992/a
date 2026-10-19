@@ -361,10 +361,10 @@ describe('Scheda della pratica', () => {
     await dettagli.locator('summary').click();
     const t = rimuoviSpazi(await dettagli.innerText());
     assert.match(t, /Compenso della pratica: 4\.000,00 € dal venditore \+ 4\.000,00 € dall'acquirente = 8\.000,00 € \(imponibile, IVA esclusa\)/);
-    assert.match(t, /Quota di Luca: 100% → fatturato attribuito 8\.000,00 €/);
     assert.match(t, /Cumulo di ottobre 2026 di Luca nella zona Centro: 14\.000,00 € \(2 pratiche\)/);
     assert.match(t, /Scaglione raggiunto: 2° \(da 10\.000,00 € a 19\.999,99 €\) → 35%/);
-    assert.match(t, /Metodo “scaglione raggiunto”: 35% su tutto il cumulo; 8\.000,00 € × 35% = 2\.800,00 €/);
+    assert.match(t, /Metodo “scaglione raggiunto”: 35% su tutto il cumulo; compenso della pratica 8\.000,00 € × 35% = 2\.800,00 € di provvigione sulla pratica intera\./);
+    assert.match(t, /Questa provvigione si divide tra i collaboratori in base alla quota solo alla fine: Luca ha il 100% → 2\.800,00 €\./);
     assert.match(t, /Maturata alla conclusione della pratica: 2\.800,00 €/);
     assert.doesNotMatch(t, /liquidar/i);
   });

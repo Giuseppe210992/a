@@ -60,7 +60,7 @@ function passaggiCalcolo(m, p, v, nome) {
   passi.push(p.compensi.daPagamenti
     ? `Compenso della pratica: ${eur(p.compenso_venditore_cent)} dal venditore + ${eur(p.compenso_acquirente_cent)} dall'acquirente = ${eur(p.compensoTotaleCent)} (senza IVA: l'IVA è stata tolta da quanto hanno pagato).`
     : `Compenso della pratica: ${eur(p.compenso_venditore_cent)} dal venditore + ${eur(p.compenso_acquirente_cent)} dall'acquirente = ${eur(p.compensoTotaleCent)} (imponibile, IVA esclusa).`);
-  passi.push(`Quota di ${nome}: ${pct(v.quotaPct)} → fatturato attribuito ${eur(v.fatturatoCent)}.`);
+  const totalePraticaCent = p.voci.filter((x) => !x.fissa).reduce((t, x) => t + x.provvigioneCent, 0);
   if (!p.conclusa) return passi.concat(['La provvigione si calcola quando la pratica risulta conclusa.']);
   if (cu) {
     const chi = m.opzioni.baseCumulo === 'zona' ? `della zona ${cu.zonaNome ?? ''}` : m.opzioni.baseCumulo === 'collaboratore' ? `di ${cu.collaboratoreNome ?? nome} (tutte le zone)` : `di ${cu.collaboratoreNome ?? nome} nella zona ${cu.zonaNome ?? 'senza zona'}`;
@@ -71,10 +71,11 @@ function passaggiCalcolo(m, p, v, nome) {
       const sc = cu.scaglione;
       passi.push(`Scaglione raggiunto: ${cu.scaglioneIdx + 1}° (da ${eur(sc.da)}${sc.a !== null ? ` a ${eur(sc.a)}` : ' in su'}) → ${pct(sc.percentuale)}.`);
       passi.push(metodo === 'progressivo'
-        ? `Metodo progressivo: ogni percentuale vale solo sulla parte di cumulo del suo scaglione; a questa pratica spettano ${eur(v.provvigioneCent)}.`
-        : `Metodo “scaglione raggiunto”: ${pct(cu.percentuale)} su tutto il cumulo; ${eur(v.fatturatoCent)} × ${pct(cu.percentuale)} = ${eur(v.provvigioneCent)}.`);
+        ? `Metodo progressivo: ogni percentuale vale solo sulla parte di cumulo del suo scaglione; alla pratica intera spettano ${eur(totalePraticaCent)} di provvigione.`
+        : `Metodo “scaglione raggiunto”: ${pct(cu.percentuale)} su tutto il cumulo; compenso della pratica ${eur(p.compensoTotaleCent)} × ${pct(cu.percentuale)} = ${eur(totalePraticaCent)} di provvigione sulla pratica intera.`);
     }
   }
+  passi.push(`Questa provvigione si divide tra i collaboratori in base alla quota solo alla fine: ${nome} ha il ${pct(v.quotaPct)} → ${eur(v.provvigioneCent)}.`);
   passi.push(m.opzioni.maturazione === 'incasso'
     ? `Maturata all'incasso: in proporzione a quanto il cliente ha pagato (${pct(Math.round(p.frazioneIncassata * 10000) / 100)}) → ${eur(v.maturataCent)}.`
     : `Maturata alla conclusione della pratica: ${eur(v.maturataCent)}.`);

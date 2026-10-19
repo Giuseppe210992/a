@@ -139,6 +139,16 @@ a.kpi:hover { text-decoration: none; border-color: var(--border-strong); box-sha
 .stima-riga { padding: 12px 14px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); font-size: 13.5px; }
 .stima-riga .titolo { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; font-size: 14px; margin-bottom: 4px; }
 .stima-riga .dettaglio { color: var(--text-2); }
+/* provvigioni da pagare: cifre grandi, leggibili a colpo d'occhio mentre si inseriscono i dati */
+.stima-grande .stima-provvigione { margin-top: 0; }
+.stima-riga.grande { padding: 14px 16px; }
+.stima-riga.grande .titolo { align-items: baseline; font-size: 20px; font-weight: 750; }
+.stima-riga.grande .titolo .num { font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.stima-totale { padding: 16px; border-radius: 14px; background: var(--accent-soft); border: 1px solid var(--accent); display: grid; gap: 8px; }
+.stima-totale .etichetta { display: block; font-size: 15px; font-weight: 700; color: var(--text-2); }
+.stima-totale .valore { display: block; font-size: 38px; line-height: 1.15; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.stima-totale .resto { display: flex; justify-content: space-between; gap: 8px; font-size: 15px; color: var(--text-2); }
+.stima-totale .resto .num { font-weight: 700; font-variant-numeric: tabular-nums; }
 
 /* ---------------- scheda pratica ---------------- */
 .scheda-testa { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 14px; align-items: flex-start; margin-bottom: 20px; }
@@ -274,3 +284,8 @@ a.kpi:hover { text-decoration: none; border-color: var(--border-strong); box-sha
   .filtro .select, .periodo-btn { width: 100%; min-width: 0; }
   .filtro { flex: 1 1 140px; }
 }
+
+/* ---------------- foglio del mese (Provvigioni) ---------------- */
+.kpi-totale { background: var(--accent-soft); border-color: var(--accent); }
+.tabella-foglio td, .tabella-foglio th { font-size: 15px; }
+.tabella-foglio tfoot td { font-weight: 800; font-size: 16px; border-top: 2px solid var(--border-strong); }

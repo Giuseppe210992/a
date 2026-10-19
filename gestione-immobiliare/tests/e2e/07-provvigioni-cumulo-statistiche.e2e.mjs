@@ -20,52 +20,63 @@ describe('Provvigioni', () => {
     await azzeraFiltri(p);
     await vai(p, '#/provvigioni');
   });
+  const kpiTesto = (p) => p.locator('.kpi').evaluateAll((a) => a.map((x) => x.innerText.replace(/ /g, ' ').replace(/\s+/g, ' ').trim()));
 
-  test('riepilogo semplice: un totale per persona e il totale generale, senza liquidazioni', async () => {
+  test('foglio del mese: si apre sul mese corrente con un totale per persona in grande e il totale da pagare', async () => {
     const p = app.pagina;
-    const kpi = await p.locator('.kpi').evaluateAll((a) => a.map((x) => x.innerText.replace(/ /g, ' ').replace(/\s+/g, ' ').trim()));
-    assert.deepEqual(kpi, ['Luca 13.402,00 €', 'Giuseppe 14.834,00 €', 'Totale 28.236,00 €']);
+    assert.equal(rimuoviSpazi(await p.locator('#mese-prec').getAttribute('aria-label')), 'Mese precedente');
+    assert.equal(await p.locator('#provvigioni-mese, select[aria-label="Mese"]').first().inputValue(), '10');
+    assert.deepEqual(await kpiTesto(p), ['Luca 4.900,00 €', 'Giuseppe 2.760,00 €', 'Totale da pagare 7.660,00 €']); // come «Mese corrente» della dashboard
+    assert.ok(await p.locator('.kpi-totale .kpi-valore').evaluate((e) => parseFloat(getComputedStyle(e).fontSize) >= 24), 'cifre grandi');
     const t = rimuoviSpazi(await p.locator('#contenuto').innerText());
     assert.doesNotMatch(t, /liquid/i, 'nessun riferimento a liquidazioni');
     assert.equal(await p.getByRole('tab').count(), 0, 'niente schede: una sola tabella');
-    assert.equal(await p.locator('button:has-text("Registra liquidazione")').count(), 0);
   });
 
-  test('tabella: una riga per pratica e persona, con quota, compenso, percentuale e provvigione', async () => {
+  test('tabella: una riga per pratica, una colonna per persona, i totali in fondo', async () => {
     const p = app.pagina;
-    const righe = await celle(p, '#tabella-dettaglio tbody tr');
-    assert.equal(righe.length, 15);
-    const per = (codice, chi) => righe.find((r) => r[0].startsWith(codice) && r[1] === chi);
-    assert.deepEqual(per('2026/011', 'Luca').slice(1), ['Luca', '100%', '8.000,00 €', '2° · 35%', '2.800,00 €']);
-    assert.deepEqual(per('2026/003', 'Giuseppe').slice(1), ['Giuseppe', '50%', '1.900,00 €', '1° · 30%', '570,00 €']);
-    const somma = righe.reduce((t, r) => t + centesimi(r[5]), 0);
-    assert.equal(somma, 28236 * E);
-    assert.deepEqual(await celle(p, '#tabella-dettaglio tfoot tr'), [['Totale (15 righe)', '28.236,00 €']]);
+    assert.deepEqual((await celle(p, '#foglio-mese thead tr'))[0].map((x) => x.toLowerCase()), ['pratica', 'compenso', '%', 'luca', 'giuseppe', 'totale provvigioni']);
+    const righe = await celle(p, '#foglio-mese tbody tr');
+    assert.equal(righe.length, 3); // le pratiche 010, 011 e 012
+    const r11 = righe.find((r) => r[0].startsWith('2026/011'));
+    assert.deepEqual(r11.slice(1), ['8.000,00 €', '35%', '2.800,00 €', '—', '2.800,00 €']);
+    assert.equal(righe.reduce((t, r) => t + centesimi(r[5]), 0), 7660 * E);
+    assert.deepEqual(await celle(p, '#foglio-mese tfoot tr'), [['Totale', '23.200,00 €', '', '4.900,00 €', '2.760,00 €', '7.660,00 €']]);
     // clic su una riga → scheda della pratica
-    await p.locator('#tabella-dettaglio tbody tr').first().locator('td').last().click();
+    await p.locator('#foglio-mese tbody tr').first().locator('td').last().click();
     await p.waitForSelector('#contenuto #btn-modifica');
   });
 
-  test('i filtri della barra superiore valgono anche qui', async () => {
+  test('si scorre tra i mesi: precedente, successivo, scelta di mese e anno, «Mese corrente»', async () => {
     const p = app.pagina;
-    await scegliCollaboratore(p, 'Giuseppe');
-    await p.waitForFunction(() => document.querySelectorAll('.kpi').length === 2);
-    assert.deepEqual(await p.locator('.kpi').evaluateAll((a) => a.map((x) => x.innerText.replace(/ /g, ' ').replace(/\s+/g, ' ').trim())), ['Giuseppe 14.834,00 €', 'Totale 14.834,00 €']);
-    await azzeraFiltri(p);
-    await scegliPeriodo(p, 'Mese corrente');
-    await p.waitForFunction(() => /7\.660,00/.test(document.querySelector('#pannello-prov').innerText.replace(/ /g, ' ')));
-    await azzeraFiltri(p);
+    await p.click('#mese-prec');
+    await p.waitForFunction(() => /^Totale da pagare 1\.296,00/.test(document.querySelector('.kpi-totale').innerText.replace(/\s+/g, ' ').replace(/ /g, ' ')));
+    assert.equal((await celle(p, '#foglio-mese tbody tr')).length, 2); // settembre: le pratiche 009 e 015
+    assert.equal(await p.evaluate(() => location.hash), '#/provvigioni?mese=2026-09');
+    await p.click('#mese-succ');
+    await p.waitForFunction(() => /7\.660,00/.test(document.querySelector('.kpi-totale').innerText.replace(/ /g, ' ')));
+    await p.selectOption('select[aria-label="Mese"]', '03');
+    await p.waitForFunction(() => location.hash === '#/provvigioni?mese=2026-03');
+    assert.match(rimuoviSpazi(await p.locator('#pannello-prov').innerText()), /1 pratica a marzo 2026/);
+    // un mese senza pratiche lo dice e propone di inserirne una
+    await p.selectOption('select[aria-label="Mese"]', '12');
+    await p.waitForFunction(() => /Nessuna pratica a dicembre 2026/.test(document.querySelector('#pannello-prov').innerText));
+    assert.equal(await p.locator('#pannello-prov a[href="#/nuova"]').count(), 1);
+    await p.click('button:has-text("Mese corrente")');
+    await p.waitForFunction(() => location.hash === '#/provvigioni?mese=2026-10');
+    assert.equal(await p.locator('button:has-text("Mese corrente")').isDisabled(), true);
   });
 
-  test('esporta in CSV le righe mostrate', async () => {
+  test('esporta in CSV le righe del mese mostrato', async () => {
     const p = app.pagina;
     const file = await scarica(p, () => p.getByRole('button', { name: 'Esporta in CSV' }).click());
-    assert.match(file.nome, /^Provvigioni.*\.csv$/);
+    assert.match(file.nome, /^Provvigioni_2026-10.*\.csv$/);
     const csv = leggiCsv(file.bytes);
-    assert.equal(csv.righe.length, 15);
+    const celleConImporto = (await celle(p, '#foglio-mese tbody tr')).flatMap((r) => r.slice(3, 5)).filter((x) => x !== '—').length;
+    assert.equal(csv.righe.length, celleConImporto);
     const col = csv.intestazioni.indexOf('Provvigione calcolata');
     assert.ok(col >= 0);
-    assert.equal(csv.righe.reduce((t, r) => t + centesimi(r[col] || '0'), 0), 28236 * E);
+    assert.equal(csv.righe.reduce((t, r) => t + centesimi(r[col] || '0'), 0), 7660 * E);
     await attendiNotifica(p, /Provvigioni esportate in CSV/);
   });
 });
@@ -296,6 +307,33 @@ describe('Statistiche e grafici', () => {
 
   test('nessun errore in console e nessun "null" nelle pagine', async () => {
     assert.deepEqual(await testoSospetto(app.pagina), []);
+    assert.deepEqual(app.errori, []);
+  });
+});
+
+describe('Cumulo di una zona comune', () => {
+  let app;
+  before(async () => { app = await avvia(); await inserisciDatiProva(app.pagina); });
+  after(async () => { await app.chiudi(); });
+
+  test('le pratiche divise tra Luca e Giuseppe fanno una riga «Luca + Giuseppe» sul compenso intero, con la provvigione totale', async () => {
+    const p = app.pagina;
+    await vai(p, '#/cumulo?mese=2026-03');
+    const riga = p.locator('.cumulo-riga', { hasText: 'Luca + Giuseppe' });
+    await riga.waitFor();
+    const t = rimuoviSpazi(await riga.innerText());
+    assert.match(t, /Fatturato cumulato 3\.800,00 €/); // il compenso intero della 003, non le due metà
+    assert.match(t, /1° scaglione · 30%/);
+    assert.match(t, /Provvigione sul mese 1\.140,00 €/); // 3.800 × 30%, poi 570 a testa
+    await riga.locator('summary').click();
+    assert.match(rimuoviSpazi(await riga.locator('tbody').innerText()), /2026\/003.*3\.800,00 € 1\.140,00 €/);
+    // la scheda della pratica lo spiega: il cumulo della coppia e la divisione finale
+    await vai(p, `#/pratiche/${await idPratica(p, '2026/003')}`);
+    await p.locator('#come-calcolato summary').first().click();
+    const spiegazione = rimuoviSpazi(await p.locator('#come-calcolato').first().innerText());
+    assert.match(spiegazione, /Cumulo di marzo 2026 di Luca \+ Giuseppe nella zona Centro: 3\.800,00 € \(1 pratica\)/);
+    assert.match(spiegazione, /3\.800,00 € × 30% = 1\.140,00 € di provvigione sulla pratica intera/);
+    assert.match(spiegazione, /Luca ha il 50% → 570,00 €/);
     assert.deepEqual(app.errori, []);
   });
 });

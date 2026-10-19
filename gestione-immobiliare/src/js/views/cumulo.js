@@ -58,18 +58,21 @@ function rigaCumulo(m, cu) {
     cu.prossimo ? h('p', { class: 'sottotesto' }, `Mancano ${eur(cu.prossimo.mancanteCent)} per passare al ${cu.prossimo.indice + 1}° scaglione (${pct(cu.prossimo.percentuale)}), che parte da ${eur(cu.prossimo.da)}.`) : (cu.scaglione ? h('p', { class: 'sottotesto' }, 'È stato raggiunto l\'ultimo scaglione.') : null),
     praticheDelMese.length ? h('details', null, h('summary', { style: { cursor: 'pointer', fontWeight: 650, fontSize: '13.5px' } }, `Pratiche che compongono il cumulo (${praticheDelMese.length})`),
       h('div', { class: 'tabella-wrap', style: { marginTop: '8px' } }, h('table', { class: 'tabella tabella-compatta' },
-        h('thead', null, h('tr', null, h('th', null, 'Pratica'), h('th', null, 'Rogito'), h('th', null, 'Zona'), h('th', { class: 'num' }, 'Fatturato attribuito'), h('th', { class: 'num' }, 'Provvigione'))),
-        h('tbody', null, cu.voci.map((v) => {
-          const p = m.perId.get(v.praticaId);
+        h('thead', null, h('tr', null, h('th', null, 'Pratica'), h('th', null, 'Rogito'), h('th', null, 'Zona'), h('th', { class: 'num' }, 'Compenso'), h('th', { class: 'num' }, 'Provvigione'))),
+        h('tbody', null, praticheDelMese.map((p) => {
+          // una riga per pratica: il compenso intero e la provvigione totale (quella che poi si divide tra i collaboratori)
+          const voci = cu.voci.filter((v) => v.praticaId === p.id);
+          const fatturato = voci.reduce((t, v) => t + v.fatturatoCent, 0);
+          const provv = voci.reduce((t, v) => t + v.provvigioneCent, 0);
           return h('tr', null, h('td', null, h('a', { href: `#/pratiche/${p.id}`, class: 'forte', style: { color: 'var(--text)' } }, p.codice), h('span', { class: 'sottotesto' }, p.descrizione)),
-            h('td', { class: 'num' }, p.dataEtichetta), h('td', null, p.zonaNome ?? '—'), h('td', { class: 'num' }, eur(v.fatturatoCent)), h('td', { class: 'num forte' }, eur(v.provvigioneCent)));
+            h('td', { class: 'num' }, p.dataEtichetta), h('td', null, p.zonaNome ?? '—'), h('td', { class: 'num' }, eur(fatturato)), h('td', { class: 'num forte' }, eur(provv)));
         }))))) : null);
 }
 
 function matriceAnnuale(m, anno, filtri, meseSel) {
   const mesi = Array.from({ length: 12 }, (_, i) => `${anno}-${String(i + 1).padStart(2, '0')}`);
   const struttura = cumuloDelMese(m, meseSel, filtri);
-  const righe = struttura.flatMap((g) => g.righe.map((r) => ({ zonaId: r.zonaId, collabId: r.collaboratoreId, etichetta: [g.zonaNome !== 'Tutte le zone' ? (r.zonaNome ?? g.zonaNome) : null, r.collaboratoreNome].filter(Boolean).join(' · ') || 'Cumulo' })));
+  const righe = struttura.flatMap((g) => g.righe.map((r) => ({ zonaId: r.zonaId, firma: r.firma, etichetta: [g.zonaNome !== 'Tutte le zone' ? (r.zonaNome ?? g.zonaNome) : null, r.collaboratoreNome].filter(Boolean).join(' · ') || 'Cumulo' })));
   const indice = new Map(m.cumuli.map((c) => [c.chiave, c]));
   const ntier = Math.max(1, m.tabellaPredefinita.length, ...[...m.tabellePerZona.values()].map((t) => t.length));
   const tinta = (idx, tot) => `t${Math.min(5, tot <= 5 ? idx + 1 : Math.round(1 + (idx / Math.max(1, tot - 1)) * 4))}`;
@@ -78,7 +81,7 @@ function matriceAnnuale(m, anno, filtri, meseSel) {
     h('thead', null, h('tr', null, h('th', { class: 'riga', scope: 'col' }, ''), ...mesi.map((k) => h('th', { scope: 'col', class: k === meseSel ? 'attuale-th' : '' }, maiuscola(meseBreve(k).split(' ')[0]))))),
     h('tbody', null, righe.map((r) => h('tr', null, h('th', { class: 'riga', scope: 'row' }, r.etichetta),
       ...mesi.map((k) => {
-        const c = indice.get(`${k}|z${r.zonaId ?? 0}|c${r.collabId ?? 0}`);
+        const c = indice.get(`${k}|z${r.zonaId ?? 0}|c${r.firma}`);
         if (!c || c.fatturatoCent <= 0) return h('td', { title: `${meseAnno(k)}: nessun fatturato` }, '—');
         const tot = c.tabella.length || ntier;
         return h('td', { class: `${tinta(Math.max(0, c.scaglioneIdx), tot)}${k === meseSel ? ' attuale' : ''}`, title: `${meseAnno(k)}: ${eur(c.fatturatoCent)} · ${c.scaglione ? `${c.scaglioneIdx + 1}° scaglione, ${pct(c.percentuale)}` : 'scaglioni non impostati'}` },

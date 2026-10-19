@@ -276,11 +276,11 @@ function sezioneCalcolo() {
     ]), esempio,
     h('div', { style: { height: '18px' } }),
     gruppo('base', 'calcolo.baseCumulo', 'Su cosa si calcola il cumulo mensile', 'Decide quali compensi si sommano per stabilire lo scaglione raggiunto.', [
-      ['collaboratore_zona', 'Per collaboratore e per zona', 'Ogni collaboratore ha un cumulo separato in ciascuna zona.'],
+      ['collaboratore_zona', 'Per collaboratore e per zona', 'Ogni collaboratore ha il suo cumulo in ciascuna zona. Le pratiche divise tra più collaboratori (zona comune) fanno un cumulo insieme sul compenso intero: la provvigione si calcola su tutto e solo alla fine si divide.'],
       ['zona', 'Per zona', 'Il fatturato di tutti i collaboratori della zona si somma: lo scaglione è lo stesso per tutti.'],
       ['collaboratore', 'Per collaboratore (tutte le zone)', 'Ogni collaboratore ha un solo cumulo mensile, qualunque sia la zona (si usano gli scaglioni predefiniti).'],
     ]),
-    gruppo('maturazione', 'calcolo.maturazione', 'Quando la provvigione risulta maturata', 'Maturata = dovuta al collaboratore. Da liquidare = maturata meno quanto già pagato.', [
+    gruppo('maturazione', 'calcolo.maturazione', 'Quando la provvigione risulta maturata', 'Maturata = dovuta al collaboratore (le provvigioni sono considerate già pagate appena la pratica è inserita).', [
       ['conclusione', 'Alla conclusione della pratica', 'La provvigione matura per intero quando la pratica è conclusa (rogito), anche se il cliente non ha ancora pagato.'],
       ['incasso', 'In proporzione agli incassi', 'La provvigione matura man mano che il cliente paga i compensi (IVA compresa).'],
     ]));

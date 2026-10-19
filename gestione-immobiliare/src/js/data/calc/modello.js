@@ -174,48 +174,57 @@ export function calcolaModello(dati, opzioniIn = {}) {
   }
 
   // --- 2) cumulo mensile e provvigioni (solo pratiche concluse)
+  // Si cumulano i COMPENSI INTERI delle pratiche (non le metà): la percentuale dello scaglione si calcola sul compenso totale della
+  // pratica (senza IVA), da lì si ricava la provvigione totale e solo alla fine questa si divide tra i collaboratori in base
+  // alle loro quote. Pratiche condivise dagli stessi collaboratori, nella stessa zona e nello stesso mese, fanno un solo cumulo
+  // («Luca + Giuseppe»); quelle di un solo collaboratore fanno il suo cumulo, come prima.
   const gruppi = new Map();
   for (const p of out) {
     if (!p.conclusa) continue;
-    for (const v of p.voci) {
-      const zonaId = opz.baseCumulo === 'collaboratore' ? null : (p.zona_id ?? null);
-      const collabId = opz.baseCumulo === 'zona' ? null : v.collaboratoreId;
-      const chiave = `${p.meseRif}|z${zonaId ?? 0}|c${collabId ?? 0}`;
-      if (!gruppi.has(chiave)) {
-        gruppi.set(chiave, { chiave, mese: p.meseRif, zonaId, collaboratoreId: collabId, voci: [] });
-      }
-      gruppi.get(chiave).voci.push({ v, p });
-      v.cumuloChiave = chiave;
-    }
+    const ids = [...new Set(p.voci.map((v) => v.collaboratoreId).filter((id) => id != null))].sort((a, b) => a - b);
+    const zonaId = opz.baseCumulo === 'collaboratore' ? null : (p.zona_id ?? null);
+    const collaboratoriIds = opz.baseCumulo === 'zona' ? [] : ids;
+    const firma = collaboratoriIds.length ? collaboratoriIds.join('+') : '0';
+    const chiave = `${p.meseRif}|z${zonaId ?? 0}|c${firma}`;
+    if (!gruppi.has(chiave)) gruppi.set(chiave, { chiave, mese: p.meseRif, zonaId, collaboratoriIds, firma, pratiche: [] });
+    gruppi.get(chiave).pratiche.push(p);
+    for (const v of p.voci) v.cumuloChiave = chiave;
   }
 
   const cumuli = [];
   for (const g of gruppi.values()) {
-    g.voci.sort((a, b) =>
-      (a.p.dataRif < b.p.dataRif ? -1 : a.p.dataRif > b.p.dataRif ? 1 : 0) ||
-      a.p.id - b.p.id || (a.v.collaboratoreId ?? 0) - (b.v.collaboratoreId ?? 0));
+    g.pratiche.sort((a, b) => (a.dataRif < b.dataRif ? -1 : a.dataRif > b.dataRif ? 1 : 0) || a.id - b.id);
     const tabella = tabellaPer(g.zonaId);
-    const voci = g.voci.map((x) => x.v);
-    const fatturatoCent = distribuisciProvvigione(voci, tabella, opz.metodo);
+    // una voce per pratica, con il compenso intero: ne esce la provvigione totale di ciascuna pratica
+    const perPratica = g.pratiche.map((p) => ({ fatturatoCent: p.compensoTotaleCent, provvigioneCent: 0 }));
+    const fatturatoCent = distribuisciProvvigione(perPratica, tabella, opz.metodo);
     const idx = indiceScaglione(tabella, fatturatoCent);
-    // Una quota non assegnata a nessun collaboratore fa numero per lo scaglione ma non genera provvigione.
-    for (const v of voci) if (v.collaboratoreId == null) v.provvigioneCent = 0;
+    const voci = [];
+    g.pratiche.forEach((p, i) => {
+      // la provvigione della pratica si divide tra i collaboratori in base alla quota (resto maggiore: la somma è esatta)
+      const parti = attribuisci(perPratica[i].provvigioneCent, p.voci.map((v) => ({ percentuale: v.quotaPct })));
+      p.voci.forEach((v, j) => { v.provvigioneCent = v.collaboratoreId == null ? 0 : parti[j]; }); // una quota non assegnata non genera provvigione
+      voci.push(...p.voci);
+    });
     const provvigioneCent = voci.reduce((s, v) => s + v.provvigioneCent, 0);
     const percentuale = opz.metodo === 'progressivo'
-      ? (fatturatoCent > 0 ? (provvigioneCent / fatturatoCent) * 100 : 0)
+      ? (fatturatoCent > 0 ? (perPratica.reduce((s, x) => s + x.provvigioneCent, 0) / fatturatoCent) * 100 : 0)
       : percentualeRaggiunta(tabella, fatturatoCent);
     for (const v of voci) {
       v.scaglioneIdx = idx;
       v.percentualeApplicata = percentuale;
     }
     const descrizione = descriviScaglioni(tabella);
+    const unico = g.collaboratoriIds.length === 1 ? g.collaboratoriIds[0] : null;
     cumuli.push({
       chiave: g.chiave,
       mese: g.mese,
       zonaId: g.zonaId,
       zonaNome: g.zonaId != null ? (zonaPerId.get(g.zonaId)?.nome ?? null) : null,
-      collaboratoreId: g.collaboratoreId,
-      collaboratoreNome: g.collaboratoreId != null ? (collabPerId.get(g.collaboratoreId)?.nome ?? null) : null,
+      collaboratoreId: unico,
+      collaboratoriIds: g.collaboratoriIds,
+      firma: g.firma,
+      collaboratoreNome: g.collaboratoriIds.length ? g.collaboratoriIds.map((id) => collabPerId.get(id)?.nome ?? '?').join(' + ') : null,
       fatturatoCent,
       scaglioneIdx: idx,
       scaglione: idx >= 0 ? descrizione[idx] : null,
@@ -224,7 +233,7 @@ export function calcolaModello(dati, opzioniIn = {}) {
       prossimo: prossimoScaglione(tabella, fatturatoCent),
       tabella,
       tabellaConfigurata: tabella.length > 0,
-      praticheIds: [...new Set(g.voci.map((x) => x.p.id))],
+      praticheIds: g.pratiche.map((p) => p.id),
       voci,
     });
   }

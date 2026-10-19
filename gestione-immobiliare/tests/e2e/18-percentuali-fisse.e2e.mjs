@@ -107,10 +107,10 @@ describe('Percentuali fisse: capo e segretaria', () => {
     await L('Prezzo di vendita').fill('210.000');
     await p.click('#salva-pratica');
     await attendiNotifica(p, /Pratica 2026\/001 aggiornata/);
-    await vai(p, '#/provvigioni');
-    await p.waitForSelector('#tabella-dettaglio');
+    await vai(p, '#/provvigioni?mese=2026-09'); // la proposta è di settembre
+    await p.waitForSelector('#foglio-mese');
     const kpi = await p.locator('.kpi').evaluateAll((a) => a.map((x) => x.innerText.replace(/ /g, ' ').replace(/\s+/g, ' ').trim()));
-    assert.deepEqual(kpi, ['Luca 1.500,00 €', 'Capo 1.500,00 €', 'Segretaria 400,00 €', 'Totale 3.400,00 €']);
+    assert.deepEqual(kpi, ['Luca 1.500,00 €', 'Capo 1.500,00 €', 'Segretaria 400,00 €', 'Totale da pagare 3.400,00 €']);
     const file = await scarica(p, () => p.getByRole('button', { name: 'Esporta in CSV' }).click());
     const csv = leggiCsv(file.bytes);
     const col = (n) => csv.intestazioni.indexOf(n);

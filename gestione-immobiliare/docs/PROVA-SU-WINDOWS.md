@@ -73,6 +73,8 @@ Come si leggono gli importi: **contanti, bonifico e assegno comprendono tutti l'
 | 4.12 | **Capo e segretaria**: nella stima e nella scheda compaiono anche loro. Esempio con 10.000 € di compenso nel Centro tutto a Luca: Luca 1.500 €, Capo 1.500 € (15% di 10.000), Segretaria 400 € (4% di 10.000). Controlla che sia questo che intendevi (in più rispetto a Luca e Giuseppe, sul compenso totale) | |
 | 4.13 | In *Impostazioni → Collaboratori* si legge «Capo 15% del compenso totale» e «Segretaria 4%…»; con *Modifica* si cambia la percentuale. | |
 | 4.14 | **Cumulo:** inserisci una pratica nello stesso mese e nella stessa zona di una già inserita, in modo che lo scaglione salga. Nel modulo compare un riquadro giallo e, premendo Salva, una finestra con per ogni collaboratore: **già pagato** sulle vecchie pratiche, **differenza da dare**, quanto spetta per la **nuova** e il **totale**. Controlla i numeri con il tuo foglio | |
+| 4.15 | **Zona comune:** inserisci una pratica in una zona divisa tra Luca e Giuseppe (es. compenso 8.737 € senza IVA). La stima in alto a destra mostra in grande quanto va a ciascuno e il totale: controlla che sia (compenso × percentuale dello scaglione del mese) diviso secondo la quota, e non la percentuale calcolata sulla metà | |
+| 4.16 | **Provvigioni** mostra il foglio del mese: frecce per cambiare mese, una riga per pratica, una colonna per persona, i totali in fondo. Confrontalo con il tuo foglio Excel | |
 
 ## 5. Chiudi e riapri (la prova più importante)
 

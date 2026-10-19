@@ -326,8 +326,11 @@ export function ultimePratiche(modello, ctx, limite = 8) {
 export function cumuloDelMese(modello, mese, filtri = {}) {
   const base = modello.opzioni.baseCumulo;
   const esistenti = modello.cumuli.filter((c) => c.mese === mese);
-  const perChiave = new Map(esistenti.map((c) => [`${c.zonaId ?? 0}|${c.collaboratoreId ?? 0}`, c]));
-  const collaboratoriAttivi = modello.collaboratori.filter((c) => c.attivo || esistenti.some((e) => e.collaboratoreId === c.id));
+  const perChiave = new Map(esistenti.map((c) => [`${c.zonaId ?? 0}|${c.firma}`, c]));
+  const coinvolge = (c, id) => id == null || c.collaboratoriIds.includes(id);
+  // cumuli di pratiche condivise da più collaboratori (es. «Luca + Giuseppe»): una riga a parte, solo se nel mese ce ne sono
+  const condivisi = (zonaId, filtroCollab) => esistenti.filter((c) => c.collaboratoriIds.length > 1 && c.zonaId === zonaId && coinvolge(c, filtroCollab));
+  const collaboratoriAttivi = modello.collaboratori.filter((c) => c.attivo || esistenti.some((e) => e.collaboratoriIds.includes(c.id)));
   const zoneAttive = modello.zone.filter((z) => z.attiva || esistenti.some((e) => e.zonaId === z.id));
 
   const gruppi = [];
@@ -341,7 +344,7 @@ export function cumuloDelMese(modello, mese, filtri = {}) {
     return {
       chiave: `${mese}|z${zonaId ?? 0}|c${collabId ?? 0}`,
       mese, zonaId, zonaNome: zona ? zona.nome : null,
-      collaboratoreId: collabId, collaboratoreNome: collab ? collab.nome : null,
+      collaboratoreId: collabId, collaboratoriIds: collabId != null ? [collabId] : [], firma: String(collabId ?? 0), collaboratoreNome: collab ? collab.nome : null,
       fatturatoCent: 0, scaglioneIdx: idx,
       scaglione: tabella.length ? { indice: 0, da: tabella[0].da, a: tabella[1] ? tabella[1].da - 1 : null, percentuale: tabella[0].percentuale } : null,
       percentuale: tabella.length ? tabella[0].percentuale : 0,
@@ -355,6 +358,7 @@ export function cumuloDelMese(modello, mese, filtri = {}) {
     const righe = collaboratoriAttivi
       .filter((c) => filtri.collaboratoreId == null || c.id === filtri.collaboratoreId)
       .map((c) => costruisciRiga(null, c.id));
+    righe.push(...condivisi(null, filtri.collaboratoreId));
     gruppi.push({ zonaId: null, zonaNome: 'Tutte le zone', righe });
   } else {
     for (const z of zoneAttive) {
@@ -363,11 +367,11 @@ export function cumuloDelMese(modello, mese, filtri = {}) {
         ? [costruisciRiga(z.id, null)]
         : collaboratoriAttivi
           .filter((c) => filtri.collaboratoreId == null || c.id === filtri.collaboratoreId)
-          .map((c) => costruisciRiga(z.id, c.id));
+          .map((c) => costruisciRiga(z.id, c.id)).concat(condivisi(z.id, filtri.collaboratoreId));
       gruppi.push({ zonaId: z.id, zonaNome: z.nome, righe });
     }
     // Pratiche del mese senza zona.
-    const senzaZona = esistenti.filter((c) => c.zonaId == null && (filtri.collaboratoreId == null || c.collaboratoreId === filtri.collaboratoreId));
+    const senzaZona = esistenti.filter((c) => c.zonaId == null && coinvolge(c, filtri.collaboratoreId));
     if (senzaZona.length && filtri.zonaId == null) gruppi.push({ zonaId: null, zonaNome: 'Senza zona', righe: senzaZona });
   }
   return gruppi;

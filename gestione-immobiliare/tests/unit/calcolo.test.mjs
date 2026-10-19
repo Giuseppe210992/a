@@ -29,35 +29,73 @@ test('importi della pratica: compensi, IVA e totale lordo', () => {
   assert.equal(p1.meseRif, '2026-10');
 });
 
-test('cumulo per collaboratore e zona, scaglione basso (30%)', () => {
+test('cumulo per collaboratore e zona, scaglione basso (30%): la pratica condivisa fa un cumulo suo, sul compenso intero', () => {
   const m = calcolaModello(ottobre());
   assert.equal(provv(m, 1, 1).provvigioneCent, 180000);
-  assert.equal(provv(m, 2, 1).fatturatoCent, 350000);
+  assert.equal(provv(m, 2, 1).fatturatoCent, 350000); // la quota di Luca (metà di 7.000)
   assert.equal(provv(m, 2, 1).provvigioneCent, 105000);
   assert.equal(provv(m, 2, 2).provvigioneCent, 105000);
   assert.equal(provv(m, 3, 2).provvigioneCent, 150000);
-  const luca = m.cumuli.find((c) => c.collaboratoreId === 1 && c.zonaId === 1);
-  assert.equal(luca.fatturatoCent, 950000);
+  const luca = m.cumuli.find((c) => c.firma === '1' && c.zonaId === 1);
+  assert.equal(luca.fatturatoCent, 600000); // solo P1: P2 è condivisa con Giuseppe e fa il cumulo della coppia
   assert.equal(luca.scaglioneIdx, 0);
   assert.equal(luca.percentuale, 30);
-  assert.equal(luca.prossimo.mancanteCent, 50000);
+  assert.equal(luca.prossimo.mancanteCent, 400000);
+  const coppia = m.cumuli.find((c) => c.firma === '1+2' && c.zonaId === 1);
+  assert.equal(coppia.fatturatoCent, 700000); // il compenso intero di P2, non le due metà
+  assert.equal(coppia.collaboratoreNome, 'Luca + Giuseppe');
+  assert.equal(coppia.collaboratoreId, null);
+  assert.deepEqual(coppia.collaboratoriIds, [1, 2]);
+  assert.equal(coppia.provvigioneCent, 210000);
+  assert.equal(coppia.prossimo.mancanteCent, 300000);
 });
 
+/** P4 di Luca portata a 5.000 €: con P1 (6.000 €) il cumulo di Luca da solo supera i 10.000 €. */
+function ottobreLucaOltreSoglia() {
+  const d = ottobre({ conP4: true });
+  const p4 = d.pratiche.find((x) => x.id === 4);
+  p4.compenso_venditore_cent = 2500 * E; p4.compenso_acquirente_cent = 2500 * E;
+  return d;
+}
+
 test('"raggiunto": superata la soglia la percentuale sale su TUTTO il mese', () => {
-  const m = calcolaModello(ottobre({ conP4: true }), { metodo: 'raggiunto' });
-  const luca = m.cumuli.find((c) => c.collaboratoreId === 1 && c.zonaId === 1);
-  assert.equal(luca.fatturatoCent, 1050000);
+  const m = calcolaModello(ottobreLucaOltreSoglia(), { metodo: 'raggiunto' });
+  const luca = m.cumuli.find((c) => c.firma === '1' && c.zonaId === 1);
+  assert.equal(luca.fatturatoCent, 1100000);
   assert.equal(luca.scaglioneIdx, 1);
   assert.equal(luca.percentuale, 35);
-  assert.equal(luca.provvigioneCent, 367500);
-  assert.deepEqual([1, 2, 4].map((id) => provv(m, id, 1).provvigioneCent), [210000, 122500, 35000]);
+  assert.equal(luca.provvigioneCent, 385000);
+  assert.deepEqual([1, 4].map((id) => provv(m, id, 1).provvigioneCent), [210000, 175000]);
+  assert.equal(provv(m, 2, 1).provvigioneCent, 105000, 'la pratica condivisa resta al 30%: il suo cumulo è 7.000 €');
 });
 
 test('"progressivo": la nuova percentuale vale solo sulla parte oltre la soglia', () => {
-  const m = calcolaModello(ottobre({ conP4: true }), { metodo: 'progressivo' });
-  const luca = m.cumuli.find((c) => c.collaboratoreId === 1 && c.zonaId === 1);
-  assert.equal(luca.provvigioneCent, 317500);
-  assert.deepEqual([1, 2, 4].map((id) => provv(m, id, 1).provvigioneCent), [180000, 105000, 32500]);
+  const m = calcolaModello(ottobreLucaOltreSoglia(), { metodo: 'progressivo' });
+  const luca = m.cumuli.find((c) => c.firma === '1' && c.zonaId === 1);
+  assert.equal(luca.provvigioneCent, 335000); // 10.000 x 30% + 1.000 x 35%
+  assert.deepEqual([1, 4].map((id) => provv(m, id, 1).provvigioneCent), [180000, 155000]);
+});
+
+test('zona condivisa: la percentuale si calcola sul compenso INTERO, poi la provvigione si divide tra i due collaboratori', () => {
+  const d = datiBase();
+  // 8.737,00 € (senza IVA) e altri 2.000 € nello stesso mese e zona, sempre 50/50: il cumulo è 10.737 € → 35% per entrambe
+  aggiungiPratica(d, 1, { data_rogito: '2026-10-03', compenso_venditore_cent: 873700, compenso_acquirente_cent: 0, aliquota_iva: 0 }, [[1, 50], [2, 50]]);
+  aggiungiPratica(d, 2, { data_rogito: '2026-10-09', compenso_venditore_cent: 200000, compenso_acquirente_cent: 0, aliquota_iva: 0 }, [[1, 50], [2, 50]]);
+  const m = calcolaModello(d);
+  const c = m.cumuli.find((x) => x.firma === '1+2');
+  assert.equal(c.fatturatoCent, 1073700);
+  assert.equal(c.percentuale, 35, 'il vecchio modo (metà a testa, 5.368,50 € ciascuno) sarebbe rimasto al 30%');
+  // 8.737,00 × 35% = 3.057,95 €, diviso a metà: 1.528,975 → 1.528,98 e 1.528,97 (la somma torna sempre al centesimo)
+  assert.deepEqual([1, 2].map((id) => provv(m, 1, id).provvigioneCent), [152898, 152897]);
+  assert.equal(m.perId.get(1).provvigioniCent, 305795);
+  assert.deepEqual([1, 2].map((id) => provv(m, 2, id).provvigioneCent), [35000, 35000]); // 2.000 × 35% = 700 €
+  assert.equal(c.provvigioneCent, 305795 + 70000);
+  // con una ripartizione 60/40: totale 3.057,95 € → 1.834,77 e 1.223,18
+  const e = datiBase();
+  aggiungiPratica(e, 1, { data_rogito: '2026-10-03', compenso_venditore_cent: 873700, compenso_acquirente_cent: 0, aliquota_iva: 0 }, [[1, 60], [2, 40]]);
+  aggiungiPratica(e, 2, { data_rogito: '2026-10-09', compenso_venditore_cent: 200000, compenso_acquirente_cent: 0, aliquota_iva: 0 }, [[1, 60], [2, 40]]);
+  const n = calcolaModello(e);
+  assert.deepEqual([1, 2].map((id) => n.perId.get(1).voci.find((v) => v.collaboratoreId === id).provvigioneCent), [183477, 122318]);
 });
 
 test('base di cumulo "zona": il fatturato di tutti i collaboratori fa scaglione insieme', () => {
@@ -71,11 +109,12 @@ test('base di cumulo "zona": il fatturato di tutti i collaboratori fa scaglione 
 
 test('base di cumulo "collaboratore": le zone si sommano', () => {
   const m = calcolaModello(ottobre({ conP4: true }), { baseCumulo: 'collaboratore' });
-  const giuseppe = m.cumuli.find((c) => c.collaboratoreId === 2);
-  assert.equal(giuseppe.fatturatoCent, 850000); // 3.500 (zona A) + 5.000 (zona B)
+  const giuseppe = m.cumuli.find((c) => c.firma === '2');
+  assert.equal(giuseppe.fatturatoCent, 500000); // la sua P3; P2 è condivisa con Luca
   assert.equal(giuseppe.percentuale, 30);
-  assert.equal(giuseppe.provvigioneCent, 255000);
+  assert.equal(giuseppe.provvigioneCent, 150000);
   assert.equal(giuseppe.zonaId, null);
+  assert.equal(m.cumuli.find((c) => c.firma === '1').fatturatoCent, 700000); // P1 + P4 di Luca
 });
 
 test('scaglioni propri di una zona', () => {
@@ -164,8 +203,8 @@ test('riquadri della dashboard sul periodo', () => {
   assert.equal(r.concluse, 4);
   assert.equal(r.compensiCent, 1900000);
   assert.equal(r.valoreVendutoCent, 4 * 150000 * E);
-  assert.equal(r.maturateCent, 622500); // 367.500 (Luca A) + 105.000 (Giuseppe A) + 150.000 (Giuseppe B)
-  assert.equal(r.liquidateCent, 622500, 'già pagate');
+  assert.equal(r.maturateCent, 570000); // 2.100 (Luca solo: P1+P4 al 30%) + 2.100 (P2 condivisa) + 1.500 (P3 di Giuseppe)
+  assert.equal(r.liquidateCent, 570000, 'già pagate');
   assert.equal(r.daLiquidareCent, 0);
   assert.equal(r.inCorso, 0);
 });
@@ -175,7 +214,7 @@ test('i filtri per collaboratore e per zona cambiano i riquadri in modo coerente
   const luca = riepilogo(m, ctxOttobre({ collaboratoreId: 1 }));
   assert.equal(luca.concluse, 3);               // P1, P2, P4
   assert.equal(luca.compensiCent, 1050000);     // 6.000 + 3.500 (meta' di P2) + 1.000
-  assert.equal(luca.maturateCent, 367500);
+  assert.equal(luca.maturateCent, 315000); // 1.800 + 300 + 1.050 (metà di P2)
   const zonaB = riepilogo(m, ctxOttobre({ zonaId: 2 }));
   assert.equal(zonaB.concluse, 1);
   assert.equal(zonaB.compensiCent, 500000);
@@ -245,12 +284,12 @@ test('riepiloghi per collaboratore e per zona', () => {
   const m = calcolaModello(ottobre({ conP4: true }));
   const pc = perCollaboratore(m, ctxOttobre());
   assert.deepEqual(pc.map((r) => [r.nome, r.pratiche, r.fatturatoCent, r.maturateCent]), [
-    ['Luca', 3, 1050000, 367500],
+    ['Luca', 3, 1050000, 315000],
     ['Giuseppe', 2, 850000, 255000],
   ]);
   const pz = perZona(m, ctxOttobre());
   assert.deepEqual(pz.map((r) => [r.nome, r.pratiche, r.fatturatoCent, r.provvigioniCent]), [
-    ['Zona A', 3, 1400000, 472500],
+    ['Zona A', 3, 1400000, 420000],
     ['Zona B', 1, 500000, 150000],
   ]);
 });
@@ -274,7 +313,9 @@ test('cumulo del mese per zona include anche chi non ha ancora fatturato', () =>
   const m = calcolaModello(ottobre());
   const g = cumuloDelMese(m, '2026-10');
   assert.deepEqual(g.map((x) => x.zonaNome), ['Zona A', 'Zona B']);
-  assert.equal(g[0].righe.length, 2);
+  assert.equal(g[0].righe.length, 3); // Luca, Giuseppe e la riga «Luca + Giuseppe» della pratica condivisa (c'è solo se nel mese ne esistono)
+  assert.deepEqual(g[0].righe.map((r) => r.collaboratoreNome), ['Luca', 'Giuseppe', 'Luca + Giuseppe']);
+  assert.equal(g[1].righe.length, 2);
   const lucaB = g[1].righe.find((r) => r.collaboratoreId === 1);
   assert.equal(lucaB.fatturatoCent, 0);
   assert.equal(lucaB.percentuale, 30);

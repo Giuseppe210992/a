@@ -281,7 +281,7 @@ describe('Impostazioni', () => {
     let righe = await p.locator('#tabella-provvigioni tbody tr').evaluateAll((tr) => tr.map((x) => [...x.children].map((c) => c.innerText.replace(/ /g, ' ').trim())));
     assert.equal(righe[0][4], '2.600,00 €', '4.400 € del mese − 1.800 € già attribuiti alla 010');
     await p.locator('#come-calcolato summary').click();
-    assert.match(rimuoviSpazi(await p.locator('#come-calcolato').innerText()), /Metodo progressivo: ogni percentuale vale solo sulla parte di cumulo del suo scaglione; a questa pratica spettano 2\.600,00 €/);
+    assert.match(rimuoviSpazi(await p.locator('#come-calcolato').innerText()), /Metodo progressivo: ogni percentuale vale solo sulla parte di cumulo del suo scaglione; alla pratica intera spettano 2\.600,00 € di provvigione\./);
     await vai(p, '#/cumulo?mese=2026-10');
     assert.match(rimuoviSpazi(await p.locator('#contenuto .nota').first().innerText()), /Metodo: progressivo/);
     assert.match(rimuoviSpazi(await p.locator('.zona-card[aria-label="Zona Centro"]').innerText()), /Percentuale media 31,43%/); // 4.400 / 14.000

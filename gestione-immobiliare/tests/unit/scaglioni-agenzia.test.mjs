@@ -81,7 +81,7 @@ test('quanto manca al prossimo scaglione: a 2.600,00 € precisi manca un centes
   assert.equal(prossimoScaglione(tabella, 15000 * E), null, 'oltre i 13.000 non c\'è un altro scaglione');
 });
 
-test('dall\'archivio nuovo alle provvigioni di Luca e di Giuseppe: stessa tabella, cumuli separati', async () => {
+test('dall\'archivio nuovo alle provvigioni di Luca e di Giuseppe: stessa tabella, un cumulo per ogni gruppo di collaboratori', async () => {
   const { archivio } = await nuovaApp();
   assert.deepEqual(leggiTabellaScaglioni(archivio, null), SCAGLIONI_INIZIALI);
   const zona = await creaZona(archivio, { nome: 'Zona prova' });
@@ -90,20 +90,25 @@ test('dall\'archivio nuovo alle provvigioni di Luca e di Giuseppe: stessa tabell
     codice, stato: 'conclusa', data_pratica: '2026-08-01', data_rogito: rogito, zona_id: zona, immobile_indirizzo: `Via ${codice}`,
     prezzo_vendita_cent: 100000 * E, compenso_venditore_cent: compensi * E, compenso_acquirente_cent: 0, aliquota_iva: 22,
   }, quote);
-  // ottobre: Luca ha 10.000 € di quota (da due pratiche), Giuseppe 4.000 €; in zona prova, base di cumulo predefinita (collaboratore e zona)
+  // ottobre, zona prova: P/1 è solo di Luca (6.000 €), P/2 è di 8.000 € divisa a metà tra Luca e Giuseppe. Ogni gruppo di collaboratori ha il suo
+  // cumulo e conta il compenso intero: Luca da solo 6.000 €, la coppia 8.000 € (non 10.000 e 4.000 come con le metà).
   await pratica('P/1', '2026-10-05', 6000, [{ collaboratore_id: luca.id, percentuale: 100 }]);
   await pratica('P/2', '2026-10-20', 8000, [{ collaboratore_id: luca.id, percentuale: 50 }, { collaboratore_id: giuseppe.id, percentuale: 50 }]);
   const cumuli = modelloDi(archivio).cumuli;
-  const di = (id) => cumuli.find((c) => c.collaboratoreId === id);
-  assert.equal(di(luca.id).fatturatoCent, 10000 * E, 'Luca: 6.000 + metà di 8.000');
-  assert.equal(di(luca.id).percentuale, 15, '10.000 € → quarto scaglione');
-  assert.equal(di(luca.id).provvigioneCent, 1500 * E);
-  assert.equal(di(giuseppe.id).fatturatoCent, 4000 * E, 'Giuseppe: metà di 8.000');
-  assert.equal(di(giuseppe.id).percentuale, 8, '4.000 € → secondo scaglione');
-  assert.equal(di(giuseppe.id).provvigioneCent, 320 * E);
-  // con il metodo progressivo: Luca 954,00 (come sopra), Giuseppe 130 + 1.400 × 8% = 242,00
+  const solo = cumuli.find((c) => c.firma === String(luca.id));
+  const coppia = cumuli.find((c) => c.firma === `${luca.id}+${giuseppe.id}`);
+  assert.equal(solo.fatturatoCent, 6000 * E);
+  assert.equal(solo.percentuale, 11, '6.000 € → terzo scaglione');
+  assert.equal(solo.provvigioneCent, 660 * E);
+  assert.equal(coppia.fatturatoCent, 8000 * E, 'il compenso intero di P/2');
+  assert.equal(coppia.percentuale, 15, '8.000 € → quarto scaglione (da 7.800,01 €)');
+  assert.equal(coppia.provvigioneCent, 1200 * E, '8.000 × 15%, poi diviso: 600 a testa');
+  const m = modelloDi(archivio);
+  const p2 = m.pratiche.find((p) => p.codice === 'P/2');
+  assert.deepEqual(p2.voci.map((v) => v.provvigioneCent), [600 * E, 600 * E]);
+  // con il metodo progressivo: Luca da solo 130,00 + 208,00 + 88,00 = 426,00; la coppia 130,00 + 208,00 + 286,00 + 30,00 = 654,00
   await scriviImpostazioni(archivio, { 'calcolo.metodo': 'progressivo' });
   const prog = modelloDi(archivio).cumuli;
-  assert.equal(prog.find((c) => c.collaboratoreId === luca.id).provvigioneCent, 954 * E);
-  assert.equal(prog.find((c) => c.collaboratoreId === giuseppe.id).provvigioneCent, 242 * E);
+  assert.equal(prog.find((c) => c.firma === String(luca.id)).provvigioneCent, 426 * E);
+  assert.equal(prog.find((c) => c.firma === `${luca.id}+${giuseppe.id}`).provvigioneCent, 654 * E);
 });

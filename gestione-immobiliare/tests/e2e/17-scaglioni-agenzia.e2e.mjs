@@ -81,7 +81,7 @@ describe('Scaglioni dell\'agenzia preimpostati', () => {
     await dettagli.locator('summary').click();
     const t = rimuoviSpazi(await dettagli.innerText());
     assert.match(t, /Scaglione raggiunto: 4° \(da 7\.800,01 € a 13\.000,00 €\) → 15%/);
-    assert.match(t, /Metodo “scaglione raggiunto”: 15% su tutto il cumulo; 10\.000,00 € × 15% = 1\.500,00 €/);
+    assert.match(t, /Metodo “scaglione raggiunto”: 15% su tutto il cumulo; compenso della pratica 10\.000,00 € × 15% = 1\.500,00 € di provvigione sulla pratica intera\./);
     // dashboard: provvigione maturata e nessun avviso «scaglioni non configurati»
     await vai(p, '#/');
     const r = await riquadri(p);

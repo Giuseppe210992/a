@@ -65,14 +65,14 @@ test('Luca solo: 10.000 € di compenso → Luca 15% = 1.500 €; il capo prende
   assert.deepEqual(riep.Segretaria, [400 * E, 0, 0, 4]);
   assert.deepEqual(riep.Luca, [1500 * E, 1, 10000 * E, null]);
 });
-test('zona divisa 60/40: ognuno ha il suo scaglione; capo e segretaria prendono comunque la percentuale sul compenso totale', async () => {
+test('zona divisa 60/40: la percentuale si calcola sul compenso intero e poi si divide; capo e segretaria prendono comunque la percentuale sul compenso totale', async () => {
   const app = await appCompleta();
   const id = await nuova(app, app.collina, { vend: 6100, acq: 6100 }); // compenso 10.000 €
   const p = modelloDi(app.archivio).perId.get(id);
   const prov = (chi) => p.voci.find((v) => v.collaboratoreId === chi.id).provvigioneCent;
-  // Luca 6.000 € → 3° scaglione (da 5.200,01 a 7.800: 11%) = 660 €; Giuseppe 4.000 € → 2° scaglione (8%) = 320 €
-  assert.equal(prov(app.luca), 660 * E);
-  assert.equal(prov(app.giuseppe), 320 * E);
+  // il cumulo è del compenso intero: 10.000 € → 4° scaglione (15%) = 1.500 €, poi diviso 60/40: Luca 900 €, Giuseppe 600 €
+  assert.equal(prov(app.luca), 900 * E);
+  assert.equal(prov(app.giuseppe), 600 * E);
   // capo e segretaria: 15% e 4% di 10.000 €, non di 980 €
   assert.equal(prov(app.capo), 1500 * E);
   assert.equal(prov(app.segretaria), 400 * E);
